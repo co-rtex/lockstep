@@ -1,0 +1,74 @@
+{
+  "name": "cancel-middle-preserves-fifo",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Cancelling the middle order of a FIFO queue keeps the others' priority",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "alias": "S2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 3
+    },
+    {
+      "alias": "S3",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 4
+    },
+    {
+      "cancel": "S2"
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 5
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "B1",
+        "resting": "S1",
+        "quantity": 2,
+        "price": 10000,
+        "incoming_remaining": 3,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "B1",
+        "resting": "S3",
+        "quantity": 3,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 1
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": [
+          {
+            "alias": "S3",
+            "remaining": 1,
+            "price": 10000
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    }
+  }
+}

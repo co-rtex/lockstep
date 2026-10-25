@@ -1,0 +1,62 @@
+{
+  "name": "symbol-isolation",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Orders for different symbols never match",
+  "steps": [
+    {
+      "alias": "A1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 5
+    },
+    {
+      "alias": "M1",
+      "symbol": "MSFT",
+      "side": "BUY",
+      "price": 20000,
+      "quantity": 5
+    },
+    {
+      "alias": "M2",
+      "symbol": "MSFT",
+      "side": "SELL",
+      "price": 19000,
+      "quantity": 2
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "M2",
+        "resting": "M1",
+        "quantity": 2,
+        "price": 20000,
+        "incoming_remaining": 0,
+        "resting_remaining": 3
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": [
+          {
+            "alias": "A1",
+            "remaining": 5,
+            "price": 10000
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [
+          {
+            "alias": "M1",
+            "remaining": 3,
+            "price": 20000
+          }
+        ],
+        "asks": []
+      }
+    }
+  }
+}

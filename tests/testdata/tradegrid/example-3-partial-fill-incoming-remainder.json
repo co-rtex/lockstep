@@ -1,0 +1,53 @@
+{
+  "name": "Example 3 - Partial Fill with Incoming Remainder",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/matching-engine.md, Example 3 - Partial Fill with Incoming Remainder (dollar prices converted to integer cents)",
+  "notes": "Starting-book orders are submitted first in their stated acceptance order; they must not execute.",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 4
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10100,
+      "quantity": 10
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "B1",
+        "resting": "S1",
+        "quantity": 4,
+        "price": 10000,
+        "incoming_remaining": 6,
+        "resting_remaining": 0
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [
+          {
+            "alias": "B1",
+            "remaining": 6,
+            "price": 10100
+          }
+        ],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "B1": 6,
+      "S1": 0
+    }
+  }
+}

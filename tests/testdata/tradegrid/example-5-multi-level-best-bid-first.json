@@ -1,0 +1,79 @@
+{
+  "name": "Example 5 - Multiple Price Levels, Best Bid First",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/matching-engine.md, Example 5 - Multiple Price Levels, Best Bid First (dollar prices converted to integer cents)",
+  "notes": "Starting-book orders are submitted first in their stated acceptance order; they must not execute.",
+  "steps": [
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "alias": "B2",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10100,
+      "quantity": 3
+    },
+    {
+      "alias": "B3",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10200,
+      "quantity": 4
+    },
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 9
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "S1",
+        "resting": "B3",
+        "quantity": 4,
+        "price": 10200,
+        "incoming_remaining": 5,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "S1",
+        "resting": "B2",
+        "quantity": 3,
+        "price": 10100,
+        "incoming_remaining": 2,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "S1",
+        "resting": "B1",
+        "quantity": 2,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 0
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "S1": 0,
+      "B1": 0,
+      "B2": 0,
+      "B3": 0
+    }
+  }
+}

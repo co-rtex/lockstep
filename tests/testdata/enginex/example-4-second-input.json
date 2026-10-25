@@ -1,0 +1,94 @@
+{
+  "name": "example-4-second-input",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Second input into Example 4's final book: S2 still precedes S3",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 4
+    },
+    {
+      "alias": "S2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 6
+    },
+    {
+      "alias": "S3",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 7
+    },
+    {
+      "alias": "B2",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 4
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "B1",
+        "resting": "S1",
+        "quantity": 4,
+        "price": 10000,
+        "incoming_remaining": 3,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "B1",
+        "resting": "S2",
+        "quantity": 3,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 3
+      },
+      {
+        "incoming": "B2",
+        "resting": "S2",
+        "quantity": 3,
+        "price": 10000,
+        "incoming_remaining": 1,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "B2",
+        "resting": "S3",
+        "quantity": 1,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 1
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": [
+          {
+            "alias": "S3",
+            "remaining": 1,
+            "price": 10000
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    }
+  }
+}

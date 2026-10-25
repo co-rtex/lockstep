@@ -1,0 +1,76 @@
+{
+  "name": "mirror-example-4-sell-side",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Example 4 mirrored: FIFO among bids at one price for an incoming SELL",
+  "steps": [
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 4
+    },
+    {
+      "alias": "B2",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 6
+    },
+    {
+      "alias": "B3",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 7
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "S1",
+        "resting": "B1",
+        "quantity": 4,
+        "price": 10000,
+        "incoming_remaining": 3,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "S1",
+        "resting": "B2",
+        "quantity": 3,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 3
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [
+          {
+            "alias": "B2",
+            "remaining": 3,
+            "price": 10000
+          },
+          {
+            "alias": "B3",
+            "remaining": 2,
+            "price": 10000
+          }
+        ],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    }
+  }
+}

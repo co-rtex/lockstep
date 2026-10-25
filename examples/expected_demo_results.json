@@ -1,0 +1,386 @@
+{
+  "responses": [
+    {
+      "line": 1,
+      "request_id": "req-001",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 1,
+      "order_id": "ord-1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10100,
+      "quantity": 10,
+      "remaining": 10,
+      "order_status": "OPEN",
+      "executions": [],
+      "state_watermark": 1
+    },
+    {
+      "line": 2,
+      "request_id": "req-002",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 2,
+      "order_id": "ord-2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 4,
+      "remaining": 0,
+      "order_status": "FILLED",
+      "executions": [
+        {
+          "execution_id": "exe-1",
+          "execution_sequence": 1,
+          "command_sequence": 2,
+          "incoming_order_id": "ord-2",
+          "resting_order_id": "ord-1",
+          "symbol": "AAPL",
+          "incoming_side": "SELL",
+          "price": 10100,
+          "quantity": 4
+        }
+      ],
+      "state_watermark": 2
+    },
+    {
+      "line": 3,
+      "request_id": "req-003",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 3,
+      "order_id": "ord-3",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10100,
+      "quantity": 2,
+      "remaining": 0,
+      "order_status": "FILLED",
+      "executions": [
+        {
+          "execution_id": "exe-2",
+          "execution_sequence": 2,
+          "command_sequence": 3,
+          "incoming_order_id": "ord-3",
+          "resting_order_id": "ord-1",
+          "symbol": "AAPL",
+          "incoming_side": "SELL",
+          "price": 10100,
+          "quantity": 2
+        }
+      ],
+      "state_watermark": 3
+    },
+    {
+      "line": 4,
+      "type": "snapshot",
+      "status": "ok",
+      "symbol": "AAPL",
+      "depth": 10,
+      "as_of_command_sequence": 3,
+      "bids": [
+        {
+          "price": 10100,
+          "quantity": 4,
+          "order_count": 1
+        }
+      ],
+      "asks": []
+    },
+    {
+      "line": 5,
+      "request_id": "req-004",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 4,
+      "order_id": "ord-4",
+      "symbol": "MSFT",
+      "side": "SELL",
+      "price": 42000,
+      "quantity": 5,
+      "remaining": 5,
+      "order_status": "OPEN",
+      "executions": [],
+      "state_watermark": 4
+    },
+    {
+      "line": 6,
+      "request_id": "req-005",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 5,
+      "order_id": "ord-5",
+      "symbol": "MSFT",
+      "side": "SELL",
+      "price": 42050,
+      "quantity": 5,
+      "remaining": 5,
+      "order_status": "OPEN",
+      "executions": [],
+      "state_watermark": 5
+    },
+    {
+      "line": 7,
+      "request_id": "req-006",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": false,
+      "command_sequence": 6,
+      "order_id": "ord-6",
+      "symbol": "MSFT",
+      "side": "BUY",
+      "price": 42050,
+      "quantity": 7,
+      "remaining": 0,
+      "order_status": "FILLED",
+      "executions": [
+        {
+          "execution_id": "exe-3",
+          "execution_sequence": 3,
+          "command_sequence": 6,
+          "incoming_order_id": "ord-6",
+          "resting_order_id": "ord-4",
+          "symbol": "MSFT",
+          "incoming_side": "BUY",
+          "price": 42000,
+          "quantity": 5
+        },
+        {
+          "execution_id": "exe-4",
+          "execution_sequence": 4,
+          "command_sequence": 6,
+          "incoming_order_id": "ord-6",
+          "resting_order_id": "ord-5",
+          "symbol": "MSFT",
+          "incoming_side": "BUY",
+          "price": 42050,
+          "quantity": 2
+        }
+      ],
+      "state_watermark": 6
+    },
+    {
+      "line": 8,
+      "request_id": "req-007",
+      "status": "accepted",
+      "type": "cancel",
+      "duplicate": false,
+      "command_sequence": 7,
+      "order_id": "ord-5",
+      "symbol": "MSFT",
+      "side": "SELL",
+      "price": 42050,
+      "quantity": 5,
+      "cancelled_quantity": 3,
+      "order_status": "CANCELLED",
+      "executions": [],
+      "state_watermark": 7
+    },
+    {
+      "line": 9,
+      "request_id": "req-008",
+      "status": "rejected",
+      "type": "cancel",
+      "error": {
+        "code": "ORDER_NOT_OPEN",
+        "message": "order is already filled or cancelled"
+      },
+      "state_watermark": 7
+    },
+    {
+      "line": 10,
+      "request_id": "req-002",
+      "status": "accepted",
+      "type": "new_limit",
+      "duplicate": true,
+      "command_sequence": 2,
+      "order_id": "ord-2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 4,
+      "remaining": 0,
+      "order_status": "FILLED",
+      "executions": [
+        {
+          "execution_id": "exe-1",
+          "execution_sequence": 1,
+          "command_sequence": 2,
+          "incoming_order_id": "ord-2",
+          "resting_order_id": "ord-1",
+          "symbol": "AAPL",
+          "incoming_side": "SELL",
+          "price": 10100,
+          "quantity": 4
+        }
+      ],
+      "state_watermark": 7
+    },
+    {
+      "line": 11,
+      "request_id": "req-002",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "DUPLICATE_REQUEST_ID_CONFLICT",
+        "message": "request_id was already accepted with a different command"
+      },
+      "state_watermark": 7
+    },
+    {
+      "line": 12,
+      "request_id": "req-009",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "INVALID_SYMBOL",
+        "message": "unknown symbol"
+      },
+      "state_watermark": 7
+    },
+    {
+      "line": 13,
+      "request_id": "req-010",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "INVALID_PRICE",
+        "message": "price must be an integer in [1, 100000000]"
+      },
+      "state_watermark": 7
+    },
+    {
+      "line": 14,
+      "request_id": "req-011",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "INVALID_PRICE",
+        "message": "\"price\" must be an integer number of cents"
+      }
+    },
+    {
+      "line": 15,
+      "request_id": "req-012",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "INVALID_SIDE",
+        "message": "\"side\" must be \"BUY\" or \"SELL\""
+      }
+    },
+    {
+      "line": 16,
+      "request_id": "req-013",
+      "status": "rejected",
+      "type": "new_limit",
+      "error": {
+        "code": "INVALID_QUANTITY",
+        "message": "quantity must be an integer in [1, 1000000]"
+      },
+      "state_watermark": 7
+    },
+    {
+      "line": 17,
+      "request_id": "",
+      "status": "rejected",
+      "type": "",
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "malformed JSON"
+      }
+    },
+    {
+      "line": 18,
+      "type": "snapshot",
+      "status": "ok",
+      "symbol": "MSFT",
+      "depth": 5,
+      "as_of_command_sequence": 7,
+      "bids": [],
+      "asks": []
+    },
+    {
+      "line": 19,
+      "type": "executions",
+      "status": "ok",
+      "as_of_command_sequence": 7,
+      "executions": [
+        {
+          "execution_id": "exe-1",
+          "execution_sequence": 1,
+          "command_sequence": 2,
+          "incoming_order_id": "ord-2",
+          "resting_order_id": "ord-1",
+          "symbol": "AAPL",
+          "incoming_side": "SELL",
+          "price": 10100,
+          "quantity": 4
+        },
+        {
+          "execution_id": "exe-2",
+          "execution_sequence": 2,
+          "command_sequence": 3,
+          "incoming_order_id": "ord-3",
+          "resting_order_id": "ord-1",
+          "symbol": "AAPL",
+          "incoming_side": "SELL",
+          "price": 10100,
+          "quantity": 2
+        },
+        {
+          "execution_id": "exe-3",
+          "execution_sequence": 3,
+          "command_sequence": 6,
+          "incoming_order_id": "ord-6",
+          "resting_order_id": "ord-4",
+          "symbol": "MSFT",
+          "incoming_side": "BUY",
+          "price": 42000,
+          "quantity": 5
+        },
+        {
+          "execution_id": "exe-4",
+          "execution_sequence": 4,
+          "command_sequence": 6,
+          "incoming_order_id": "ord-6",
+          "resting_order_id": "ord-5",
+          "symbol": "MSFT",
+          "incoming_side": "BUY",
+          "price": 42050,
+          "quantity": 2
+        }
+      ]
+    }
+  ],
+  "final_state": {
+    "last_command_sequence": 7,
+    "last_execution_sequence": 4,
+    "open_orders": 1,
+    "books": [
+      {
+        "symbol": "AAPL",
+        "bids": [
+          {
+            "price": 10100,
+            "quantity": 4,
+            "order_count": 1
+          }
+        ],
+        "asks": []
+      },
+      {
+        "symbol": "MSFT",
+        "bids": [],
+        "asks": []
+      }
+    ],
+    "state_hash": "609bde2d018479529a780babc8fac52ddc3d308797ad528e95bc46a84963b4f4"
+  }
+}

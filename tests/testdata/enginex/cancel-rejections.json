@@ -1,0 +1,65 @@
+{
+  "name": "cancel-rejections",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Cancels of filled, cancelled and never-resting orders fail without changing state",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 2
+    },
+    {
+      "cancel": "S1",
+      "expect_error": "ORDER_NOT_OPEN"
+    },
+    {
+      "cancel": "B1",
+      "expect_error": "ORDER_NOT_OPEN"
+    },
+    {
+      "alias": "S2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10100,
+      "quantity": 1
+    },
+    {
+      "cancel": "S2"
+    },
+    {
+      "cancel": "S2",
+      "expect_error": "ORDER_NOT_OPEN"
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "B1",
+        "resting": "S1",
+        "quantity": 2,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 0
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    }
+  }
+}

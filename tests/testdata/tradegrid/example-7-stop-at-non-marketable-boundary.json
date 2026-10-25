@@ -1,0 +1,83 @@
+{
+  "name": "Example 7 - Stop at the Non-Marketable Boundary",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/matching-engine.md, Example 7 - Stop at the Non-Marketable Boundary (dollar prices converted to integer cents)",
+  "notes": "Starting-book orders are submitted first in their stated acceptance order; they must not execute.",
+  "steps": [
+    {
+      "alias": "B3",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 5
+    },
+    {
+      "alias": "B2",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10100,
+      "quantity": 4
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10200,
+      "quantity": 3
+    },
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10100,
+      "quantity": 10
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "S1",
+        "resting": "B1",
+        "quantity": 3,
+        "price": 10200,
+        "incoming_remaining": 7,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "S1",
+        "resting": "B2",
+        "quantity": 4,
+        "price": 10100,
+        "incoming_remaining": 3,
+        "resting_remaining": 0
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [
+          {
+            "alias": "B3",
+            "remaining": 5,
+            "price": 10000
+          }
+        ],
+        "asks": [
+          {
+            "alias": "S1",
+            "remaining": 3,
+            "price": 10100
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "S1": 3,
+      "B1": 0,
+      "B2": 0,
+      "B3": 5
+    }
+  }
+}

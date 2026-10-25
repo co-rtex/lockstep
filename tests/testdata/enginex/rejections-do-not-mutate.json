@@ -1,0 +1,85 @@
+{
+  "name": "rejections-do-not-mutate",
+  "source": "EngineX-specific case (not part of the TradeGrid public spec)",
+  "notes": "Invalid orders are rejected atomically and consume no sequence numbers",
+  "steps": [
+    {
+      "alias": "X1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 0,
+      "quantity": 1,
+      "expect_error": "INVALID_PRICE"
+    },
+    {
+      "alias": "X2",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 100,
+      "quantity": 0,
+      "expect_error": "INVALID_QUANTITY"
+    },
+    {
+      "alias": "X3",
+      "symbol": "TSLA",
+      "side": "BUY",
+      "price": 100,
+      "quantity": 1,
+      "expect_error": "INVALID_SYMBOL"
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 3
+    },
+    {
+      "alias": "X4",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 100000001,
+      "quantity": 1,
+      "expect_error": "INVALID_PRICE"
+    },
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 9900,
+      "quantity": 1
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "S1",
+        "resting": "B1",
+        "quantity": 1,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 2
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [
+          {
+            "alias": "B1",
+            "remaining": 2,
+            "price": 10000
+          }
+        ],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "order_ids": {
+      "B1": "ord-1",
+      "S1": "ord-2"
+    }
+  }
+}

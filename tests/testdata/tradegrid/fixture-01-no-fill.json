@@ -1,0 +1,40 @@
+{
+  "name": "fixture-01-no-fill",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/fixtures/01-no-fill.json: SELL 10 AAPL @ 19000 into an empty book rests",
+  "notes": "Only matching-engine fields are compared (order ids/sequences, execution ids/sequences, prices, quantities, remaining, book). Account, reservation, user and timestamp fields are TradeGrid exchange behavior outside EngineX scope.",
+  "steps": [
+    {
+      "alias": "ALICE_SELL",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 19000,
+      "quantity": 10
+    }
+  ],
+  "expect": {
+    "executions": [],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": [
+          {
+            "alias": "ALICE_SELL",
+            "remaining": 10,
+            "price": 19000
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "ALICE_SELL": 10
+    },
+    "order_ids": {
+      "ALICE_SELL": "ord-1"
+    },
+    "execution_ids": []
+  }
+}

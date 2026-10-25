@@ -1,0 +1,57 @@
+{
+  "name": "fixture-02-full-fill",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/fixtures/02-full-fill.json: BUY 10 @ 19100 fills against resting SELL 10 @ 19000 at the resting price",
+  "notes": "Only matching-engine fields are compared (order ids/sequences, execution ids/sequences, prices, quantities, remaining, book). Account, reservation, user and timestamp fields are TradeGrid exchange behavior outside EngineX scope.",
+  "steps": [
+    {
+      "alias": "ALICE_SELL",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 19000,
+      "quantity": 10
+    },
+    {
+      "alias": "BOB_BUY",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 19100,
+      "quantity": 10
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "BOB_BUY",
+        "resting": "ALICE_SELL",
+        "quantity": 10,
+        "price": 19000,
+        "incoming_remaining": 0,
+        "resting_remaining": 0
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": []
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "ALICE_SELL": 0,
+      "BOB_BUY": 0
+    },
+    "order_ids": {
+      "ALICE_SELL": "ord-1",
+      "BOB_BUY": "ord-2"
+    },
+    "execution_ids": [
+      {
+        "execution_id": "exe-1",
+        "execution_sequence": 1
+      }
+    ]
+  }
+}

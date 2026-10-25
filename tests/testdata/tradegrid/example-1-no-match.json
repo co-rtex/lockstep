@@ -1,0 +1,50 @@
+{
+  "name": "Example 1 - No Match",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/matching-engine.md, Example 1 - No Match (dollar prices converted to integer cents)",
+  "notes": "Starting-book orders are submitted first in their stated acceptance order; they must not execute.",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10100,
+      "quantity": 5
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10000,
+      "quantity": 4
+    }
+  ],
+  "expect": {
+    "executions": [],
+    "book": {
+      "AAPL": {
+        "bids": [
+          {
+            "alias": "B1",
+            "remaining": 4,
+            "price": 10000
+          }
+        ],
+        "asks": [
+          {
+            "alias": "S1",
+            "remaining": 5,
+            "price": 10100
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "B1": 4,
+      "S1": 5
+    }
+  }
+}

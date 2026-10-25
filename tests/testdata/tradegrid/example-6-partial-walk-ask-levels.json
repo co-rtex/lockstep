@@ -1,0 +1,69 @@
+{
+  "name": "Example 6 - Partial Walk Across Ask Levels",
+  "source": "co-rtex/tradegrid@bb2e124cf3cd18a3a0ac8087644d81a72fc51d60 docs/matching-engine.md, Example 6 - Partial Walk Across Ask Levels (dollar prices converted to integer cents)",
+  "notes": "Starting-book orders are submitted first in their stated acceptance order; they must not execute.",
+  "steps": [
+    {
+      "alias": "S1",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 10000,
+      "quantity": 8
+    },
+    {
+      "alias": "S2",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "price": 9900,
+      "quantity": 3
+    },
+    {
+      "alias": "B1",
+      "symbol": "AAPL",
+      "side": "BUY",
+      "price": 10100,
+      "quantity": 7
+    }
+  ],
+  "expect": {
+    "executions": [
+      {
+        "incoming": "B1",
+        "resting": "S2",
+        "quantity": 3,
+        "price": 9900,
+        "incoming_remaining": 4,
+        "resting_remaining": 0
+      },
+      {
+        "incoming": "B1",
+        "resting": "S1",
+        "quantity": 4,
+        "price": 10000,
+        "incoming_remaining": 0,
+        "resting_remaining": 4
+      }
+    ],
+    "book": {
+      "AAPL": {
+        "bids": [],
+        "asks": [
+          {
+            "alias": "S1",
+            "remaining": 4,
+            "price": 10000
+          }
+        ]
+      },
+      "MSFT": {
+        "bids": [],
+        "asks": []
+      }
+    },
+    "remaining": {
+      "B1": 0,
+      "S2": 0,
+      "S1": 4
+    }
+  }
+}
