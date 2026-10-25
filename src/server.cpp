@@ -191,10 +191,11 @@ public:
         }
         listener_.reset();
         // 2. Stop reading: no new requests enter the ingress queue.
+        // The acceptor (the only other user of sessions_) has exited, so take the list.
         std::vector<SessionPtr> sessions;
         {
             std::lock_guard<std::mutex> lock(sessions_mu_);
-            sessions = sessions_;
+            sessions.swap(sessions_);
         }
         for (const auto& s : sessions) {
             ::shutdown(s->fd(), SHUT_RD);
@@ -217,10 +218,6 @@ public:
             if (s->writer.joinable()) {
                 s->writer.join();
             }
-        }
-        {
-            std::lock_guard<std::mutex> lock(sessions_mu_);
-            sessions_.clear();
         }
         running_ = false;
     }
