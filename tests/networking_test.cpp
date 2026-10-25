@@ -759,8 +759,11 @@ TEST(Server, OutboundByteBudgetDisconnectsSnapshotHoarder) {
         std::this_thread::sleep_for(20ms);
     }
     EXPECT_GE(ts.server->stats().slow_consumer_disconnects, 1U);
+    // The rest of the hoarder's queued snapshot requests are discarded, not serialized, so
+    // other clients are served promptly even under sanitizer slowdowns.
     Client ok = ts.connect();
     EXPECT_TRUE(ok.request(order("still-ok", "BUY", 100, 1), kTimeout));
+    EXPECT_GT(ts.server->stats().discarded_requests, 0U);
 }
 
 TEST(Server, IdleDisconnectedSubscribersAreReleased) {

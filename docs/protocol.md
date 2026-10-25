@@ -166,6 +166,11 @@ because the request map is rebuilt from the journal (`RetryAfterDisconnectProduc
 | frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth") |
 | group commit batch | 512 commands (`--max-batch`) | larger bursts span several batches |
 
+Requests still queued from a connection the server has already closed (overflow, peer
+reset, shutdown) are discarded without processing. No reply could reach them, and the client
+must treat the outcome as unknown and retry. This keeps a client that floods requests and
+then gets disconnected from costing other clients sequencer time.
+
 The sequencer never blocks on a client. It only `try_push`es into outbound queues.
 Readers never block on the sequencer either: they `try_push` into the ingress queue and
 answer `SERVER_OVERLOADED` when it is full. One slow or stalled client can therefore not
@@ -173,7 +178,15 @@ delay order processing for anyone else. `SlowConsumerIsDisconnectedWithoutStalli
 checks this: a healthy subscriber and a trader keep running at full speed while a
 non-reading subscriber is cut off.
 
-## 8. Shutdown
+## 8. Internal errors
+
+An unexpected exception inside the sequencer (a defect, or memory exhaustion) does not crash
+the process. The server enters fail-stop: nothing still staged is flushed to the journal,
+pending and later commands are answered with `INTERNAL_ERROR` (outcome unknown, retry after
+restart), and subscriptions and snapshots are refused. Restarting recovers the last durable
+state from the journal.
+
+## 9. Shutdown
 
 On SIGINT/SIGTERM (`enginex serve`) or `Server::stop()`:
 
@@ -190,7 +203,7 @@ On SIGINT/SIGTERM (`enginex serve`) or `Server::stop()`:
 Restarting on the same journal restores the identical state, and `event_sequence` numbering
 continues (`ShutdownDrainsQueuedWorkAndRestartRecovers`).
 
-## 9. Command-line client
+## 10. Command-line client
 
 ```bash
 ./build/release/enginex serve --port 9000 --journal data/demo.exj --durability sync     # terminal A

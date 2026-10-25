@@ -44,6 +44,7 @@ struct Counters {
     std::atomic<std::uint64_t> subscribers{0};
     std::atomic<std::uint64_t> truncated_frames{0};
     std::atomic<std::uint64_t> internal_errors{0};
+    std::atomic<std::uint64_t> discarded_requests{0};
 };
 
 // One client connection. Shared by its reader thread, writer thread, queued requests and the
@@ -456,6 +457,13 @@ private:
                 continue;
             }
             for (Request& req : batch) {
+                if (req.session->out().closed()) {
+                    // The server already closed this connection (overflow, peer reset or
+                    // shutdown): no reply can reach it, so do not spend sequencer time on it.
+                    req.session->in_flight.fetch_sub(1);
+                    counters_.discarded_requests.fetch_add(1);
+                    continue;
+                }
                 try {
                     std::visit([&](auto& m) { handle(req.session, m); }, req.message);
                 } catch (const std::exception& e) {
@@ -488,10 +496,13 @@ private:
             counters_.internal_errors.fetch_add(1);
             std::fprintf(stderr, "enginex server: internal error during commit: %s\n", e.what());
             fatal_ = true;
-            for (Pending& p : pending_) {
-                p.session->in_flight.fetch_sub(1);
+            // Entries already delivered were accounted for; release only the rest (their
+            // clients get no reply and must retry, like any ambiguous outcome).
+            for (std::size_t i = delivered_; i < committing_.size(); ++i) {
+                committing_[i].session->in_flight.fetch_sub(1);
             }
-            pending_.clear();
+            committing_.clear();
+            delivered_ = 0;
         }
     }
 
@@ -672,35 +683,48 @@ private:
         if (pending_.empty()) {
             return;
         }
-        const ErrorCode err = backend_.flush();
+        // Move the batch out first: a failure part-way through can then never re-deliver
+        // entries, and safe_commit() knows exactly which entries were not yet delivered.
+        committing_.clear();
+        committing_.swap(pending_);
+        delivered_ = 0;
+        // After an internal error the in-memory state is not trusted: nothing staged is made
+        // durable, and every state-dependent reply becomes "outcome unknown".
+        const ErrorCode err = fatal_ ? ErrorCode::InternalError : backend_.flush();
         counters_.batches.fetch_add(1);
-        if (err != ErrorCode::None && !failure_logged_) {
+        if (err == ErrorCode::JournalIoError && !failure_logged_) {
             // Operator detail stays local; clients get a generic, stable error (see below).
             std::fprintf(stderr, "enginex server: journal failure, now fail-stop: %s\n",
                          backend_.failure().c_str());
             failure_logged_ = true;
         }
-        const auto size = static_cast<std::uint64_t>(pending_.size());
+        const auto size = static_cast<std::uint64_t>(committing_.size());
         if (size > counters_.max_batch_seen.load()) {
             counters_.max_batch_seen = size;
         }
-        for (Pending& p : pending_) {
+        while (delivered_ < committing_.size()) {
+            Pending& p = committing_[delivered_];
             Frame reply = p.reply;
             if (err != ErrorCode::None && p.state_dependent) {
                 reply = make_frame(error_message(
-                    ErrorCode::JournalIoError,
-                    "journal failure; outcome unknown, retry with the same request_id after "
-                    "restart",
+                    err,
+                    err == ErrorCode::JournalIoError
+                        ? "journal failure; outcome unknown, retry with the same request_id "
+                          "after restart"
+                        : "internal server error; outcome unknown, retry with the same "
+                          "request_id after restart",
                     p.request_id, p.command_type));
             }
             (void)p.session->enqueue(reply, counters_);
             p.session->in_flight.fetch_sub(1);
+            ++delivered_;
             if (err == ErrorCode::None && p.has_event) {
                 published_event_ = p.event_seq;
                 publish(p.event_seq, p.event);
             }
         }
-        pending_.clear();
+        committing_.clear();
+        delivered_ = 0;
         if (err != ErrorCode::None) {
             staged_event_ = published_event_;
         }
@@ -719,6 +743,8 @@ private:
     EventSeq staged_event_ = 0;
     bool failure_logged_ = false;
     bool fatal_ = false;
+    std::vector<Pending> committing_;  // batch being delivered by commit_pending()
+    std::size_t delivered_ = 0;        // entries of committing_ already delivered
 };
 
 Server::Server(ServerOptions options) : impl_(std::make_unique<Impl>(std::move(options))) {}
@@ -773,6 +799,7 @@ ServerStats Server::stats() const {
     s.subscribers = c.subscribers.load();
     s.truncated_frames = c.truncated_frames.load();
     s.internal_errors = c.internal_errors.load();
+    s.discarded_requests = c.discarded_requests.load();
     return s;
 }
 

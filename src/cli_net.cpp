@@ -40,7 +40,10 @@ Json stats_json(const net::ServerStats& s) {
                 {"batches", s.batches},
                 {"commands_staged", s.commands_staged},
                 {"events_published", s.events_published},
-                {"max_batch_seen", s.max_batch_seen}};
+                {"max_batch_seen", s.max_batch_seen},
+                {"truncated_frames", s.truncated_frames},
+                {"discarded_requests", s.discarded_requests},
+                {"internal_errors", s.internal_errors}};
 }
 
 }  // namespace

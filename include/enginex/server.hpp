@@ -64,9 +64,10 @@ struct ServerStats {
     std::uint64_t commands_staged = 0;
     std::uint64_t events_published = 0;
     std::uint64_t max_batch_seen = 0;
-    std::uint64_t subscribers = 0;       // currently registered subscribers
-    std::uint64_t truncated_frames = 0;  // acks/events sent without their execution list
-    std::uint64_t internal_errors = 0;   // unexpected exceptions caught in the sequencer
+    std::uint64_t subscribers = 0;         // currently registered subscribers
+    std::uint64_t truncated_frames = 0;    // acks/events sent without their execution list
+    std::uint64_t internal_errors = 0;     // unexpected exceptions caught in the sequencer
+    std::uint64_t discarded_requests = 0;  // queued requests of connections already closed
 };
 
 class Server {

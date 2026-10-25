@@ -176,7 +176,7 @@ it into fail-stop. The full contract, crash matrix and failure diagrams are in
 * **Handoff correctness:** snapshot and subscription registration happen in one sequencer step
   after the batch is flushed, so the first event is always `watermark + 1` (D15).
 * Shutdown order: acceptor → readers → sequencer drains the queue and syncs → writers flush →
-  join. See [protocol.md](protocol.md) §8.
+  join. See [protocol.md](protocol.md) §9.
 
 ## Benchmarks vs end-to-end latency
 
