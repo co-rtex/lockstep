@@ -8,8 +8,13 @@
 #include <sstream>
 #include <stdexcept>
 
+#include <unistd.h>
+
+#include <filesystem>
+
 #include "enginex/build_info.hpp"
 #include "enginex/canonical.hpp"
+#include "enginex/durable.hpp"
 
 namespace enginex::bench {
 
@@ -76,6 +81,114 @@ PassResult latency_pass(const Workload& w, std::vector<std::uint64_t>& samples) 
     return r;
 }
 
+std::string journal_path_for(const BenchOptions& o, std::size_t trial) {
+    std::filesystem::path dir = o.journal_dir.empty() ? std::filesystem::temp_directory_path()
+                                                      : std::filesystem::path(o.journal_dir);
+    return (dir /
+            ("enginex-bench-" + std::to_string(::getpid()) + "-" + std::to_string(trial) + ".exj"))
+        .string();
+}
+
+void remove_journal(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+// Durable acknowledgment latency: each measured command goes through DurableExchange::process,
+// which returns only after its record is written and synchronized (per --durability). The
+// prefill is group-committed with one sync and is not timed.
+PassResult durable_pass(const Workload& w, const BenchOptions& o, std::size_t trial,
+                        std::vector<std::uint64_t>& samples) {
+    const auto mode = journal::parse_sync_mode(o.durability);
+    if (!mode) {
+        throw std::invalid_argument("--durability must be sync, fsync or none");
+    }
+    const std::string path = journal_path_for(o, trial);
+    remove_journal(path);
+    PassResult r;
+    {
+        DurableOptions opts;
+        opts.journal_path = path;
+        opts.sync = *mode;
+        opts.state = w.config;
+        auto ex = DurableExchange::open(opts);
+        CommandResult out;
+        for (const auto& cmd : w.prefill) {
+            ex->stage(cmd, out);
+        }
+        if (ex->flush() != ErrorCode::None) {
+            throw std::runtime_error("journal flush failed during prefill: " +
+                                     ex->failure_reason());
+        }
+        samples.clear();
+        samples.reserve(w.measured.size());
+        const ExecSeq exec_before = ex->state().last_execution_sequence();
+        const std::uint64_t cpu0 = metrics::process_cpu_ns();
+        const auto t0 = metrics::Clock::now();
+        for (const auto& cmd : w.measured) {
+            const auto c0 = metrics::Clock::now();
+            ex->process(cmd, out);
+            const auto c1 = metrics::Clock::now();
+            samples.push_back(metrics::elapsed_ns(c0, c1));
+            if (out.error == ErrorCode::JournalIoError) {
+                throw std::runtime_error("journal I/O failure during benchmark: " +
+                                         ex->failure_reason());
+            }
+            r.accepted += out.accepted ? 1U : 0U;
+        }
+        r.elapsed_ns = metrics::elapsed_ns(t0, metrics::Clock::now());
+        r.cpu_ns = metrics::process_cpu_ns() - cpu0;
+        r.rejected = w.measured.size() - r.accepted;
+        r.state_hash = state_hash(ex->state());
+        r.executions = ex->state().last_execution_sequence() - exec_before;
+    }
+    remove_journal(path);
+    return r;
+}
+
+// Writes the whole workload (prefill + measured) to a journal once, without timing.
+std::string build_recovery_journal(const Workload& w, const BenchOptions& o) {
+    const std::string path = journal_path_for(o, 0);
+    remove_journal(path);
+    DurableOptions opts;
+    opts.journal_path = path;
+    opts.sync = journal::SyncMode::Full;
+    opts.state = w.config;
+    auto ex = DurableExchange::open(opts);
+    CommandResult out;
+    for (const auto* list : {&w.prefill, &w.measured}) {
+        for (const auto& cmd : *list) {
+            ex->stage(cmd, out);
+        }
+    }
+    if (ex->flush() != ErrorCode::None) {
+        throw std::runtime_error("cannot build recovery journal: " + ex->failure_reason());
+    }
+    return path;
+}
+
+// Recovery time: DurableExchange::open on an existing journal (read, CRC-validate, decode,
+// replay every record through the state machine). The journal was just written, so it is
+// read from the OS page cache (warm-cache recovery; cold-cache disk reads are not measured).
+PassResult recovery_pass(const Workload& w, const std::string& path, std::uint64_t& records) {
+    PassResult r;
+    DurableOptions opts;
+    opts.journal_path = path;
+    opts.state = w.config;
+    opts.create_if_missing = false;
+    RecoveryReport rep;
+    const std::uint64_t cpu0 = metrics::process_cpu_ns();
+    const auto t0 = metrics::Clock::now();
+    auto ex = DurableExchange::open(opts, &rep);
+    r.elapsed_ns = metrics::elapsed_ns(t0, metrics::Clock::now());
+    r.cpu_ns = metrics::process_cpu_ns() - cpu0;
+    records = rep.records_replayed;
+    r.accepted = rep.records_replayed;
+    r.executions = ex->state().last_execution_sequence();
+    r.state_hash = state_hash(ex->state());
+    return r;
+}
+
 template <typename T, typename Fn>
 T median_of(const std::vector<TrialResult>& trials, Fn fn) {
     std::vector<T> v;
@@ -116,6 +229,18 @@ std::string csv_escape(const std::string& s) {
 
 }  // namespace
 
+std::string measurement_label(const BenchOptions& options) {
+    switch (options.measurement) {
+        case Measurement::Core:
+            return "core_in_process";
+        case Measurement::Durable:
+            return "durable_ack_" + options.durability;
+        case Measurement::Recovery:
+            return "recovery_replay";
+    }
+    return "unknown";
+}
+
 BenchReport run_benchmark(const BenchOptions& options) {
     BenchReport report;
     report.options = options;
@@ -124,42 +249,70 @@ BenchReport run_benchmark(const BenchOptions& options) {
     report.description = w.description;
     report.stats = w.stats;
     report.timer = metrics::measure_timer();
-
-    for (std::size_t i = 0; i < options.warmup; ++i) {
-        (void)throughput_pass(w);
-    }
+    const double measured = static_cast<double>(w.measured.size());
 
     std::vector<std::uint64_t> samples;
     std::string expected_hash;
-    for (std::size_t i = 0; i < options.trials; ++i) {
-        const PassResult tp = throughput_pass(w);
+    std::string recovery_path;
+    if (options.measurement == Measurement::Recovery) {
+        recovery_path = build_recovery_journal(w, options);
+    }
+    for (std::size_t i = 0; i < options.warmup + options.trials; ++i) {
+        const bool warmup = i < options.warmup;
         TrialResult t;
-        t.trial = i + 1;
+        t.trial = i + 1 - options.warmup;
+        PassResult tp;
+        if (options.measurement == Measurement::Core) {
+            tp = throughput_pass(w);
+            t.throughput_per_s =
+                tp.elapsed_ns == 0 ? 0.0 : measured * 1e9 / static_cast<double>(tp.elapsed_ns);
+            if (options.latency && !warmup) {
+                const PassResult lp = latency_pass(w, samples);
+                if (lp.state_hash != tp.state_hash || lp.accepted != tp.accepted) {
+                    throw std::runtime_error(
+                        "nondeterminism: latency and throughput passes diverged");
+                }
+                t.latency = metrics::summarize(samples);
+            }
+            if (tp.accepted != w.stats.accepted || tp.executions != w.stats.executions) {
+                throw std::runtime_error("benchmark run diverged from generator shadow run");
+            }
+        } else if (options.measurement == Measurement::Durable) {
+            tp = durable_pass(w, options, i, samples);
+            t.throughput_per_s =
+                tp.elapsed_ns == 0 ? 0.0 : measured * 1e9 / static_cast<double>(tp.elapsed_ns);
+            t.latency = metrics::summarize(samples);
+            if (tp.accepted != w.stats.accepted) {
+                throw std::runtime_error("durable run diverged from generator shadow run");
+            }
+        } else {
+            std::uint64_t records = 0;
+            tp = recovery_pass(w, recovery_path, records);
+            t.throughput_per_s = tp.elapsed_ns == 0 ? 0.0
+                                                    : static_cast<double>(records) * 1e9 /
+                                                          static_cast<double>(tp.elapsed_ns);
+            t.latency.count = 1;
+            t.latency.mean_ns = static_cast<double>(tp.elapsed_ns);
+            t.latency.min_ns = t.latency.p50_ns = t.latency.p90_ns = t.latency.p95_ns =
+                t.latency.p99_ns = t.latency.p999_ns = t.latency.max_ns = tp.elapsed_ns;
+        }
         t.elapsed_ns = tp.elapsed_ns;
         t.cpu_ns = tp.cpu_ns;
-        t.throughput_per_s = tp.elapsed_ns == 0 ? 0.0
-                                                : static_cast<double>(w.measured.size()) * 1e9 /
-                                                      static_cast<double>(tp.elapsed_ns);
         t.accepted = tp.accepted;
         t.rejected = tp.rejected;
         t.executions = tp.executions;
         t.state_hash = tp.state_hash;
-        if (options.latency) {
-            const PassResult lp = latency_pass(w, samples);
-            if (lp.state_hash != tp.state_hash || lp.accepted != tp.accepted) {
-                throw std::runtime_error("nondeterminism: latency and throughput passes diverged");
-            }
-            t.latency = metrics::summarize(samples);
-        }
         if (expected_hash.empty()) {
             expected_hash = t.state_hash;
         } else if (expected_hash != t.state_hash) {
             throw std::runtime_error("nondeterminism: trials ended in different states");
         }
-        if (t.accepted != w.stats.accepted || t.executions != w.stats.executions) {
-            throw std::runtime_error("benchmark run diverged from generator shadow run");
+        if (!warmup) {
+            report.trials.push_back(std::move(t));
         }
-        report.trials.push_back(std::move(t));
+    }
+    if (!recovery_path.empty()) {
+        remove_journal(recovery_path);
     }
 
     const auto& tr = report.trials;
@@ -218,7 +371,9 @@ void append_csv(const BenchReport& report, const std::string& path) {
         std::string(build_info::kCompilerId) + " " + build_info::kCompilerVersion;
     auto row = [&](const std::string& trial, const TrialResult& t) {
         out << report.started_utc << ',' << build_info::kGitSha << ',' << csv_escape(compiler)
-            << ',' << build_info::kBuildType << ',' << build_info::kSystem << ",core_in_process,"
+            << ',' << build_info::kBuildType << ',' << build_info::kSystem << ','
+            << measurement_label(report.options) << ','
+
             << p.name << ',' << p.seed << ',' << p.orders << ',' << p.symbols << ','
             << report.stats.prefill_commands << ',' << trial << ',' << t.accepted << ','
             << t.rejected << ',' << t.executions << ',' << report.stats.commands_with_fills << ','
@@ -243,27 +398,48 @@ void print_report(const BenchReport& r, std::ostream& out) {
     const auto& p = r.options.scenario;
     const auto& s = r.stats;
     const auto& m = r.median;
+    const Measurement kind = r.options.measurement;
     auto pct = [](std::size_t a, std::size_t b) {
         return b == 0 ? 0.0 : 100.0 * static_cast<double>(a) / static_cast<double>(b);
     };
     out << std::fixed;
-    out << "scenario " << p.name << " (seed " << p.seed << ", " << p.orders
-        << " measured commands, " << r.options.trials << " trials + " << r.options.warmup
-        << " warm-up)\n"
+    out << "[" << measurement_label(r.options) << "] scenario " << p.name << " (seed " << p.seed
+        << ", " << p.orders << " measured commands, " << r.options.trials << " trials + "
+        << r.options.warmup << " warm-up)\n"
         << "  workload: " << r.description << "\n"
         << "  prefill " << s.prefill_commands << " cmds; open orders "
         << s.open_orders_after_prefill << " -> " << s.open_orders_at_end << "\n"
         << std::setprecision(1) << "  mix: " << pct(s.new_orders, s.measured_commands) << "% new, "
         << pct(s.cancels, s.measured_commands) << "% cancel; "
         << pct(s.commands_with_fills, s.measured_commands) << "% of commands filled; "
-        << s.executions << " executions; max levels swept " << s.max_levels_touched << "\n"
-        << std::setprecision(0) << "  throughput (untimed loop): median " << m.throughput_per_s
-        << " cmd/s [min " << r.throughput_min << ", max " << r.throughput_max << "]\n";
-    if (r.options.latency) {
-        out << std::setprecision(1) << "  latency per command (ns, median of trials): mean "
-            << m.latency.mean_ns << "  p50 " << m.latency.p50_ns << "  p90 " << m.latency.p90_ns
-            << "  p99 " << m.latency.p99_ns << "  p99.9 " << m.latency.p999_ns << "  max "
-            << m.latency.max_ns << "\n";
+        << s.executions << " executions; max levels swept " << s.max_levels_touched << "\n";
+    if (kind == Measurement::Core) {
+        out << std::setprecision(0) << "  throughput (untimed loop): median " << m.throughput_per_s
+            << " cmd/s [min " << r.throughput_min << ", max " << r.throughput_max << "]\n";
+        if (r.options.latency) {
+            out << std::setprecision(1) << "  latency per command (ns, median of trials): mean "
+                << m.latency.mean_ns << "  p50 " << m.latency.p50_ns << "  p90 " << m.latency.p90_ns
+                << "  p99 " << m.latency.p99_ns << "  p99.9 " << m.latency.p999_ns << "  max "
+                << m.latency.max_ns << "\n";
+        }
+    } else if (kind == Measurement::Durable) {
+        out << std::setprecision(0) << "  durable acks (" << r.options.durability << "): median "
+            << m.throughput_per_s << " cmd/s [min " << r.throughput_min << ", max "
+            << r.throughput_max << "], "
+            << (r.options.durability == "none" ? "write() per command, no sync"
+                                               : "one write() + sync per command")
+            << "\n"
+            << std::setprecision(1) << "  ack latency (us, median of trials): mean "
+            << m.latency.mean_ns / 1e3 << "  p50 " << static_cast<double>(m.latency.p50_ns) / 1e3
+            << "  p90 " << static_cast<double>(m.latency.p90_ns) / 1e3 << "  p99 "
+            << static_cast<double>(m.latency.p99_ns) / 1e3 << "  p99.9 "
+            << static_cast<double>(m.latency.p999_ns) / 1e3 << "  max "
+            << static_cast<double>(m.latency.max_ns) / 1e3 << "\n";
+    } else {
+        out << std::setprecision(1) << "  recovery of " << m.accepted << " records: median "
+            << static_cast<double>(m.elapsed_ns) / 1e6 << " ms (" << std::setprecision(0)
+            << m.throughput_per_s << " records/s) [min " << r.throughput_min << ", max "
+            << r.throughput_max << " records/s]\n";
     }
     out << std::setprecision(1) << "  timer: now() call ~" << r.timer.mean_call_ns
         << " ns, smallest observed tick " << r.timer.min_nonzero_tick_ns << " ns; peak RSS "

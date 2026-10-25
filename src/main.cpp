@@ -93,11 +93,22 @@ void print_usage() {
 Usage:
   enginex simulate  --input FILE|- [--output FILE|-] [--symbols AAPL,MSFT] [--compact]
   enginex benchmark --scenario NAME [--seed N] [--orders N] [--trials N] [--warmup N]
-                    [--symbols N] [--out FILE.csv] [--latency-samples]
+                    [--symbols N] [--out FILE.csv] [--no-latency]
+                    [--mode core|durable|recovery] [--durability sync|fsync|none]
+                    [--journal-dir DIR]
+  enginex run       --journal FILE [--durability sync|fsync|none] [--input FILE|-]
+                    [--output FILE|-] [--symbols AAPL,MSFT] [--refuse-tail]
+  enginex replay    --journal FILE [--verify] [--repair-tail] [--dump] [--symbols ...]
   enginex version
   enginex help
 
 Scenarios: no-cross, high-cross, same-price-burst, multi-level-sweep, cancel-heavy, mixed
+
+run:    recovers state from the journal, then processes JSON-lines commands; each response
+        line is written only after its journal record is synchronized (--durability sync).
+        Exit 0 ok, 1 journal corrupt, 4 journal I/O failure (fail-stop).
+replay: validates and replays a journal from an empty state and prints the state hash.
+        Exit 0 clean, 1 corrupt/unreadable, 3 incomplete tail (use --repair-tail).
 )";
 }
 
@@ -117,6 +128,12 @@ int main(int argc, char** argv) {
         }
         if (command == "benchmark") {
             return enginex::cli::cmd_benchmark(rest);
+        }
+        if (command == "run") {
+            return enginex::cli::cmd_run(rest);
+        }
+        if (command == "replay") {
+            return enginex::cli::cmd_replay(rest);
         }
         if (command == "version") {
             namespace bi = enginex::build_info;

@@ -18,11 +18,20 @@
 
 namespace enginex::bench {
 
+enum class Measurement : std::uint8_t {
+    Core,      // spec §12.1 (1): in-process ExchangeStateMachine::process
+    Durable,   // spec §12.1 (2): DurableExchange::process = validate+apply+write+sync+response
+    Recovery,  // spec §12.1 (4): open + validate + replay a journal of N records
+};
+
 struct BenchOptions {
     ScenarioParams scenario;
     std::size_t trials = 5;
     std::size_t warmup = 1;
     bool latency = true;
+    Measurement measurement = Measurement::Core;
+    std::string durability = "sync";  // Durable: sync | fsync | none
+    std::string journal_dir;          // Durable/Recovery: where temporary journals go
 };
 
 struct TrialResult {
@@ -51,6 +60,9 @@ struct BenchReport {
 };
 
 [[nodiscard]] BenchReport run_benchmark(const BenchOptions& options);
+
+// CSV `measurement` label, e.g. "core_in_process", "durable_ack_sync", "recovery_replay".
+[[nodiscard]] std::string measurement_label(const BenchOptions& options);
 
 // Appends one row per trial plus a "median" row; writes the header when the file is new/empty.
 void append_csv(const BenchReport& report, const std::string& path);

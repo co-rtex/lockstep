@@ -119,6 +119,38 @@ TEST(Harness, RunsAndWritesCsv) {
     std::filesystem::remove(path);
 }
 
+TEST(Harness, DurableAndRecoveryModes) {
+    BenchOptions opt;
+    opt.scenario = ScenarioParams{"mixed", 5, 300, 2};
+    opt.trials = 2;
+    opt.warmup = 0;
+    opt.measurement = Measurement::Durable;
+    opt.durability = "none";
+    const BenchReport durable = run_benchmark(opt);
+    EXPECT_EQ(measurement_label(opt), "durable_ack_none");
+    EXPECT_EQ(durable.median.latency.count, 300U);
+    EXPECT_GT(durable.median.throughput_per_s, 0.0);
+
+    opt.measurement = Measurement::Core;
+    const BenchReport core = run_benchmark(opt);
+    // Same workload, same final state, whether in memory or journaled.
+    EXPECT_EQ(durable.median.state_hash, core.median.state_hash);
+
+    opt.measurement = Measurement::Recovery;
+    const BenchReport recovery = run_benchmark(opt);
+    EXPECT_EQ(measurement_label(opt), "recovery_replay");
+    EXPECT_EQ(recovery.median.state_hash, core.median.state_hash);
+    // Every accepted, non-duplicate command is one journal record.
+    const Workload w = make_workload(opt.scenario);
+    ExchangeStateMachine state(w.config);
+    for (const auto* list : {&w.prefill, &w.measured}) {
+        for (const auto& c : *list) {
+            (void)state.process(c);
+        }
+    }
+    EXPECT_EQ(recovery.median.accepted, state.last_command_sequence());
+}
+
 TEST(Metrics, NearestRankPercentiles) {
     std::vector<std::uint64_t> v;
     for (std::uint64_t i = 100; i >= 1; --i) {

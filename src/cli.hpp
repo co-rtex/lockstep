@@ -41,5 +41,7 @@ std::vector<std::string> split_list(const std::string& text);
 
 int cmd_simulate(const std::vector<std::string>& args);
 int cmd_benchmark(const std::vector<std::string>& args);
+int cmd_run(const std::vector<std::string>& args);
+int cmd_replay(const std::vector<std::string>& args);
 
 }  // namespace enginex::cli

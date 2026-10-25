@@ -75,13 +75,13 @@ enginex_set_warnings(enginex_journal)
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
 target_include_directories(enginex_bench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
-target_link_libraries(enginex_bench_lib PUBLIC enginex_core)
+target_link_libraries(enginex_bench_lib PUBLIC enginex_core enginex_journal)
 enginex_set_warnings(enginex_bench_lib)
 
 # ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
-add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp)
+add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp)
 target_link_libraries(enginex PRIVATE enginex_codec enginex_bench_lib)
 enginex_set_warnings(enginex)
 
