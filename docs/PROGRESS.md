@@ -5,26 +5,28 @@ observed), **in progress**, **blocked** (external reason), **outstanding**.
 
 ## Current state
 
-* R1 (core): **done**. The one item that cannot be finished locally is a GitHub Actions run,
-  which needs a push and is not authorized. The equivalent Linux jobs pass in Docker.
-* R2 (durable): **done** (tag `r2`). Verified on macOS, and on Linux in Docker under GCC,
-  ASan/UBSan and TSan.
-* R3 (networked): **done** (tag `r3`). Verified on macOS, and on Linux in Docker under GCC,
-  ASan/UBSan, TSan and release.
+* R1 (core): **done** (tag `r1`). GitHub Actions passes on the pushed commit `418d247`:
+  all 5 jobs green ([run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221)).
+* R2 (durable): **done** (tag `r2`). Verified on macOS, on Linux in Docker, and in GitHub CI
+  (GCC, ASan/UBSan, TSan, release; the release job's smoke step runs the R2 journal
+  restart/replay and kill -9/corruption harness).
+* R3 (networked): **done** (tag `r3`). Verified on macOS, on Linux in Docker, and in GitHub CI
+  (the release job's smoke step runs serve + client + graceful shutdown + replay; TSan job
+  375/375 with no reports).
 * Final end-to-end pass: see "Final verification" below.
 
 ## R1 acceptance (spec §16)
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| R1.1 | Clean-clone C++20 build on documented compiler and Linux CI | done locally; GitHub-hosted run blocked | macOS Apple clang 17 debug+release from a fresh clone; Linux GCC 13 + Clang 18 via `scripts/linux_check.sh`; the CI workflow itself executed with `act` (`scripts/ci_local.sh`): all 5 jobs succeed. A GitHub-hosted run needs a push, which is not authorized |
+| R1.1 | Clean-clone C++20 build on documented compiler and Linux CI | done | GitHub Actions run 40243146221 on `418d247` (fresh checkout on `ubuntu-24.04`, GCC 13.3.0 and Clang 18.1.3): all 5 jobs succeed, 375/375 in each test job. Also: macOS Apple clang 17 debug+release from a fresh clone; `scripts/linux_check.sh`; `act` (`scripts/ci_local.sh`) |
 | R1.2 | ≥2 symbols, both sides independent | done | `Matching.SymbolsAreIndependent`, fixture `symbol-isolation`, property tests over AAPL+MSFT |
 | R1.3 | Price-time matching, partial/full fills, resting execution price | done | `matching_test.cpp`, 10 TradeGrid fixtures, 100-seed reference-model property tests |
 | R1.4 | Cancels update queues, totals, index without invalid references | done | `cancel_test.cpp`, `check_invariants()` after every command, Linux ASan/UBSan clean |
 | R1.5 | Invalid requests rejected atomically | done | `test::reject()` byte-compares canonical state around every rejection |
 | R1.6 | Canonical state deterministic across runs | done | `canonical_test.cpp`, `PropertyTest.SameSeedIsDeterministic`, identical benchmark hashes across trials |
 | R1.7 | Unit, invariant and Go common-fixture tests pass | done | 298/298 ctest; `tools/compare_go_fixtures.py`: 3 pass, 2 skipped (out of scope) |
-| R1.8 | ASan/UBSan job passes | done (Linux container + CI job under `act`) | Clang 18 ASan+UBSan+LSan 298/298. macOS ASan runtime hangs even on an empty program (toolchain issue, documented in verification.md) |
+| R1.8 | ASan/UBSan job passes | done | GitHub job "Linux Clang Debug + ASan/UBSan": 375/375, no sanitizer reports in the log; also the Linux container. (At the R1 tag: Clang 18 ASan+UBSan+LSan 298/298.) macOS ASan runtime hangs even on an empty program (toolchain issue, documented in verification.md) |
 | R1.9 | `simulate` works on demo with expected output | done | golden test + `scripts/check.sh smoke` |
 | R1.10 | Benchmark outputs real results and methodology | done | `benchmarks/results/r1-core-macos-m3*.csv`, `docs/benchmarks.md` |
 | R1.11 | README distinguishes completed from planned | done | README status table |
@@ -53,7 +55,7 @@ scripts/linux_check.sh release      -> GCC 13.3.0 Release: 298/298, smoke OK
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| R2.1 | All R1 acceptance remains true | done | full suite incl. R1 tests: 348/348 macOS and Linux (GCC, ASan/UBSan, TSan, release) |
+| R2.1 | All R1 acceptance remains true | done | full suite incl. R1 tests: 375/375 on macOS, in Docker and in every GitHub CI test job (348/348 at the `r2` tag) |
 | R2.2 | Versioned append-only journal, framing, checksum | done | EXJ1 header, length+CRC32C frames, pinned little-endian payload v1 (`journal_test.cpp`), `docs/journaling.md` §1 |
 | R2.3 | Sync-mode ack gated on durable append and application | done | `DurableExchange::flush` releases only after write+sync; `IoFailure.*` (mutation-checked); `enginex run` writes each reply after `process()` returns |
 | R2.4 | Restart/replay reconstructs canonical state and stable ids | done | `Recovery.Restart*`, `RepeatedRestartsStayIdentical`, `replay --verify` hash = `simulate` hash in smoke tests |
@@ -80,12 +82,12 @@ python3 tools/fault_injection.py --enginex build/debug/enginex --rounds 8 --seed
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| R3.1 | All R2 acceptance remains true | done | full suite 375/375 on macOS and in each Linux job; fault harness passes |
+| R3.1 | All R2 acceptance remains true | done | full suite 375/375 on macOS, in each Linux container job and in each GitHub CI test job; fault harness passes (locally and in the CI smoke step) |
 | R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline` |
 | R3.3 | Concurrent clients cannot mutate state out of sequence | done | single sequencer thread (only state owner); `Server.ConcurrentClientsGetUniqueContiguousSequences` (replay in ack-sequence order = server state) |
 | R3.4 | Snapshot/feed handoff has correct watermark/gap policy | done | D15; `Server.SubscribeHandoffUnderLoadHasNoGaps` (contiguous `W+1…`, mirrored book = snapshot), `Server.ReconnectGetsFreshSnapshotAndContinues`; docs/protocol.md §5 |
 | R3.5 | Bounded queues and slow-consumer disconnect/recovery tested | done | `Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer`, `Server.OutboundByteBudgetDisconnectsSnapshotHoarder`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce`, `Server.ConnectionLimitIsEnforced` |
-| R3.6 | Cleanup and restart produce correct state; no observed races | done | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`; network SIGKILL scenario in `tools/fault_injection.py`; TSan (Linux Clang 18) 375/375 with no reports |
+| R3.6 | Cleanup and restart produce correct state; no observed races | done | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`; network SIGKILL scenario in `tools/fault_injection.py`; TSan (Linux Clang 18) 375/375 with no reports, in Docker and in GitHub CI |
 | R3.7 | End-to-end latency reported separately from pure matching | done | docs/benchmarks.md measurements 1–4, CSV labels `core_in_process`, `durable_ack_*`, `recovery_replay`, `network_rtt_*` |
 
 R3 commands run (most recent):
@@ -122,17 +124,50 @@ scripts/ci_local.sh (act 0.2.89)                     -> gcc-debug, clang-asan-ub
 git status                                          -> clean
 ```
 
+## GitHub CI (2026-10-25)
+
+The user pushed `main` (`418d247`) and tags `r1`, `r2`, `r3` to the private repository
+`co-rtex/enginex`. The `ci` workflow ran on the push:
+
+```text
+gh run watch 40243146221 -R co-rtex/enginex --exit-status       -> exit 0, conclusion success
+  Linux GCC Debug (unit, invariant, fixture, journal, network)   success  375/375
+  Linux Clang Debug + ASan/UBSan                                 success  375/375
+  Linux Clang + ThreadSanitizer                                  success  375/375
+  Linux Release, CLI smoke test and seeded benchmark             success  375/375, smoke OK,
+                                                                          ci-benchmark artifact
+  clang-format check                                             success  format OK
+grep -c 'WARNING: ThreadSanitizer|ERROR: AddressSanitizer|runtime error:|LeakSanitizer' <run log>
+                                                                 -> 0
+```
+
+The only annotation is GitHub's deprecation notice that `actions/checkout@v4.2.2` targets
+Node.js 20. It is a warning, not a failure. The workflow was not changed after the green run.
+
+Re-verification after the CI run (macOS, working tree = `418d247` + these doc edits):
+
+```text
+CLANG_FORMAT=... scripts/check.sh all          -> debug 375/375, release 375/375, smoke OK, format OK
+python3 -I tools/compare_go_fixtures.py --fixtures <fresh clone of co-rtex/tradegrid@bb2e124>/docs/fixtures
+                                               -> 3 passed, 0 failed, 2 skipped (out of scope)
+every test name cited in PROGRESS/verification/journaling/protocol/README
+  checked against `enginex_tests --gtest_list_tests`  -> all exist
+```
+
+Acceptance audit: every R1–R3 row above was rechecked against the evidence it cites. All
+25 required criteria (R1.1–R1.11, R2.1–R2.7, R3.1–R3.7) are met. R4 (optional) is not
+started.
+
+Documentation-only commits made after `418d247` (recording this result) have not been pushed,
+so GitHub has no run for them. They change no code, build file or workflow.
+
 ## Blocked / external
 
-* GitHub-hosted Actions: needs a push to a remote, which these instructions do not authorize.
-  Everything short of that is done: `scripts/ci_local.sh` runs the exact workflow with `act`,
-  and all 5 jobs succeed. To finish: push, then confirm the run is green before adding a CI
-  badge or claim.
+* None for R1–R3.
 * macOS sanitizers: Apple clang 17 ASan/TSan runtimes fail on macOS 26.6.2 for any program.
-  Linux evidence is used instead.
+  GitHub CI and Linux container evidence are used instead.
 
 ## Next tasks
 
-1. Final pass: fresh-clone build of every preset, full suites, README command check, Linux
-   matrix on the final commit, clean `git status`.
-2. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
+1. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
+2. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.

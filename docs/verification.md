@@ -86,22 +86,26 @@ Deliberate mutations, each reverted after the check:
 | Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 375/375, no race reports |
 | Linux (Docker) | GCC 13.3.0 | Release + CLI smoke (R1–R3) + seeded benchmark | pass |
 | `.github/workflows/ci.yml` executed with `act` 0.2.89 (Docker, `catthehacker/ubuntu:act-24.04`, arm64) | GCC 13 / Clang 18 as installed by the workflow | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded**, 375/375 tests in each test job (`scripts/ci_local.sh`) |
-| GitHub-hosted Actions runners | — | same workflow | **not run**: the repository has not been pushed (no push authorization). Expected to match the `act` result, but not claimed until it runs. |
+| GitHub-hosted Actions (`ubuntu-24.04` image 20261021.618, x86_64), [run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221) on commit `418d247` | GCC 13.3.0 / Clang 18.1.3 | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded** (2026-10-25, 3 min 27 s); 375/375 tests in each of the 4 test jobs; no ASan/UBSan/LSan/TSan reports in any log; `smoke OK`; `format OK`; `ci-benchmark` artifact uploaded |
 
 `scripts/linux_check.sh [gcc-debug|clang-asan|clang-tsan|release]` reproduces the Linux rows,
 and `scripts/ci_local.sh` runs the actual workflow file with `act`. Running it under `act`
 exposed a workflow bug (it relied on CMake being preinstalled on the runner image), which is
 now fixed: every job installs its own toolchain.
 The container is the same Ubuntu release as the CI runners, but it is not the GitHub runner
-itself.
+itself; the GitHub-hosted row above is the authoritative CI result. The seeded benchmark in
+the release job has no performance thresholds: shared runners are noisy, so its numbers are a
+smoke check only and are not quoted anywhere as results. The only annotation on the run is
+GitHub's notice that `actions/checkout@v4.2.2` targets the deprecated Node.js 20 runtime
+(the runner executes it on Node.js 24); it is a warning, not a failure.
 
 ## Sanitizers on macOS: known toolchain problem
 
 On this macOS 26.6.2 machine with Apple clang 17.0.0, sanitizer runtimes fail **even for an
 empty `int main(){}`**: `-fsanitize=address` hangs at startup and `-fsanitize=thread`
 segfaults (exit 139); `-fsanitize=undefined` works. This is an OS/toolchain incompatibility,
-not an EngineX defect, so ASan/TSan evidence comes from the Linux container and, once pushed,
-from CI. The `asan`/`tsan` CMake presets still exist for machines where the runtimes work.
+not an EngineX defect, so ASan/TSan evidence comes from GitHub CI and the Linux container.
+The `asan`/`tsan` CMake presets still exist for machines where the runtimes work.
 
 ## Known limitations (R3)
 

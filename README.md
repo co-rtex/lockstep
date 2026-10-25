@@ -25,8 +25,8 @@ not a replacement for it and not real trading software.
 | Property tests against an independent reference model; TradeGrid common fixtures | R1 | **Implemented, passing** |
 | `enginex simulate` CLI with demo and golden output | R1 | **Implemented, tested** |
 | Seeded benchmark suite (6 workloads), CSV output, recorded results | R1 | **Implemented, measured** |
-| Linux builds: GCC, Clang ASan/UBSan, TSan | R1 | **Passing in a local Ubuntu 24.04 container** |
-| GitHub Actions CI workflow | R1 | All 5 jobs pass when the workflow is executed locally with `act` (`scripts/ci_local.sh`); **not yet run on GitHub** (repository not pushed) |
+| Linux builds: GCC, Clang ASan/UBSan, TSan | R1 | **Passing on GitHub-hosted Ubuntu 24.04 runners** and in a local Ubuntu 24.04 container |
+| GitHub Actions CI workflow | R1 | **Passing on GitHub**: all 5 jobs green on commit `418d247` ([run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221)); also reproducible locally with `act` (`scripts/ci_local.sh`) |
 | Versioned append-only journal (EXJ1, CRC32C framing), ack after `fdatasync`/`F_FULLFSYNC` | R2 | **Implemented, tested** |
 | Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
 | Idempotent retries across restarts | R2 | **Implemented, tested** |
@@ -181,8 +181,8 @@ Not guaranteed: survival of real power loss beyond what the OS and device promis
 defeats it.
 
 Not provided: authentication or encryption on the TCP port (the server refuses non-loopback
-binds unless `--allow-remote`), lossless replay of missed events, real money, brokerage or market connectivity, accounts, risk, margin,
-authentication, market/IOC/FOK/stop orders, amendments, self-trade prevention, regulatory
+binds unless `--allow-remote`), lossless replay of missed events, real money, brokerage or
+market connectivity, accounts, risk, margin, authentication, market/IOC/FOK/stop orders, amendments, self-trade prevention, regulatory
 features, or production readiness of any kind. This is a learning project.
 
 ## Benchmarks
