@@ -73,6 +73,43 @@ PY
     test "$(grep -c recovery_replay "$tmp/r2.csv")" -eq 2
 }
 
+smoke_r3() {
+    local bin=$1 tmp=$2
+    echo "--- smoke (R3): serve + client submit/subscribe + graceful shutdown + replay"
+    "$bin" serve --port 0 --journal "$tmp/net.exj" > "$tmp/serve.out" 2> "$tmp/serve.err" &
+    local spid=$!
+    for _ in $(seq 1 100); do grep -q listening "$tmp/serve.out" 2>/dev/null && break; sleep 0.05; done
+    local port
+    port=$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["port"])' "$tmp/serve.out")
+    "$bin" client subscribe --port "$port" --count 7 --quiet > "$tmp/sub.out" &
+    local subpid=$!
+    sleep 0.3
+    "$bin" client submit --port "$port" --input examples/demo_orders.jsonl > "$tmp/submit.out" || true
+    wait "$subpid"
+    kill -TERM "$spid"
+    wait "$spid"
+    "$bin" replay --journal "$tmp/net.exj" --verify > "$tmp/net_replay.json"
+    python3 - "$tmp" <<'PY'
+import json, sys
+tmp = sys.argv[1]
+sim = json.load(open(f"{tmp}/demo.json"))["final_state"]["state_hash"]
+sub = [json.loads(l) for l in open(f"{tmp}/sub.out")]
+summary = sub[-1]
+assert summary["type"] == "subscriber_summary" and summary["events"] == 7 and summary["gaps"] == 0, summary
+replies = [json.loads(l) for l in open(f"{tmp}/submit.out")]
+acks = [r for r in replies if r.get("type") == "ack"]
+assert len(acks) == 8 and sum(1 for r in acks if r["duplicate"]) == 1, len(acks)
+bye = json.loads(open(f"{tmp}/serve.out").read().strip().splitlines()[-1])
+assert bye["type"] == "shutdown" and bye["state_hash"] == sim, bye
+rep = json.load(open(f"{tmp}/net_replay.json"))
+assert rep["status"] == "ok" and rep["state_hash"] == sim, rep
+PY
+    echo "--- smoke (R3): network benchmark mode"
+    "$bin" benchmark --mode network --durability none --clients 2 --orders 2000 --trials 1 \
+        --journal-dir "$tmp" --out "$tmp/r3.csv" >/dev/null
+    test "$(grep -c network_rtt_none_c2 "$tmp/r3.csv")" -eq 2
+}
+
 format_check() {
     local cf=${CLANG_FORMAT:-clang-format}
     if ! command -v "$cf" >/dev/null 2>&1; then

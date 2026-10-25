@@ -36,6 +36,7 @@ Json stats_json(const net::ServerStats& s) {
                 {"protocol_errors", s.protocol_errors},
                 {"overloaded", s.overloaded},
                 {"slow_consumer_disconnects", s.slow_consumer_disconnects},
+                {"send_timeout_disconnects", s.send_timeout_disconnects},
                 {"batches", s.batches},
                 {"commands_staged", s.commands_staged},
                 {"events_published", s.events_published},

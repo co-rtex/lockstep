@@ -51,11 +51,12 @@ struct ServerOptions {
 
 struct ServerStats {
     std::uint64_t connections_accepted = 0;
-    std::uint64_t connections_rejected = 0;  // over max_clients
-    std::uint64_t requests = 0;              // frames parsed into requests
-    std::uint64_t protocol_errors = 0;       // framing errors (connection closed)
-    std::uint64_t overloaded = 0;            // SERVER_OVERLOADED due to a full ingress queue
-    std::uint64_t slow_consumer_disconnects = 0;
+    std::uint64_t connections_rejected = 0;       // over max_clients
+    std::uint64_t requests = 0;                   // frames parsed into requests
+    std::uint64_t protocol_errors = 0;            // framing errors (connection closed)
+    std::uint64_t overloaded = 0;                 // SERVER_OVERLOADED due to a full ingress queue
+    std::uint64_t slow_consumer_disconnects = 0;  // outbound queue overflow (frames or bytes)
+    std::uint64_t send_timeout_disconnects = 0;   // socket stayed unwritable past send_timeout
     std::uint64_t batches = 0;
     std::uint64_t commands_staged = 0;
     std::uint64_t events_published = 0;

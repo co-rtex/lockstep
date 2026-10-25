@@ -35,6 +35,7 @@ struct Counters {
     std::atomic<std::uint64_t> protocol_errors{0};
     std::atomic<std::uint64_t> overloaded{0};
     std::atomic<std::uint64_t> slow_consumer_disconnects{0};
+    std::atomic<std::uint64_t> send_timeout_disconnects{0};
     std::atomic<std::uint64_t> batches{0};
     std::atomic<std::uint64_t> commands_staged{0};
     std::atomic<std::uint64_t> events_published{0};
@@ -382,8 +383,12 @@ private:
             items.clear();
             (void)s->out().pop_batch(items, 64, kPollTick);
             for (const auto& f : items) {
-                if (healthy && send_all(s->fd(), *f) != 0) {
-                    healthy = false;  // reset, or send timeout expired (slow reader)
+                if (healthy) {
+                    const int err = send_all(s->fd(), *f);
+                    if (err == EAGAIN || err == EWOULDBLOCK) {
+                        counters_.send_timeout_disconnects.fetch_add(1);  // slow reader
+                    }
+                    healthy = err == 0;
                 }
                 s->sent(f->size());
             }
@@ -629,6 +634,7 @@ ServerStats Server::stats() const {
     s.protocol_errors = c.protocol_errors.load();
     s.overloaded = c.overloaded.load();
     s.slow_consumer_disconnects = c.slow_consumer_disconnects.load();
+    s.send_timeout_disconnects = c.send_timeout_disconnects.load();
     s.batches = c.batches.load();
     s.commands_staged = c.commands_staged.load();
     s.events_published = c.events_published.load();
