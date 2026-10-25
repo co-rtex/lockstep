@@ -27,7 +27,10 @@ not a replacement for it and not real trading software.
 | Seeded benchmark suite (6 workloads), CSV output, recorded results | R1 | **Implemented, measured** |
 | Linux builds: GCC, Clang ASan/UBSan, TSan | R1 | **Passing in a local Ubuntu 24.04 container** |
 | GitHub Actions CI | R1 | Workflow written; **not yet run** (repository not pushed) |
-| Append-only journal, replay, crash/corruption recovery | R2 | Planned |
+| Versioned append-only journal (EXJ1, CRC32C framing), ack after `fdatasync`/`F_FULLFSYNC` | R2 | **Implemented, tested** |
+| Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
+| Idempotent retries across restarts | R2 | **Implemented, tested** |
+| `enginex run` / `enginex replay --verify`, durable-ack and recovery benchmarks | R2 | **Implemented, measured** |
 | TCP order entry, sequenced market-data feed, backpressure, resync | R3 | Planned |
 
 ## Architecture
@@ -63,7 +66,7 @@ of each operation, and why cancels can never hold a dangling iterator.
 
 ```bash
 cmake --preset debug && cmake --build --preset debug
-ctest --preset debug                         # 298 tests
+ctest --preset debug                         # all unit, property, fixture, journal and CLI tests
 
 cmake --preset release && cmake --build --preset release
 ./build/release/enginex simulate --input examples/demo_orders.jsonl --output demo-results.json
@@ -71,6 +74,16 @@ cmake --preset release && cmake --build --preset release
 
 scripts/check.sh all            # debug+release build/test, CLI smoke tests, format check
 scripts/linux_check.sh          # Linux GCC / ASan+UBSan / TSan / release jobs in Docker
+```
+
+Durable session (R2):
+
+```bash
+mkdir -p data
+./build/release/enginex run --journal data/demo.exj --durability sync --input examples/demo_orders.jsonl
+./build/release/enginex run --journal data/demo.exj --input /dev/null      # restart: replays 7 records
+./build/release/enginex replay --journal data/demo.exj --verify            # prints the same state hash
+python3 tools/fault_injection.py --enginex build/release/enginex          # kill -9 + corruption checks
 ```
 
 The spec's equivalent raw commands also work:
@@ -116,6 +129,22 @@ Guaranteed by tests in this repository (R1):
   different body is `DUPLICATE_REQUEST_ID_CONFLICT`.
 * Identical input produces an identical canonical state and SHA-256 hash.
 
+Guaranteed by tests (R2), under the assumptions in [docs/journaling.md](docs/journaling.md) §5:
+
+* With `--durability sync`, an `accepted` reply is sent only after its journal record has
+  been fully written and synchronized. A process killed at any point keeps every acknowledged
+  command, and the tests check this at four crash boundaries plus random SIGKILLs.
+* Restart replays the journal and reproduces the exact canonical state, ids and sequences.
+* An incomplete trailing record (never acknowledged) is preserved to a sidecar file and
+  truncated. Any corruption of a complete record refuses startup without modifying the file.
+* A write or sync failure stops the process from accepting work (`JOURNAL_IO_ERROR`, outcome
+  unknown). After restart, retrying with the same `request_id` yields exactly one logical
+  mutation. This is idempotent retry, not exactly-once delivery.
+
+Not guaranteed: survival of real power loss beyond what the OS and device promise for
+`fdatasync`/`F_FULLFSYNC`. That has not been tested, and storage that lies about flushes
+defeats it.
+
 Not provided: real money, brokerage or market connectivity, accounts, risk, margin,
 authentication, market/IOC/FOK/stop orders, amendments, self-trade prevention, regulatory
 features, or production readiness of any kind. This is a learning project.
@@ -140,8 +169,16 @@ in [docs/benchmarks.md](docs/benchmarks.md). Raw CSVs are in
 | mixed | 8.19M | 125 | 333 | 417 |
 | mixed (1M commands) | 4.56M | 166 | 666 | 834 |
 
-These are not order-entry or end-to-end latencies. Durable and network latencies are
-measured separately in later releases.
+These are not order-entry or end-to-end latencies. Durable acknowledgment latency is measured
+separately and is dominated by the flush. Same machine, `mixed`, seed 42, one sync per
+command, medians of 5 trials:
+
+| measurement | acks/s | p50 | p99 |
+|---|---:|---:|---:|
+| durable ack, `--durability sync` (`F_FULLFSYNC`) | 315 | 3.12 ms | 5.89 ms |
+| durable ack, `--durability fsync` (not drive-cache safe on macOS) | 39,979 | 20.0 µs | 51.6 µs |
+| durable ack, `--durability none` (`write()` only) | 407,955 | 2.0 µs | 8.9 µs |
+| recovery: replay 97,998 records (warm cache) | 3.6M records/s | 27.2 ms total | |
 
 ## Testing strategy
 

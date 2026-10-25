@@ -24,13 +24,35 @@ Commands and results are logged in [PROGRESS.md](PROGRESS.md).
 | CLI demo (§15) | `Simulate.DemoMatchesCommittedExpectedOutput` (golden file) + `scripts/check.sh smoke` |
 | Benchmark workloads are what they claim (§12.2) | `bench_test.cpp` (`Scenarios.*`), plus harness hash/count self-checks during every benchmark run |
 
+## Test matrix (R2)
+
+| Spec requirement (§11.4) | Covered by |
+|---|---|
+| Empty journal startup, valid header creation | `Recovery.CreatesJournalWithSyncedHeader`, `JournalFormat.HeaderBytes` |
+| Two sessions: append, restart, compare canonical hash and next sequence ids | `Recovery.RestartReconstructsCanonicalStateAndContinuesSequences`, `scripts/check.sh` R2 smoke |
+| Idempotent retry of accepted new order and cancel; changed body rejected | `Idempotency.RetriesAfterRestartReturnOriginalResults` |
+| Crash before durable record / after record before reply / after reply | `CrashBoundary.*` (4 boundaries, fork + `_exit` at injected points); `tools/fault_injection.py` (real SIGKILL, in-flight requests) |
+| Truncated payload and truncated header at EOF; safe tail handling | `TailRepair.*` (5 cut sizes), `Recovery.TruncatedFrameHeaderIsRepaired`, `IncompleteFileHeaderIsRewritten`, `ZeroFilledTailIsRepaired`, `JournalScan.TruncationAtEveryByteOfTheLastRecordIsAnIncompleteTail` |
+| Full-record checksum mismatch; bad version/magic; sequence gap or regression | `JournalScan.ChecksumMismatchIsHardErrorAnywhere`, `BadHeaderIsCorrupt`, `SequenceGapAndRegressionAreCorrupt`, `InvalidLengthsAreCorrupt`, `Recovery.CorruptedRecordRefusesStartupAndLeavesFileUntouched` |
+| Simulated failed write, failed fsync, disk full; fail-stop | `IoFailure.*` (EIO, ENOSPC with a partial write, error after a full record, failed sync), `Batch.FailedGroupFlushFailStops` |
+| No state/log change after a rejected command | `Recovery.RejectedAndDuplicateCommandsAreNotJournaled` |
+| Restart repeatedly; state and fills identical | `Recovery.RepeatedRestartsStayIdentical` |
+| Replay divergence (catalog mismatch, duplicated request id, impossible cancel) | `Recovery.ReplayDivergenceIsCorrupt` |
+| Single writer; symlink refusal | `Recovery.SecondWriterIsLockedOut`, `Recovery.SymlinkedJournalPathIsRefused` |
+| Payload encoding pinned; malformed payloads rejected | `JournalFormat.*`, `Crc32c.KnownAnswers` (RFC 3720 vectors) |
+| All sync modes persist across restart | `SyncModes.AllModesPersistAcrossRestart` |
+| Journaled CLI end to end | ctest `cli_fault_injection_kill9`, `scripts/check.sh smoke` (run → restart → replay hash = simulate hash) |
+
 ### Do the tests catch bugs?
 
-Two deliberate mutations were checked:
+Deliberate mutations, each reverted after the check:
 
 * Executing at the incoming limit price instead of the resting price failed all 100
   property-test seeds.
 * Reversing the expected FIFO order in fixture `example-4` failed that fixture.
+* Disabling the journal CRC comparison failed `ChecksumMismatchIsHardErrorAnywhere` and
+  `CorruptedRecordRefusesStartupAndLeavesFileUntouched`.
+* Releasing an accepted reply even when the flush failed failed all 5 `IoFailure` tests.
 
 ## Where suites have run
 
@@ -55,6 +77,14 @@ empty `int main(){}`**: `-fsanitize=address` hangs at startup and `-fsanitize=th
 segfaults (exit 139); `-fsanitize=undefined` works. This is an OS/toolchain incompatibility,
 not an EngineX defect, so ASan/TSan evidence comes from the Linux container and, once pushed,
 from CI. The `asan`/`tsan` CMake presets still exist for machines where the runtimes work.
+
+## Known limitations (R2)
+
+* Power loss and kernel crashes are not tested. Durability under them rests on the documented
+  `fdatasync` / `F_FULLFSYNC` guarantees and honest storage (see
+  [journaling.md](journaling.md) §5).
+* There are no checkpoints, compaction or rotation; recovery replays the whole journal.
+* Recovery-time numbers are warm page cache only.
 
 ## Known limitations (R1)
 

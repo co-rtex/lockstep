@@ -9,9 +9,9 @@ The spec (§12.1) separates four kinds of measurement. They are never combined i
 | # | Measurement | What is timed | Where |
 |---|---|---|---|
 | 1 | **Core in-process** (`core_in_process`) | `ExchangeStateMachine::process`: validation, sequencing, idempotency map, matching | this page, R1 |
-| 2 | **Durable accepted-command** | validation + journal write + `fsync`/`F_FULLFSYNC` + apply + response | R2 section |
+| 2 | **Durable accepted-command** (`durable_ack_<mode>`) | validation + apply + journal write + `fdatasync`/`F_FULLFSYNC`/`fsync` + response | R2 section |
 | 3 | **Network round trip** | TCP client → framing → queue → sequencer (+journal) → ack | R3 section |
-| 4 | **Recovery time** | open + validate + replay N journal records | R2 section |
+| 4 | **Recovery time** (`recovery_replay`) | open + validate + replay N journal records (warm cache) | R2 section |
 
 ## Machine and build (R1 run)
 
@@ -108,6 +108,68 @@ workload, two trial states and the latency samples.
 
 These are in-process core numbers only. They contain no I/O, JSON parsing, journaling or
 networking, and they must not be presented as order-entry or end-to-end latency.
+
+## R2 results: durable acknowledgment latency (measurement 2)
+
+Same machine, Release build at commit `ceefa9f037e4`, scenario `mixed`, seed 42, medians of 5
+trials after 1 warm-up. Raw rows: [`benchmarks/results/r2-durable-macos-m3.csv`](../benchmarks/results/r2-durable-macos-m3.csv).
+
+Each sample times one `DurableExchange::process` call: validation, apply in memory, encode,
+`write()` of the record, the synchronization for that mode, and building the response. Every
+command waits for its own sync, with no group commit. There is no JSON and no networking. The
+journal lives in a private temp directory on the internal SSD (APFS).
+
+| `--durability` | flush used | commands | acks/s (median) | min – max | p50 | p90 | p99 | p99.9 | max |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `sync` | `fcntl(F_FULLFSYNC)` | 1,000 | 315 | 262 – 331 | 3.12 ms | 4.14 ms | 5.89 ms | 10.85 ms | 22.85 ms |
+| `fsync` | `fsync()` (no drive-cache flush on macOS) | 20,000 | 39,979 | 31.4k – 49.5k | 20.0 µs | 26.3 µs | 51.6 µs | 816 µs | 7.91 ms |
+| `none` | none (`write()` only) | 20,000 | 407,955 | 368k – 464k | 2.0 µs | 2.4 µs | 8.9 µs | 13.8 µs | 2.24 ms |
+
+Commands:
+
+```bash
+./build/release/enginex benchmark --scenario mixed --mode durable --durability sync  --orders 1000  --trials 5 --out r2.csv
+./build/release/enginex benchmark --scenario mixed --mode durable --durability fsync --orders 20000 --trials 5 --out r2.csv
+./build/release/enginex benchmark --scenario mixed --mode durable --durability none  --orders 20000 --trials 5 --out r2.csv
+```
+
+Interpretation:
+
+* **The flush dominates.** A real durable acknowledgment (`sync`, which flushes the drive
+  cache with `F_FULLFSYNC`) costs about 3 ms here. That is roughly 25 000× the in-process
+  matching cost (~125 ns p50 in R1). The matching engine is irrelevant to durable latency at
+  one sync per command.
+* `fsync` is ~150× faster than `sync` on macOS precisely because it does *not* flush the
+  drive's write cache, so it is not power-loss safe on this platform. The two must not be
+  conflated. EngineX defaults to `sync`.
+* `none` measures the user-space cost plus one `write()` syscall (~2 µs). It survives a
+  process crash, not an OS crash.
+* Group commit (one sync per batch of commands) is how real systems amortize this. The R3
+  server does it; its numbers are reported in the R3 section, not here.
+
+## R2 results: recovery time (measurement 4)
+
+Time for `DurableExchange::open` on an existing journal: read the file, validate the header
+and every record's length/CRC/sequence, decode, and replay through the state machine, ending
+in the same canonical state hash as the in-memory run. The journal is written just before the
+trials, so it is read from the **OS page cache** (warm cache). Cold-start disk reads are not
+measured.
+
+| journal | records | median | records/s (median) | min – max records/s |
+|---|---:|---:|---:|---:|
+| `mixed`, 100k measured commands | 97,998 | 27.2 ms | 3,603,403 | 3.18M – 4.06M |
+| `mixed`, 1M measured commands | 971,156 | 538.6 ms | 1,803,279 | 0.69M – 1.98M |
+
+```bash
+./build/release/enginex benchmark --scenario mixed --mode recovery --orders 100000  --trials 5 --out r2.csv
+./build/release/enginex benchmark --scenario mixed --mode recovery --orders 1000000 --trials 5 --out r2.csv
+```
+
+The record count is lower than prefill + measured commands because rejected commands and
+duplicate retries are not journaled. Per-record replay cost rises at 1M for the same reason
+as the R1 1M run: the idempotency map, execution history and order index outgrow the caches.
+One 1M trial took about 1.4 s (the 0.69M records/s minimum), so recovery time has run-to-run
+outliers on this machine.
 
 ## Reproducing
 

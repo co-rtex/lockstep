@@ -23,7 +23,8 @@ does not replace, the TradeGrid Go exchange (see
 |---|---|---|
 | `enginex_core` | types, `OrderBook`, `MatchingEngine`, `ExchangeStateMachine`, canonical state, SHA-256 | C++ standard library only |
 | `enginex_codec` | JSON ⇄ typed commands/results, `simulate` | core, nlohmann/json 3.11.3 |
-| `enginex_bench_lib` | workload generators, measurement harness, metrics | core |
+| `enginex_journal` | CRC32C, EXJ1 journal codec/scan, `JournalFile` (flock, fsync modes, fault injection), `DurableExchange` | core |
+| `enginex_bench_lib` | workload generators, measurement harness (core, durable, recovery), metrics | core, journal |
 | `enginex` | CLI (`simulate`, `benchmark`, …) | all of the above |
 | `enginex_tests` | GoogleTest suite | all libraries |
 
@@ -126,6 +127,16 @@ JSON numbers must be exact integers (no `100.0`, no strings or booleans), and va
 int64 are rejected at the boundary. The state machine applies the range rules, and checked
 arithmetic guards level aggregates: with the configured open-order cap, the largest possible
 aggregate (1e6 × cap) is far below 2^63.
+
+## Durability layer (R2)
+
+`DurableExchange` wraps the state machine and does not change its rules. Every accepted
+command is `prepare`d, `commit`ted in memory, encoded into a batch buffer, written, and
+synchronized; only then is its reply released. Startup replays the journal through the very
+same `prepare`/`commit` path, verifying that every record is accepted at exactly its logged
+sequence. Replay therefore cannot silently diverge from live processing. Any I/O failure puts
+it into fail-stop. The full contract, crash matrix and failure diagrams are in
+[journaling.md](journaling.md).
 
 ## Benchmarks vs end-to-end latency
 
