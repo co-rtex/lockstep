@@ -94,11 +94,19 @@ Usage:
   enginex simulate  --input FILE|- [--output FILE|-] [--symbols AAPL,MSFT] [--compact]
   enginex benchmark --scenario NAME [--seed N] [--orders N] [--trials N] [--warmup N]
                     [--symbols N] [--out FILE.csv] [--no-latency]
-                    [--mode core|durable|recovery] [--durability sync|fsync|none]
-                    [--journal-dir DIR]
+                    [--mode core|durable|recovery|network] [--clients N]
+                    [--durability sync|fsync|none|memory] [--journal-dir DIR]
   enginex run       --journal FILE [--durability sync|fsync|none] [--input FILE|-]
                     [--output FILE|-] [--symbols AAPL,MSFT] [--refuse-tail]
   enginex replay    --journal FILE [--verify] [--repair-tail] [--dump] [--symbols ...]
+  enginex serve     [--host 127.0.0.1] [--port 9000] [--journal FILE]
+                    [--durability sync|fsync|none] [--symbols ...] [--max-clients 64]
+                    [--ingress-capacity 4096] [--outbound-capacity 1024] [--max-batch 512]
+                    [--send-timeout-ms 2000] [--refuse-tail]
+  enginex client submit    [--host H] [--port P] [--input FILE|-] [--timeout-ms MS]
+  enginex client subscribe [--host H] [--port P] [--count N] [--duration-ms MS]
+                           [--slow-ms MS] [--quiet]
+  enginex client snapshot  [--host H] [--port P] [--symbol S] [--depth D]
   enginex version
   enginex help
 
@@ -107,6 +115,9 @@ Scenarios: no-cross, high-cross, same-price-burst, multi-level-sweep, cancel-hea
 run:    recovers state from the journal, then processes JSON-lines commands; each response
         line is written only after its journal record is synchronized (--durability sync).
         Exit 0 ok, 1 journal corrupt, 4 journal I/O failure (fail-stop).
+serve:  TCP server (length-prefixed JSON, protocol_version 1). Prints a "listening" line;
+        SIGINT/SIGTERM drains queued requests, syncs the journal and exits.
+        Without --journal it runs in memory (no durability).
 replay: validates and replays a journal from an empty state and prints the state hash.
         Exit 0 clean, 1 corrupt/unreadable, 3 incomplete tail (use --repair-tail).
 )";
@@ -134,6 +145,12 @@ int main(int argc, char** argv) {
         }
         if (command == "replay") {
             return enginex::cli::cmd_replay(rest);
+        }
+        if (command == "serve") {
+            return enginex::cli::cmd_serve(rest);
+        }
+        if (command == "client") {
+            return enginex::cli::cmd_client(rest);
         }
         if (command == "version") {
             namespace bi = enginex::build_info;

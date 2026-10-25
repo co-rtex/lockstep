@@ -1,6 +1,7 @@
 #include "harness.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -8,6 +9,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 
 #include <unistd.h>
 
@@ -15,7 +17,10 @@
 
 #include "enginex/build_info.hpp"
 #include "enginex/canonical.hpp"
+#include "enginex/client.hpp"
 #include "enginex/durable.hpp"
+#include "enginex/rng.hpp"
+#include "enginex/server.hpp"
 
 namespace enginex::bench {
 
@@ -204,6 +209,125 @@ PassResult recovery_pass(const Workload& w, const std::string& path, std::uint64
     return r;
 }
 
+// Network round trip: N client threads, each with one outstanding request at a time
+// (closed loop), against an in-process server on 127.0.0.1. A sample is the time from
+// sending a request frame to receiving its correlated reply (ack or error), so it includes
+// client framing/JSON, loopback TCP, server parsing, ingress queueing, sequencing, group
+// commit (journal write + sync), the reply queue and the writer thread.
+// Each client sends 70% limit orders around mid (some crossing) and 30% cancels of its own
+// still-open orders, learned from its acks.
+PassResult network_pass(const BenchOptions& o, const std::string& journal_path,
+                        std::vector<std::uint64_t>& samples, double& mean_batch) {
+    net::ServerOptions so;
+    so.host = "127.0.0.1";
+    so.port = 0;
+    so.state.symbols = benchmark_symbols(o.scenario.symbols);
+    so.max_clients = std::max<std::size_t>(64, o.clients + 1);
+    if (o.durability != "memory") {
+        const auto mode = journal::parse_sync_mode(o.durability);
+        if (!mode) {
+            throw std::invalid_argument("--durability must be sync, fsync, none or memory");
+        }
+        DurableOptions d;
+        d.journal_path = journal_path;
+        d.sync = *mode;
+        d.state = so.state;
+        so.journal = d;
+    }
+    net::Server server(so);
+    server.start();
+
+    const std::size_t clients = std::max<std::size_t>(1, o.clients);
+    const std::size_t per_client = std::max<std::size_t>(1, o.scenario.orders / clients);
+    std::vector<std::vector<std::uint64_t>> per_thread(clients);
+    std::atomic<std::size_t> ready{0};
+    std::atomic<bool> go{false};
+    std::atomic<std::uint64_t> accepted{0};
+    std::atomic<bool> failed{false};
+    std::vector<std::thread> threads;
+    for (std::size_t c = 0; c < clients; ++c) {
+        threads.emplace_back([&, c] {
+            try {
+                net::Client client = net::Client::connect("127.0.0.1", server.port());
+                Rng rng(o.scenario.seed * 1000 + c);
+                std::vector<std::string> open;
+                auto& lat = per_thread[c];
+                lat.reserve(per_client);
+                ready.fetch_add(1);
+                while (!go.load()) {
+                    std::this_thread::yield();
+                }
+                for (std::size_t i = 0; i < per_client; ++i) {
+                    codec::Json msg;
+                    const std::string rid = "n" + std::to_string(c) + "-" + std::to_string(i);
+                    if (!open.empty() && rng.chance(30)) {
+                        const auto idx = static_cast<std::size_t>(rng.below(open.size()));
+                        msg = {{"type", "cancel"}, {"request_id", rid}, {"order_id", open[idx]}};
+                        open[idx] = open.back();
+                        open.pop_back();
+                    } else {
+                        const bool buy = rng.chance(50);
+                        const std::int64_t off = buy ? rng.between(-10, 4) : rng.between(-4, 10);
+                        msg = {{"type", "new_limit"},
+                               {"request_id", rid},
+                               {"symbol", so.state.symbols[rng.below(so.state.symbols.size())]},
+                               {"side", buy ? "BUY" : "SELL"},
+                               {"price", 10'000 + off},
+                               {"quantity", rng.between(1, 100)}};
+                    }
+                    const auto t0 = metrics::Clock::now();
+                    auto reply = client.request(std::move(msg), std::chrono::seconds(30));
+                    const auto t1 = metrics::Clock::now();
+                    if (!reply) {
+                        failed = true;
+                        return;
+                    }
+                    lat.push_back(metrics::elapsed_ns(t0, t1));
+                    if (reply->value("type", "") == "ack") {
+                        accepted.fetch_add(1);
+                        if (reply->value("command_type", "") == "new_limit" &&
+                            reply->value("remaining", 0) > 0) {
+                            open.push_back((*reply)["order_id"].get<std::string>());
+                        }
+                    }
+                }
+            } catch (...) {
+                failed = true;
+                ready.fetch_add(1);
+            }
+        });
+    }
+    while (ready.load() < clients) {
+        std::this_thread::yield();
+    }
+    const std::uint64_t cpu0 = metrics::process_cpu_ns();
+    const auto t0 = metrics::Clock::now();
+    go = true;
+    for (auto& t : threads) {
+        t.join();
+    }
+    PassResult r;
+    r.elapsed_ns = metrics::elapsed_ns(t0, metrics::Clock::now());
+    r.cpu_ns = metrics::process_cpu_ns() - cpu0;
+    server.stop();
+    if (failed.load()) {
+        throw std::runtime_error("network benchmark client failed (timeout or disconnect)");
+    }
+    samples.clear();
+    for (const auto& v : per_thread) {
+        samples.insert(samples.end(), v.begin(), v.end());
+    }
+    r.accepted = accepted.load();
+    r.rejected = samples.size() - r.accepted;
+    r.executions = server.state().last_execution_sequence();
+    r.state_hash = state_hash(server.state());
+    const auto st = server.stats();
+    mean_batch = st.batches == 0
+                     ? 0.0
+                     : static_cast<double>(st.commands_staged) / static_cast<double>(st.batches);
+    return r;
+}
+
 template <typename T, typename Fn>
 T median_of(const std::vector<TrialResult>& trials, Fn fn) {
     std::vector<T> v;
@@ -252,6 +376,8 @@ std::string measurement_label(const BenchOptions& options) {
             return "durable_ack_" + options.durability;
         case Measurement::Recovery:
             return "recovery_replay";
+        case Measurement::Network:
+            return "network_rtt_" + options.durability + "_c" + std::to_string(options.clients);
     }
     return "unknown";
 }
@@ -260,11 +386,15 @@ BenchReport run_benchmark(const BenchOptions& options) {
     BenchReport report;
     report.options = options;
     report.started_utc = utc_now();
-    const Workload w = make_workload(options.scenario);
-    report.description = w.description;
+    const bool network = options.measurement == Measurement::Network;
+    const Workload w = network ? Workload{} : make_workload(options.scenario);
+    report.description = network ? "closed-loop TCP clients: 70% limit orders around mid, 30% "
+                                   "cancels of own open orders"
+                                 : w.description;
     report.stats = w.stats;
     report.timer = metrics::measure_timer();
-    const double measured = static_cast<double>(w.measured.size());
+    const double measured =
+        static_cast<double>(network ? options.scenario.orders : w.measured.size());
 
     std::vector<std::uint64_t> samples;
     std::string expected_hash;
@@ -305,6 +435,12 @@ BenchReport run_benchmark(const BenchOptions& options) {
             if (tp.accepted != w.stats.accepted) {
                 throw std::runtime_error("durable run diverged from generator shadow run");
             }
+        } else if (network) {
+            tp = network_pass(options, dir->journal(i + 1), samples, t.mean_batch);
+            t.throughput_per_s = tp.elapsed_ns == 0 ? 0.0
+                                                    : static_cast<double>(samples.size()) * 1e9 /
+                                                          static_cast<double>(tp.elapsed_ns);
+            t.latency = metrics::summarize(samples);
         } else {
             std::uint64_t records = 0;
             tp = recovery_pass(w, recovery_path, records);
@@ -322,7 +458,9 @@ BenchReport run_benchmark(const BenchOptions& options) {
         t.rejected = tp.rejected;
         t.executions = tp.executions;
         t.state_hash = tp.state_hash;
-        if (expected_hash.empty()) {
+        // Interleaving across TCP connections is not deterministic, so network trials end in
+        // different (individually valid) states; every other mode must be identical.
+        if (network || expected_hash.empty()) {
             expected_hash = t.state_hash;
         } else if (expected_hash != t.state_hash) {
             throw std::runtime_error("nondeterminism: trials ended in different states");
@@ -346,6 +484,7 @@ BenchReport run_benchmark(const BenchOptions& options) {
     m.latency.p999_ns =
         median_of<std::uint64_t>(tr, [](const auto& t) { return t.latency.p999_ns; });
     m.latency.max_ns = median_of<std::uint64_t>(tr, [](const auto& t) { return t.latency.max_ns; });
+    m.mean_batch = median_of<double>(tr, [](const auto& t) { return t.mean_batch; });
     if (!tr.empty()) {
         m.accepted = tr.front().accepted;
         m.rejected = tr.front().rejected;
@@ -366,7 +505,7 @@ std::string csv_header() {
            "symbols,prefill,trial,accepted,rejected,executions,commands_with_fills,cancels,"
            "elapsed_ns,throughput_cmd_per_s,cpu_ns,lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p95_ns,"
            "lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,timer_tick_ns,peak_rss_kib,"
-           "state_hash_prefix";
+           "state_hash_prefix,clients,mean_batch";
 }
 
 void append_csv(const BenchReport& report, const std::string& path) {
@@ -399,7 +538,9 @@ void append_csv(const BenchReport& report, const std::string& path) {
             << t.latency.p90_ns << ',' << t.latency.p95_ns << ',' << t.latency.p99_ns << ','
             << t.latency.p999_ns << ',' << t.latency.max_ns << ',' << std::setprecision(1)
             << report.timer.mean_call_ns << ',' << report.timer.min_nonzero_tick_ns << ','
-            << report.peak_rss_kib << ',' << t.state_hash.substr(0, 16) << "\n";
+            << report.peak_rss_kib << ',' << t.state_hash.substr(0, 16) << ','
+            << (report.options.measurement == Measurement::Network ? report.options.clients : 0)
+            << ',' << std::setprecision(2) << t.mean_batch << "\n";
     };
     for (const auto& t : report.trials) {
         row(std::to_string(t.trial), t);
@@ -419,9 +560,10 @@ void print_report(const BenchReport& r, std::ostream& out) {
         return b == 0 ? 0.0 : 100.0 * static_cast<double>(a) / static_cast<double>(b);
     };
     out << std::fixed;
-    out << "[" << measurement_label(r.options) << "] scenario " << p.name << " (seed " << p.seed
-        << ", " << p.orders << " measured commands, " << r.options.trials << " trials + "
-        << r.options.warmup << " warm-up)\n"
+    out << "[" << measurement_label(r.options) << "] "
+        << (kind == Measurement::Network ? std::string("network") : "scenario " + p.name)
+        << " (seed " << p.seed << ", " << p.orders << " measured commands, " << r.options.trials
+        << " trials + " << r.options.warmup << " warm-up)\n"
         << "  workload: " << r.description << "\n"
         << "  prefill " << s.prefill_commands << " cmds; open orders "
         << s.open_orders_after_prefill << " -> " << s.open_orders_at_end << "\n"
@@ -451,6 +593,17 @@ void print_report(const BenchReport& r, std::ostream& out) {
             << static_cast<double>(m.latency.p99_ns) / 1e3 << "  p99.9 "
             << static_cast<double>(m.latency.p999_ns) / 1e3 << "  max "
             << static_cast<double>(m.latency.max_ns) / 1e3 << "\n";
+    } else if (kind == Measurement::Network) {
+        out << std::setprecision(0) << "  " << r.options.clients << " client(s), durability "
+            << r.options.durability << ": median " << m.throughput_per_s << " req/s [min "
+            << r.throughput_min << ", max " << r.throughput_max << "]; mean group-commit batch "
+            << std::setprecision(2) << m.mean_batch << " commands\n"
+            << std::setprecision(1) << "  round trip (us, median of trials): mean "
+            << m.latency.mean_ns / 1e3 << "  p50 " << static_cast<double>(m.latency.p50_ns) / 1e3
+            << "  p90 " << static_cast<double>(m.latency.p90_ns) / 1e3 << "  p99 "
+            << static_cast<double>(m.latency.p99_ns) / 1e3 << "  p99.9 "
+            << static_cast<double>(m.latency.p999_ns) / 1e3 << "  max "
+            << static_cast<double>(m.latency.max_ns) / 1e3 << "\n";
     } else {
         out << std::setprecision(1) << "  recovery of " << m.accepted << " records: median "
             << static_cast<double>(m.elapsed_ns) / 1e6 << " ms (" << std::setprecision(0)
@@ -460,7 +613,9 @@ void print_report(const BenchReport& r, std::ostream& out) {
     out << std::setprecision(1) << "  timer: now() call ~" << r.timer.mean_call_ns
         << " ns, smallest observed tick " << r.timer.min_nonzero_tick_ns << " ns; peak RSS "
         << r.peak_rss_kib / 1024 << " MiB\n"
-        << "  state hash " << m.state_hash.substr(0, 16) << " (identical across all trials)\n";
+        << "  state hash " << m.state_hash.substr(0, 16)
+        << (kind == Measurement::Network ? " (first trial; network interleaving varies)\n"
+                                         : " (identical across all trials)\n");
 }
 
 }  // namespace enginex::bench

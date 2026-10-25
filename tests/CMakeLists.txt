@@ -10,8 +10,9 @@ add_executable(enginex_tests
     fixtures_test.cpp
     bench_test.cpp
     journal_test.cpp
-    recovery_test.cpp)
-target_link_libraries(enginex_tests PRIVATE enginex_codec enginex_bench_lib
+    recovery_test.cpp
+    networking_test.cpp)
+target_link_libraries(enginex_tests PRIVATE enginex_net enginex_bench_lib
     GTest::gtest_main)
 target_include_directories(enginex_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(enginex_tests PRIVATE
@@ -20,7 +21,7 @@ target_compile_definitions(enginex_tests PRIVATE
 enginex_set_warnings(enginex_tests)
 
 include(GoogleTest)
-gtest_discover_tests(enginex_tests DISCOVERY_TIMEOUT 60)
+gtest_discover_tests(enginex_tests DISCOVERY_TIMEOUT 60 PROPERTIES TIMEOUT 120)
 
 # End-to-end CLI checks that need a real process: kill -9 during journaled sessions, and
 # corruption/tail handling through `enginex replay` (tools/fault_injection.py).

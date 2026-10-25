@@ -96,3 +96,49 @@ The journal file is held with `flock(LOCK_EX | LOCK_NB)` for the lifetime of the
 second server on the same journal fails fast instead of interleaving appends. `replay
 --verify` reads without taking the writer lock and never modifies the file unless
 `--repair-tail` is given, which needs the exclusive lock.
+
+## D13. R3 threading model: thread per connection around one sequencer
+Each client connection gets a reader thread (decode frames, parse JSON, enqueue) and a writer
+thread (drain that connection's bounded outbound queue). One acceptor thread enforces the
+client cap. One sequencer thread is the only code that touches the state machine; it drains the
+bounded ingress queue in batches. With the documented 64-client cap that is at most ~130
+threads. This is simpler to reason about and test than an event loop, and the throughput
+bottleneck is the single sequencer and the flush anyway. *Alternative:* a
+`poll`/`epoll` reactor would scale to more connections; it is not needed for this scope.
+
+## D14. Group commit with per-command events
+The sequencer stages every command of a batch (validate, apply, encode), then makes **one**
+journal write and **one** sync, then releases replies and market-data events in sequence
+order. Replies are never sent before the sync that covers them, so `sync`-mode acknowledgment
+semantics are unchanged from R2. Each command's `book_update` (changed price levels, best
+bid/ask) is computed right after that command is applied, because levels after the batch would
+mix in later commands. It is buffered with the reply. If the batch's flush fails, every
+accepted reply in it becomes `JOURNAL_IO_ERROR` (outcome unknown), no events are published,
+and the server is fail-stop.
+
+## D15. Snapshot/subscribe handoff through the sequencer
+`snapshot_request` and `subscribe` travel through the same ingress queue as commands. When the
+sequencer reaches one, it first flushes and publishes the current batch, so the visible state is
+exactly the durable, published state. It then serializes the snapshot with `event_watermark =
+last published event_sequence`, enqueues it to that connection, and (for subscribe) registers
+the subscriber, all on the sequencer thread. No event can fall between the snapshot and the
+subscription, so the subscriber's first `book_update` is exactly `watermark + 1`. Every
+accepted, non-duplicate command produces exactly one event, so `event_sequence ==
+command_sequence`. The numbering is therefore stable across restarts. Subscribers receive all
+symbols; there are no symbol filters.
+
+## D16. Bounded queues and slow consumers
+Ingress queue (default 4096 requests): when it is full, the reader immediately answers
+`SERVER_OVERLOADED`. The request was not sequenced and is safe to retry. Per-connection
+outbound queue (default 1024 frames): the sequencer only ever `try_push`es, so it never blocks.
+When a push fails, the connection is marked overflowed, one final control frame is queued in
+a reserved slot (`resync_required` for subscribers, `SERVER_OVERLOADED` error otherwise), the
+subscription is dropped, and the writer closes the socket after flushing what is queued or
+after its send timeout (default 2 s). Queued events are not discarded before the notice, so a
+subscriber never sees a silent gap: the feed simply ends with an explicit resync
+notice. The client must reconnect and subscribe again for a fresh snapshot.
+
+## D17. Asymmetric frame limits
+Client→server frames are limited to 32 KiB (spec §10.1) and the declared length is checked
+before any allocation. Server→client frames may be up to 16 MiB, because a full-depth
+subscribe snapshot of a large book can exceed 32 KiB. Clients enforce that limit.

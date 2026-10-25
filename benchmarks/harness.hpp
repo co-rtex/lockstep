@@ -22,6 +22,7 @@ enum class Measurement : std::uint8_t {
     Core,      // spec §12.1 (1): in-process ExchangeStateMachine::process
     Durable,   // spec §12.1 (2): DurableExchange::process = validate+apply+write+sync+response
     Recovery,  // spec §12.1 (4): open + validate + replay a journal of N records
+    Network,   // spec §12.1 (3): TCP client round trip through the server (closed loop)
 };
 
 struct BenchOptions {
@@ -30,8 +31,9 @@ struct BenchOptions {
     std::size_t warmup = 1;
     bool latency = true;
     Measurement measurement = Measurement::Core;
-    std::string durability = "sync";  // Durable: sync | fsync | none
-    std::string journal_dir;          // Durable/Recovery: where temporary journals go
+    std::string durability = "sync";  // Durable/Network: sync | fsync | none (| memory for Network)
+    std::string journal_dir;          // Durable/Recovery/Network: where temporary journals go
+    std::size_t clients = 1;          // Network: concurrent closed-loop client connections
 };
 
 struct TrialResult {
@@ -44,6 +46,7 @@ struct TrialResult {
     std::uint64_t rejected = 0;
     std::uint64_t executions = 0;
     std::string state_hash;
+    double mean_batch = 0;  // Network: commands per group commit (server batches)
 };
 
 struct BenchReport {

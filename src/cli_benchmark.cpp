@@ -8,7 +8,7 @@ namespace enginex::cli {
 int cmd_benchmark(const std::vector<std::string>& argv) {
     const Args args(argv,
                     {"scenario", "seed", "orders", "trials", "warmup", "symbols", "out", "mode",
-                     "durability", "journal-dir"},
+                     "durability", "journal-dir", "clients"},
                     {"no-latency"});
     bench::BenchOptions options;
     options.scenario.name = args.get_or("scenario", "mixed");
@@ -28,13 +28,21 @@ int cmd_benchmark(const std::vector<std::string>& argv) {
         options.measurement = bench::Measurement::Durable;
     } else if (mode == "recovery") {
         options.measurement = bench::Measurement::Recovery;
+    } else if (mode == "network") {
+        options.measurement = bench::Measurement::Network;
     } else {
-        throw UsageError("--mode must be core, durable or recovery");
+        throw UsageError("--mode must be core, durable, recovery or network");
     }
     options.durability = args.get_or("durability", "sync");
+    const bool memory_ok = options.measurement == bench::Measurement::Network;
     if (options.durability != "sync" && options.durability != "fsync" &&
-        options.durability != "none") {
-        throw UsageError("--durability must be sync, fsync or none");
+        options.durability != "none" && !(memory_ok && options.durability == "memory")) {
+        throw UsageError(memory_ok ? "--durability must be sync, fsync, none or memory"
+                                   : "--durability must be sync, fsync or none");
+    }
+    options.clients = args.get_u64("clients", 1);
+    if (options.clients == 0 || options.clients > 63) {
+        throw UsageError("--clients must be in [1, 63]");
     }
     options.journal_dir = args.get_or("journal-dir", "");
     if (options.trials == 0) {

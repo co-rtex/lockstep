@@ -15,6 +15,14 @@ option(ENGINEX_ENABLE_TESTS "Build the EngineX test suite" ON)
 option(ENGINEX_WERROR "Treat warnings in EngineX-owned code as errors" ON)
 
 include(cmake/Warnings.cmake)
+if(APPLE)
+    # CMake repeats static libraries for transitive deps; Xcode 15+ ld warns about each repeat.
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "LINKER:-no_warn_duplicate_libraries" ENGINEX_HAS_NO_WARN_DUP)
+    if(ENGINEX_HAS_NO_WARN_DUP)
+        add_link_options("LINKER:-no_warn_duplicate_libraries")
+    endif()
+endif()
 include(cmake/Sanitizers.cmake)
 include(FetchContent)
 
@@ -72,17 +80,24 @@ add_library(enginex_journal src/crc32c.cpp src/journal.cpp src/durable.cpp)
 target_link_libraries(enginex_journal PUBLIC enginex_core)
 enginex_set_warnings(enginex_journal)
 
+# enginex_net: wire protocol, bounded queues, TCP server and client (R3).
+find_package(Threads REQUIRED)
+add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/client.cpp)
+target_link_libraries(enginex_net PUBLIC enginex_codec enginex_journal Threads::Threads)
+enginex_set_warnings(enginex_net)
+
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
 target_include_directories(enginex_bench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
-target_link_libraries(enginex_bench_lib PUBLIC enginex_core enginex_journal)
+target_link_libraries(enginex_bench_lib PUBLIC enginex_core enginex_journal enginex_net)
 enginex_set_warnings(enginex_bench_lib)
 
 # ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
-add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp)
-target_link_libraries(enginex PRIVATE enginex_codec enginex_bench_lib)
+add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp
+    src/cli_net.cpp)
+target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib)
 enginex_set_warnings(enginex)
 
 add_executable(enginex_bench benchmarks/bench_main.cpp)
