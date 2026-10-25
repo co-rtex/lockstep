@@ -7,6 +7,10 @@ required releases R1–R3 into small, verifiable tasks. Each task maps to accept
 
 AC labels: `R1.1`…`R1.11`, `R2.1`…`R2.7`, `R3.1`…`R3.7` in the order listed in spec §16.
 
+**Status (2026-10-25):** every task below is complete and verified; tags `r1`, `r2`, `r3`
+mark the release commits. Evidence per acceptance criterion: [PROGRESS.md](PROGRESS.md).
+A few tasks changed during implementation; those changes are noted inline.
+
 ## R1 — Core (matching engine, CLI, tests, benchmark, CI)
 
 | # | Task | Verification | AC |
@@ -45,12 +49,13 @@ AC labels: `R1.1`…`R1.11`, `R2.1`…`R2.7`, `R3.1`…`R3.7` in the order liste
 | 3.1 | Length-prefixed framing (big-endian u32, 32 KiB max) with incremental decoder | fragmentation/coalescing tests, oversized rejection | R3.1 |
 | 3.2 | Wire protocol codec (`protocol_version: 1`): new_limit, cancel, ack, error, snapshot_request/response, subscribe, book_update, resync_required | codec tests | R3.1, R3.3 |
 | 3.3 | Bounded MPSC/SPSC queues (mutex + condvar) | unit + TSan tests | R3.4 |
-| 3.4 | Server: acceptor with client cap, per-connection reader/writer threads, single sequencer thread, group commit with ack-after-sync, ordered event publication | integration tests | R3.2, R3.3 |
+| 3.4 | Server: acceptor with client cap, per-connection reader/writer threads, single sequencer thread, group commit with ack-after-sync, ordered event publication (+ byte budget, slowloris deadline, loopback-only bind after security review) | integration tests | R3.2, R3.3 |
 | 3.5 | Atomic snapshot/subscribe handoff at batch boundaries; event watermark; slow-consumer overflow → `resync_required` + disconnect | handoff-under-load test, slow consumer test | R3.3, R3.4 |
 | 3.6 | Client library + CLI (`enginex client submit|subscribe|snapshot`), `enginex serve` with clean shutdown | end-to-end tests; manual demo | R3.5 |
 | 3.7 | Network tests: invalid frames, malformed JSON, disconnects, duplicates on retry, reconnect, restart, concurrent clients; TSan build | networking_test under TSan | R3.2, R3.5 |
-| 3.8 | Network round-trip benchmark, reported separately from core/durable numbers | `docs/benchmarks.md` | R3.6 |
-| 3.9 | `docs/protocol.md`, architecture update, README R3 status | doc review | R3.* |
+| 3.8 | Network round-trip benchmark, reported separately from core/durable numbers (`benchmark --mode network`) | `docs/benchmarks.md` | R3.7 |
+| 3.9 | `docs/protocol.md`, architecture update, README R3 status, `scripts/demo.sh` | doc review | R3.* |
+| 3.10 | Network SIGKILL crash scenario (`tools/fault_injection.py`) | harness passes | R3.6 |
 
 ## Final pass
 
