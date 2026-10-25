@@ -26,7 +26,7 @@ not a replacement for it and not real trading software.
 | `enginex simulate` CLI with demo and golden output | R1 | **Implemented, tested** |
 | Seeded benchmark suite (6 workloads), CSV output, recorded results | R1 | **Implemented, measured** |
 | Linux builds: GCC, Clang ASan/UBSan, TSan | R1 | **Passing in a local Ubuntu 24.04 container** |
-| GitHub Actions CI | R1 | Workflow written; **not yet run** (repository not pushed) |
+| GitHub Actions CI workflow | R1 | All 5 jobs pass when the workflow is executed locally with `act` (`scripts/ci_local.sh`); **not yet run on GitHub** (repository not pushed) |
 | Versioned append-only journal (EXJ1, CRC32C framing), ack after `fdatasync`/`F_FULLFSYNC` | R2 | **Implemented, tested** |
 | Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
 | Idempotent retries across restarts | R2 | **Implemented, tested** |

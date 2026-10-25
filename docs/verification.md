@@ -85,9 +85,13 @@ Deliberate mutations, each reverted after the check:
 | Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 375/375 |
 | Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 375/375, no race reports |
 | Linux (Docker) | GCC 13.3.0 | Release + CLI smoke (R1–R3) + seeded benchmark | pass |
-| GitHub Actions | — | `.github/workflows/ci.yml` | **not run**: nothing has been pushed (no remote authorization) |
+| `.github/workflows/ci.yml` executed with `act` 0.2.89 (Docker, `catthehacker/ubuntu:act-24.04`, arm64) | GCC 13 / Clang 18 as installed by the workflow | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded**, 375/375 tests in each test job (`scripts/ci_local.sh`) |
+| GitHub-hosted Actions runners | — | same workflow | **not run**: the repository has not been pushed (no push authorization). Expected to match the `act` result, but not claimed until it runs. |
 
-`scripts/linux_check.sh [gcc-debug|clang-asan|clang-tsan|release]` reproduces the Linux rows.
+`scripts/linux_check.sh [gcc-debug|clang-asan|clang-tsan|release]` reproduces the Linux rows,
+and `scripts/ci_local.sh` runs the actual workflow file with `act`. Running it under `act`
+exposed a workflow bug (it relied on CMake being preinstalled on the runner image), which is
+now fixed: every job installs its own toolchain.
 The container is the same Ubuntu release as the CI runners, but it is not the GitHub runner
 itself.
 

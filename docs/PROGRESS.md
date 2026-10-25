@@ -17,14 +17,14 @@ observed), **in progress**, **blocked** (external reason), **outstanding**.
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| R1.1 | Clean-clone C++20 build on documented compiler and Linux CI | done (local) / CI not run | macOS Apple clang 17 debug+release; Linux GCC 13 + Clang 18 via `scripts/linux_check.sh`; workflow `.github/workflows/ci.yml` written, never run on GitHub (no push authorization) |
+| R1.1 | Clean-clone C++20 build on documented compiler and Linux CI | done locally; GitHub-hosted run blocked | macOS Apple clang 17 debug+release from a fresh clone; Linux GCC 13 + Clang 18 via `scripts/linux_check.sh`; the CI workflow itself executed with `act` (`scripts/ci_local.sh`): all 5 jobs succeed. A GitHub-hosted run needs a push, which is not authorized |
 | R1.2 | ≥2 symbols, both sides independent | done | `Matching.SymbolsAreIndependent`, fixture `symbol-isolation`, property tests over AAPL+MSFT |
 | R1.3 | Price-time matching, partial/full fills, resting execution price | done | `matching_test.cpp`, 10 TradeGrid fixtures, 100-seed reference-model property tests |
 | R1.4 | Cancels update queues, totals, index without invalid references | done | `cancel_test.cpp`, `check_invariants()` after every command, Linux ASan/UBSan clean |
 | R1.5 | Invalid requests rejected atomically | done | `test::reject()` byte-compares canonical state around every rejection |
 | R1.6 | Canonical state deterministic across runs | done | `canonical_test.cpp`, `PropertyTest.SameSeedIsDeterministic`, identical benchmark hashes across trials |
 | R1.7 | Unit, invariant and Go common-fixture tests pass | done | 298/298 ctest; `tools/compare_go_fixtures.py`: 3 pass, 2 skipped (out of scope) |
-| R1.8 | ASan/UBSan job passes | done (Linux container) | Clang 18 ASan+UBSan+LSan 298/298. macOS ASan runtime hangs even on an empty program (toolchain issue, documented in verification.md) |
+| R1.8 | ASan/UBSan job passes | done (Linux container + CI job under `act`) | Clang 18 ASan+UBSan+LSan 298/298. macOS ASan runtime hangs even on an empty program (toolchain issue, documented in verification.md) |
 | R1.9 | `simulate` works on demo with expected output | done | golden test + `scripts/check.sh smoke` |
 | R1.10 | Benchmark outputs real results and methodology | done | `benchmarks/results/r1-core-macos-m3*.csv`, `docs/benchmarks.md` |
 | R1.11 | README distinguishes completed from planned | done | README status table |
@@ -117,12 +117,17 @@ spec §5.1 commands on the clone (simulate, benchmark, replay --verify, serve)  
 scripts/linux_check.sh gcc-debug clang-asan clang-tsan release
                                                     -> 375/375 in every job; TSan no reports; smoke OK
 scripts/demo.sh                                     -> demo complete
+scripts/ci_local.sh (act 0.2.89)                     -> gcc-debug, clang-asan-ubsan, clang-tsan,
+                                                       release, format: all "Job succeeded"
 git status                                          -> clean
 ```
 
 ## Blocked / external
 
-* GitHub Actions: needs a push to a remote, which these instructions do not authorize.
+* GitHub-hosted Actions: needs a push to a remote, which these instructions do not authorize.
+  Everything short of that is done: `scripts/ci_local.sh` runs the exact workflow with `act`,
+  and all 5 jobs succeed. To finish: push, then confirm the run is green before adding a CI
+  badge or claim.
 * macOS sanitizers: Apple clang 17 ASan/TSan runtimes fail on macOS 26.6.2 for any program.
   Linux evidence is used instead.
 
