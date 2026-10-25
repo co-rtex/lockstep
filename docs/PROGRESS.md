@@ -80,28 +80,44 @@ python3 tools/fault_injection.py --enginex build/debug/enginex --rounds 8 --seed
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| R3.1 | All R2 acceptance remains true | done | full suite 370/370 on macOS and in each Linux job; fault harness passes |
+| R3.1 | All R2 acceptance remains true | done | full suite 375/375 on macOS and in each Linux job; fault harness passes |
 | R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline` |
 | R3.3 | Concurrent clients cannot mutate state out of sequence | done | single sequencer thread (only state owner); `Server.ConcurrentClientsGetUniqueContiguousSequences` (replay in ack-sequence order = server state) |
 | R3.4 | Snapshot/feed handoff has correct watermark/gap policy | done | D15; `Server.SubscribeHandoffUnderLoadHasNoGaps` (contiguous `W+1…`, mirrored book = snapshot), `Server.ReconnectGetsFreshSnapshotAndContinues`; docs/protocol.md §5 |
 | R3.5 | Bounded queues and slow-consumer disconnect/recovery tested | done | `Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer`, `Server.OutboundByteBudgetDisconnectsSnapshotHoarder`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce`, `Server.ConnectionLimitIsEnforced` |
-| R3.6 | Cleanup and restart produce correct state; no observed races | done | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`; network SIGKILL scenario in `tools/fault_injection.py`; TSan (Linux Clang 18) 370/370 with no reports |
+| R3.6 | Cleanup and restart produce correct state; no observed races | done | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`; network SIGKILL scenario in `tools/fault_injection.py`; TSan (Linux Clang 18) 375/375 with no reports |
 | R3.7 | End-to-end latency reported separately from pure matching | done | docs/benchmarks.md measurements 1–4, CSV labels `core_in_process`, `durable_ack_*`, `recovery_replay`, `network_rtt_*` |
 
 R3 commands run (most recent):
 
 ```text
-ctest --preset debug -j8                                     -> 100% tests passed out of 370
+ctest --preset debug -j8                                     -> 100% tests passed out of 375
 ./build/debug/tests/enginex_tests --gtest_filter='Server*:BoundedQueue*' --gtest_repeat=15
                                                              -> all 15 repetitions passed
 scripts/linux_check.sh gcc-debug clang-asan clang-tsan release
-                                                             -> 370/370 in each job; release smoke OK
+                                                             -> 375/375 in each job; release smoke OK
 python3 tools/fault_injection.py --enginex build/release/enginex --rounds 4 --seed 9
                                                              -> ALL CHECKS PASSED (incl. network kill -9)
 scripts/check.sh smoke build/release                         -> smoke OK (R1+R2+R3)
 scripts/demo.sh                                              -> demo complete
 ./build/release/enginex benchmark --mode network --durability {memory,none,sync} --clients {1,8} ...
                                                              -> benchmarks/results/r3-network-macos-m3.csv
+```
+
+## Final verification (2026-10-25, commit after `24ca81a`)
+
+An independent read-only review of the server and journal found three defects. All were
+fixed with regression tests: idle subscriber fd leak, unbounded ack/event frame size, and
+length-field corruption near EOF misread as a torn tail. Its robustness notes and two
+automated security reviews were also addressed (DECISIONS.md D18).
+
+```text
+fresh clone: CLANG_FORMAT=... scripts/check.sh all   -> debug 375/375, release 375/375, smoke OK, format OK
+spec §5.1 commands on the clone (simulate, benchmark, replay --verify, serve)   -> all work as documented
+scripts/linux_check.sh gcc-debug clang-asan clang-tsan release
+                                                    -> 375/375 in every job; TSan no reports; smoke OK
+scripts/demo.sh                                     -> demo complete
+git status                                          -> clean
 ```
 
 ## Blocked / external

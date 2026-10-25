@@ -58,7 +58,7 @@ Commands and results are logged in [PROGRESS.md](PROGRESS.md).
 | Journal failure over the network | `Server.JournalFailureFailStopsOverTheNetwork` |
 | Restart after crash: acknowledged commands present, state correct | `tools/fault_injection.py` network kill -9 scenario (also in `scripts/check.sh smoke`) |
 | Bounded queue semantics under concurrency | `BoundedQueue.*` (8 producers, per-producer FIFO) |
-| No observed races | full suite under ThreadSanitizer (Linux, Clang 18): 370/370 pass, no reports |
+| No observed races | full suite under ThreadSanitizer (Linux, Clang 18): 375/375 pass, no reports |
 
 The network tests were repeated 15× in a row locally with no failures, to check for
 flakiness. One test made a platform assumption about socket buffer sizes that held on macOS
@@ -79,11 +79,11 @@ Deliberate mutations, each reverted after the check:
 
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
-| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 370/370 tests pass |
+| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass |
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
-| Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 370/370 |
-| Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 370/370 |
-| Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 370/370, no race reports |
+| Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 375/375 |
+| Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 375/375 |
+| Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 375/375, no race reports |
 | Linux (Docker) | GCC 13.3.0 | Release + CLI smoke (R1–R3) + seeded benchmark | pass |
 | GitHub Actions | — | `.github/workflows/ci.yml` | **not run**: nothing has been pushed (no remote authorization) |
 

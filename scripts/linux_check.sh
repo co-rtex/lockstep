@@ -18,7 +18,11 @@ fi
 for job in "${JOBS[@]}"; do
     echo "=== linux job: $job ==="
     docker run --rm -v "$PWD:/src:ro" -e JOB="$job" "$IMAGE" bash -euo pipefail -c '
-        cp -r /src /work && cd /work && rm -rf build
+        mkdir -p /work
+        # Copy the working tree without .git and local build output (host-owned git objects
+        # may not be readable through the bind mount); fail hard if the copy fails.
+        (cd /src && tar --exclude=./.git --exclude=./build --exclude=./data -cf - .) | tar -xf - -C /work
+        cd /work
         case "$JOB" in
           gcc-debug)  CXX=g++     ARGS="-DCMAKE_BUILD_TYPE=Debug" ;;
           clang-asan) CXX=clang++ ARGS="-DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=address,undefined" ;;
