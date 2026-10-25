@@ -10,7 +10,7 @@ The spec (§12.1) separates four kinds of measurement. They are never combined i
 |---|---|---|---|
 | 1 | **Core in-process** (`core_in_process`) | `ExchangeStateMachine::process`: validation, sequencing, idempotency map, matching | this page, R1 |
 | 2 | **Durable accepted-command** (`durable_ack_<mode>`) | validation + apply + journal write + `fdatasync`/`F_FULLFSYNC`/`fsync` + response | R2 section |
-| 3 | **Network round trip** | TCP client → framing → queue → sequencer (+journal) → ack | R3 section |
+| 3 | **Network round trip** (`network_rtt_<durability>_c<clients>`) | TCP client → framing → queue → sequencer (+group-commit journal) → ack | R3 section |
 | 4 | **Recovery time** (`recovery_replay`) | open + validate + replay N journal records (warm cache) | R2 section |
 
 ## Machine and build (R1 run)
@@ -20,7 +20,7 @@ The spec (§12.1) separates four kinds of measurement. They are never combined i
 | Machine | MacBook Air, Apple M3 (4 performance + 4 efficiency cores), 8 GiB RAM, fanless |
 | OS | macOS 26.6.2 (Darwin 25.6.0), on AC power, Low Power Mode off |
 | Compiler | Apple clang 17.0.0 (clang-1700.4.4.1), `-O3 -DNDEBUG` (CMake Release), no `-march=native` |
-| Commit | `862753a7cd74` (recorded in every CSV row) |
+| Commit | `862753a7cd74` (recorded in every CSV row). The matching core (`src/engine.cpp`, `state.cpp`, `order_book.cpp`, `canonical.cpp`, the workload generator) is unchanged from this commit to the final R3 commit, checked with `git diff --stat 862753a HEAD -- <those files>` |
 | Command | `./build/release/enginex_bench --seed 42 --orders 100000 --trials 7 --out benchmarks/results/r1-core-macos-m3.csv` |
 | 1M run | `./build/release/enginex benchmark --scenario mixed --seed 42 --orders 1000000 --trials 5 --out benchmarks/results/r1-core-macos-m3-1m.csv` |
 
@@ -170,6 +170,54 @@ duplicate retries are not journaled. Per-record replay cost rises at 1M for the 
 as the R1 1M run: the idempotency map, execution history and order index outgrow the caches.
 One 1M trial took about 1.4 s (the 0.69M records/s minimum), so recovery time has run-to-run
 outliers on this machine.
+
+## R3 results: network round trip (measurement 3)
+
+Same machine, Release build at commit `e8b10e2a82d7`, medians of 5 trials after 1 warm-up.
+Raw rows: [`benchmarks/results/r3-network-macos-m3.csv`](../benchmarks/results/r3-network-macos-m3.csv).
+
+**What is timed:** `enginex benchmark --mode network` starts an in-process `Server` on
+`127.0.0.1` (ephemeral port) and N client threads. Each client keeps **one request
+outstanding at a time** (closed loop). A sample runs from just before the client sends a
+request frame to the moment its correlated reply has been received and parsed. It therefore
+includes client JSON encoding and decoding, loopback TCP, the server reader thread, the
+ingress queue, the sequencer (validation, matching, group commit = journal `write` + sync for
+the batch), the reply queue and the writer thread. Clients send 70% limit orders around mid
+(some crossing) and 30% cancels of their own open orders. Some of those cancels lose the race
+to a fill and get `ORDER_NOT_OPEN` (about 10% of requests); errors are timed like acks.
+Interleaving across connections is not deterministic, so trials end in different (valid)
+states.
+
+| durability | clients | requests | req/s (median) | min – max | p50 | p90 | p99 | p99.9 | mean batch |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| memory (no journal) | 1 | 20,000 | 27,915 | 27.7k – 27.9k | 33.1 µs | 42.3 µs | 53.8 µs | 62.7 µs | 1.00 |
+| memory (no journal) | 8 | 20,000 | 85,749 | 84.4k – 86.3k | 87.1 µs | 122 µs | 159 µs | 204 µs | 2.22 |
+| `none` (write, no sync) | 1 | 20,000 | 25,470 | 24.2k – 25.8k | 36.6 µs | 45.7 µs | 57.3 µs | 69.2 µs | 1.00 |
+| `none` (write, no sync) | 8 | 20,000 | 84,153 | 83.8k – 84.7k | 89.4 µs | 122 µs | 162 µs | 227 µs | 2.45 |
+| `sync` (`F_FULLFSYNC`) | 1 | 600 | 380 | 220 – 385 | 2.96 ms | 3.82 ms | 4.55 ms | 8.89 ms | 1.00 |
+| `sync` (`F_FULLFSYNC`) | 8 | 4,000 | 1,417 | 1,385 – 1,426 | 5.98 ms | 7.04 ms | 8.23 ms | 13.6 ms | 4.00 |
+
+```bash
+./build/release/enginex benchmark --mode network --durability memory --clients 1 --orders 20000 --trials 5 --out r3.csv
+./build/release/enginex benchmark --mode network --durability sync   --clients 8 --orders 4000  --trials 5 --out r3.csv
+```
+
+Interpretation:
+
+* **The three latencies are different things.** The in-process core needs ~125 ns per command
+  (R1). A local TCP round trip without durability is ~33 µs p50, about 250× more, and that
+  cost is socket I/O, thread hand-offs and JSON, not matching. A durable acknowledgment over
+  TCP is ~3 ms p50 on this machine, dominated by `F_FULLFSYNC`. None of these may be quoted in
+  place of another.
+* **Group commit works.** With `sync` durability, 8 concurrent clients averaged 4.0 commands
+  per journal sync. Throughput rose from 380 to 1,417 acknowledged requests/s (3.7×) at the
+  cost of higher per-request latency (p50 2.96 → 5.98 ms). A request that arrives during a sync
+  waits for that sync and then for its own batch's sync.
+* With no sync cost, 8 clients reach ~85k req/s. The single sequencer is the serialization
+  point by design (DECISIONS.md D1, D13). Per-request latency rises because requests queue
+  behind each other on one core.
+* Loopback only: no real network, NIC or kernel-bypass is involved, and nothing here supports
+  a "low-latency" claim. Client and server share the same 8-core laptop.
 
 ## Reproducing
 

@@ -31,7 +31,10 @@ not a replacement for it and not real trading software.
 | Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
 | Idempotent retries across restarts | R2 | **Implemented, tested** |
 | `enginex run` / `enginex replay --verify`, durable-ack and recovery benchmarks | R2 | **Implemented, measured** |
-| TCP order entry, sequenced market-data feed, backpressure, resync | R3 | Planned |
+| TCP server: length-prefixed JSON protocol v1, multiple clients, single sequencer with group commit | R3 | **Implemented, tested** |
+| Sequenced `book_update` feed, atomic snapshot/subscribe handoff (event watermark), reconnect resync | R3 | **Implemented, tested** (handoff under load with book mirroring) |
+| Bounded ingress/outbound queues, slow-consumer disconnect, connection cap, graceful shutdown | R3 | **Implemented, tested** (TSan clean on Linux) |
+| `enginex serve` / `enginex client`, network round-trip benchmark | R3 | **Implemented, measured** |
 
 ## Architecture
 
@@ -39,21 +42,26 @@ not a replacement for it and not real trading software.
  TradeGrid (club repo, Go) ── public matching spec + fixtures (read-only, attributed) ──┐
                                                                                        ▼
  ┌──────────────────────────────── EngineX (this repo) ────────────────────────────────┐
- │  enginex CLI  ──JSON lines──▶  enginex_codec (JSON boundary only)                    │
- │                                     │ typed Command                                 │
- │                                     ▼                                               │
- │                  ExchangeStateMachine  (single authoritative sequencer)              │
- │                   prepare(): pure validation → commit(): sequence + apply           │
- │                                     │                                               │
- │                  MatchingEngine: per-symbol OrderBook                                │
- │                   bids/asks: std::map<price, PriceLevel{ FIFO std::list }>           │
- │                   order index: unordered_map<id, {level it, list it}>                │
+ │  TCP clients ⇄ enginex_net: acceptor · reader/writer thread per connection (R3)     │
+ │   │ length-prefixed JSON         bounded ingress queue      bounded outbound queues │
+ │   ▼                                     ▼                          ▲                │
+ │  enginex CLI ── JSON lines ──▶ enginex_codec (JSON boundary only)  │ acks + events  │
+ │                                         │ typed Command            │ after sync     │
+ │                                         ▼                          │                │
+ │                SEQUENCER: ExchangeStateMachine (single owner of all state)          │
+ │                 prepare() pure validation → commit() sequence + apply               │
+ │                     │                                     │                         │
+ │   MatchingEngine: per-symbol OrderBook             DurableExchange (R2)             │
+ │    bids/asks: std::map<price, PriceLevel{FIFO       group commit → EXJ1 journal     │
+ │    std::list}>, order index unordered_map           write + fdatasync/F_FULLFSYNC   │
  └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 There is no runtime connection to TradeGrid. Details are in
-[docs/architecture.md](docs/architecture.md): why one sequencer owns the book, the complexity
-of each operation, and why cancels can never hold a dangling iterator.
+[docs/architecture.md](docs/architecture.md) (why one sequencer owns the book, operation
+complexity, iterator safety, threading), [docs/journaling.md](docs/journaling.md)
+(durability contract, crash matrix, recovery rules) and [docs/protocol.md](docs/protocol.md)
+(wire format, ordering, handoff, backpressure).
 
 ## Supported platforms and prerequisites
 
@@ -85,6 +93,17 @@ mkdir -p data
 ./build/release/enginex replay --journal data/demo.exj --verify            # prints the same state hash
 python3 tools/fault_injection.py --enginex build/release/enginex          # kill -9 + corruption checks
 ```
+
+Networked service (R3), in three terminals:
+
+```bash
+./build/release/enginex serve --port 9000 --journal data/demo.exj --durability sync      # A
+./build/release/enginex client subscribe --port 9000                                      # B
+./build/release/enginex client submit --port 9000 --input examples/demo_orders.jsonl      # C
+```
+
+`scripts/demo.sh` runs all of the spec's reviewer flows (R1–R3) in one go, including a crash
+and restart, corruption handling and a slow consumer.
 
 The spec's equivalent raw commands also work:
 `cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_ENABLE_TESTS=ON`.
@@ -141,11 +160,28 @@ Guaranteed by tests (R2), under the assumptions in [docs/journaling.md](docs/jou
   unknown). After restart, retrying with the same `request_id` yields exactly one logical
   mutation. This is idempotent retry, not exactly-once delivery.
 
+Guaranteed by tests (R3):
+
+* Every accepted command gets a unique, contiguous global sequence from one sequencer, no
+  matter how many clients submit concurrently. Replaying the acknowledged commands in
+  sequence order reproduces the server's exact state.
+* A subscriber's snapshot (`event_watermark = W`) is followed by events `W+1, W+2, …` with no
+  gap. Applying the events to the snapshot reproduces the server's book exactly.
+* A slow or stalled client never blocks order processing. It is disconnected, after a
+  `resync_required` notice when that can still be queued, and has to reconnect for a fresh
+  snapshot. Full ingress queues answer `SERVER_OVERLOADED` instead of blocking.
+* Framing tolerates any TCP segmentation. Oversized or zero-length frames, malformed JSON,
+  trickled partial frames and connection floods are rejected without affecting other
+  clients.
+* Graceful shutdown processes every queued request and syncs the journal. A restart (even
+  after `kill -9`) restores the same state, and event numbering continues.
+
 Not guaranteed: survival of real power loss beyond what the OS and device promise for
 `fdatasync`/`F_FULLFSYNC`. That has not been tested, and storage that lies about flushes
 defeats it.
 
-Not provided: real money, brokerage or market connectivity, accounts, risk, margin,
+Not provided: authentication or encryption on the TCP port (the server refuses non-loopback
+binds unless `--allow-remote`), lossless replay of missed events, real money, brokerage or market connectivity, accounts, risk, margin,
 authentication, market/IOC/FOK/stop orders, amendments, self-trade prevention, regulatory
 features, or production readiness of any kind. This is a learning project.
 
@@ -180,6 +216,16 @@ command, medians of 5 trials:
 | durable ack, `--durability none` (`write()` only) | 407,955 | 2.0 µs | 8.9 µs |
 | recovery: replay 97,998 records (warm cache) | 3.6M records/s | 27.2 ms total | |
 
+Network round trip over loopback TCP (closed-loop clients; includes JSON, sockets, queues and
+the group-commit journal), medians of 5 trials:
+
+| measurement | req/s | p50 | p99 |
+|---|---:|---:|---:|
+| 1 client, in-memory server | 27,915 | 33.1 µs | 53.8 µs |
+| 8 clients, in-memory server | 85,749 | 87.1 µs | 159 µs |
+| 1 client, `--durability sync` | 380 | 2.96 ms | 4.55 ms |
+| 8 clients, `--durability sync` (group commit: 4.0 commands/sync) | 1,417 | 5.98 ms | 8.23 ms |
+
 ## Testing strategy
 
 * Unit tests cover every matching, cancellation, validation and idempotency rule in spec
@@ -189,6 +235,11 @@ command, medians of 5 trials:
 * Fixtures: TradeGrid's published matching examples and fixtures, translated with attribution
   (`tests/testdata/tradegrid/`), plus EngineX-specific cases. `tools/compare_go_fixtures.py`
   runs a differential check against a local TradeGrid checkout.
+* Journal tests cover format, corruption, tail repair, injected I/O failures and fork-based
+  crashes at every acknowledgment boundary. `tools/fault_injection.py` SIGKILLs both
+  `enginex run` and `enginex serve` mid-traffic and verifies durability and idempotent retry.
+* Network tests run over real sockets: segmentation, concurrency, handoff under load, slow
+  consumers, overload, reconnect, shutdown and restart.
 * Golden CLI output, benchmark-workload self-validation, ASan/UBSan and TSan on Linux.
 
 See [docs/verification.md](docs/verification.md) for the full test matrix, the environments

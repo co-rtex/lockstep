@@ -24,7 +24,8 @@ does not replace, the TradeGrid Go exchange (see
 | `enginex_core` | types, `OrderBook`, `MatchingEngine`, `ExchangeStateMachine`, canonical state, SHA-256 | C++ standard library only |
 | `enginex_codec` | JSON ⇄ typed commands/results, `simulate` | core, nlohmann/json 3.11.3 |
 | `enginex_journal` | CRC32C, EXJ1 journal codec/scan, `JournalFile` (flock, fsync modes, fault injection), `DurableExchange` | core |
-| `enginex_bench_lib` | workload generators, measurement harness (core, durable, recovery), metrics | core, journal |
+| `enginex_net` | framing + protocol v1 codec, `BoundedQueue`, POSIX sockets, `Server`, `Client` | codec, journal, threads |
+| `enginex_bench_lib` | workload generators, measurement harness (core, durable, recovery, network), metrics | core, journal, net |
 | `enginex` | CLI (`simulate`, `benchmark`, …) | all of the above |
 | `enginex_tests` | GoogleTest suite | all libraries |
 
@@ -138,9 +139,50 @@ sequence. Replay therefore cannot silently diverge from live processing. Any I/O
 it into fail-stop. The full contract, crash matrix and failure diagrams are in
 [journaling.md](journaling.md).
 
+## Networked service (R3)
+
+```text
+               ┌─────────────── per connection (≤ 64) ───────────────┐
+ client ──TCP──▶ reader thread: FrameDecoder → parse JSON ──try_push──┐   (full → SERVER_OVERLOADED)
+        ◀─TCP── writer thread ◀── bounded outbound queue (frames+bytes)│◀─────────────┐
+               └─────────────────────────────────────────────────────┘│              │
+                                                                      ▼              │ try_push only
+                                         bounded ingress queue (4096, all connections)│ (overflow →
+                                                                      │              │  resync_required,
+                                   ┌──────────────── sequencer thread ─▼──────────┐   │  disconnect)
+                                   │ pop batch → for each request:                │   │
+                                   │   command: prepare → commit → encode record, │   │
+                                   │            build ack + book_update           │   │
+                                   │   snapshot/subscribe: flush batch first, then │   │
+                                   │            snapshot at watermark (+register) │   │
+                                   │ flush: one write + one sync for the batch ───┼───┘ then release
+                                   └──────────────────────────────────────────────┘    acks/events in order
+```
+
+* **Only the sequencer thread touches exchange state** (invariant 14). Readers and writers
+  move bytes and parse JSON. They never see the book.
+* **Nothing blocks the sequencer on a client.** Readers `try_push` into the ingress queue; the
+  sequencer `try_push`es into each connection's outbound queue. The two queues bound memory
+  by frame count and bytes (DECISIONS.md D16). A slow reader's queue fills, and the connection
+  is cut with a final `resync_required` frame. A reader that stays unwritable past the send
+  timeout is cut by its writer thread.
+* **Why subscriber queues are bounded.** An unbounded queue turns one stuck client into
+  unbounded server memory. Blocking on a full queue would turn one stuck client into a stalled
+  exchange. Bounding plus disconnect-and-resync keeps both memory and latency independent of
+  the slowest consumer, at the price that slow consumers must resubscribe and get a fresh
+  snapshot.
+* **Group commit** amortizes the flush across a batch without weakening acknowledgment
+  semantics: no reply or event leaves before the sync covering it (D14).
+* **Handoff correctness:** snapshot and subscription registration happen in one sequencer step
+  after the batch is flushed, so the first event is always `watermark + 1` (D15).
+* Shutdown order: acceptor → readers → sequencer drains the queue and syncs → writers flush →
+  join. See [protocol.md](protocol.md) §8.
+
 ## Benchmarks vs end-to-end latency
 
 The R1 benchmark times `ExchangeStateMachine::process` in-process: validation, sequencing,
-idempotency bookkeeping and matching. It excludes JSON, I/O, durability and networking. It is
-**not** an end-to-end or durable acknowledgment latency; those are reported separately (R2/R3)
-and are dominated by `fsync` and socket round trips respectively.
+idempotency bookkeeping and matching. It excludes JSON, I/O, durability and networking. Its
+p99 (a few hundred ns) is **not** comparable with the durable acknowledgment p99 (R2, ms on
+this machine, dominated by `F_FULLFSYNC`) or the network round-trip p99 (R3, tens of µs in
+memory, ms with a synced journal). [benchmarks.md](benchmarks.md) reports each separately,
+with what it includes and excludes.

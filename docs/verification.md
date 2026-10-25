@@ -43,6 +43,27 @@ Commands and results are logged in [PROGRESS.md](PROGRESS.md).
 | All sync modes persist across restart | `SyncModes.AllModesPersistAcrossRestart` |
 | Journaled CLI end to end | ctest `cli_fault_injection_kill9`, `scripts/check.sh smoke` (run → restart → replay hash = simulate hash) |
 
+## Test matrix (R3)
+
+| Spec requirement (§11.5) | Covered by (`networking_test.cpp` unless noted) |
+|---|---|
+| TCP fragmentation/coalescing, short reads/writes, invalid length and JSON | `Framing.DecodesAnySegmentation` (chunk sizes 1…100k), `Server.HandlesFragmentedAndCoalescedFrames` (byte-by-byte over a socket, split inside a header), `Framing.RejectsOversizedAndZeroLength…`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.OrderEntryAckSnapshotAndErrors` (malformed JSON keeps the connection) |
+| Concurrent submissions: unique global sequence; single sequencer consistent | `Server.ConcurrentClientsGetUniqueContiguousSequences` (8 clients × 150, contiguous 1..1200, replay in sequence order = server state hash) |
+| Snapshot handoff during live mutation without an unreported gap | `Server.SubscribeHandoffUnderLoadHasNoGaps` (subscribe while 3 writers run; contiguous events; mirrored book = fresh snapshot) |
+| Slow consumer overflow → disconnect/resync; sequencer stays responsive | `Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer`, `Server.OutboundByteBudgetDisconnectsSnapshotHoarder` |
+| Reconnect gets fresh snapshot and later events in order | `Server.ReconnectGetsFreshSnapshotAndContinues` |
+| Duplicate command on timeout/retry → one logical mutation | `Server.RetryAfterDisconnectProducesOneMutation`; `tools/fault_injection.py` network scenario (SIGKILL server, retries) |
+| Clean shutdown with outstanding clients, queue saturation, journal flush | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce` |
+| Connection cap; partial-frame (slowloris) timeout; loopback-only bind | `Server.ConnectionLimitIsEnforced`, `Server.TrickledFrameIsDisconnectedAtDeadline`, `Server.RefusesNonLoopbackBindWithoutOptIn` |
+| Journal failure over the network | `Server.JournalFailureFailStopsOverTheNetwork` |
+| Restart after crash: acknowledged commands present, state correct | `tools/fault_injection.py` network kill -9 scenario (also in `scripts/check.sh smoke`) |
+| Bounded queue semantics under concurrency | `BoundedQueue.*` (8 producers, per-producer FIFO) |
+| No observed races | full suite under ThreadSanitizer (Linux, Clang 18): 370/370 pass, no reports |
+
+The network tests were repeated 15× in a row locally with no failures, to check for
+flakiness. One test made a platform assumption about socket buffer sizes that held on macOS
+but not on Linux; it now bounds `SO_SNDBUF` and loops until the overflow is observed.
+
 ### Do the tests catch bugs?
 
 Deliberate mutations, each reverted after the check:
@@ -58,12 +79,12 @@ Deliberate mutations, each reverted after the check:
 
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
-| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | all tests pass |
-| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` | pass |
-| Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | all tests pass |
-| Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | all tests pass |
-| Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | all tests pass |
-| Linux (Docker) | GCC 13.3.0 | Release + CLI smoke + seeded benchmark | pass |
+| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 370/370 tests pass |
+| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
+| Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 370/370 |
+| Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 370/370 |
+| Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 370/370, no race reports |
+| Linux (Docker) | GCC 13.3.0 | Release + CLI smoke (R1–R3) + seeded benchmark | pass |
 | GitHub Actions | — | `.github/workflows/ci.yml` | **not run**: nothing has been pushed (no remote authorization) |
 
 `scripts/linux_check.sh [gcc-debug|clang-asan|clang-tsan|release]` reproduces the Linux rows.
@@ -77,6 +98,15 @@ empty `int main(){}`**: `-fsanitize=address` hangs at startup and `-fsanitize=th
 segfaults (exit 139); `-fsanitize=undefined` works. This is an OS/toolchain incompatibility,
 not an EngineX defect, so ASan/TSan evidence comes from the Linux container and, once pushed,
 from CI. The `asan`/`tsan` CMake presets still exist for machines where the runtimes work.
+
+## Known limitations (R3)
+
+* No authentication or encryption (spec non-goal). Binding to non-loopback addresses
+  requires `--allow-remote`.
+* Thread per connection: fine for the 64-client cap, not for thousands of connections.
+* No historical event replay: recovery is snapshot-based resynchronization only.
+* Subscribers receive all symbols; there are no symbol filters.
+* Network benchmarks are loopback on one laptop (client and server share CPUs).
 
 ## Known limitations (R2)
 
