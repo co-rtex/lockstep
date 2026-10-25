@@ -67,6 +67,11 @@ add_library(enginex_codec src/json_codec.cpp src/simulate.cpp)
 target_link_libraries(enginex_codec PUBLIC enginex_core nlohmann_json::nlohmann_json)
 enginex_set_warnings(enginex_codec)
 
+# enginex_journal: binary command journal, recovery and the durable state machine (R2).
+add_library(enginex_journal src/crc32c.cpp src/journal.cpp src/durable.cpp)
+target_link_libraries(enginex_journal PUBLIC enginex_core)
+enginex_set_warnings(enginex_journal)
+
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
 target_include_directories(enginex_bench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)

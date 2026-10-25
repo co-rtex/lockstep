@@ -48,3 +48,51 @@ security mechanism.
 ## D7. JSON only at the boundary (nlohmann/json 3.11.3, pinned by SHA-256)
 `enginex_codec` converts JSON lines/frames to typed commands and typed results to JSON. Field
 errors map to specific codes (missing/non-integer price → `INVALID_PRICE`, etc.).
+
+## D8. R2 write path: validate → apply in memory → journal → sync → acknowledge
+For each accepted command, `DurableExchange` runs `prepare` (pure validation), then `commit`
+(apply to the in-memory state), then encodes the record into a user-space batch buffer. On
+`flush()` it `write()`s the batch and synchronizes it. Responses are released only after the
+sync succeeds. Applying before writing is safe because nothing is observable before the
+acknowledgment. It also means an unexpected application failure (an `InvariantViolation`)
+happens *before* the record reaches the journal, so the journal never holds a command whose
+replay would fail. Any write, sync or apply failure puts the process into **fail-stop**: the
+in-memory state may contain non-durable effects, so every later request gets
+`JOURNAL_IO_ERROR` until a restart rebuilds state from the journal. A failed `fsync` is never
+retried as if it succeeded.
+
+## D9. JOURNAL_IO_ERROR means "outcome unknown", not "rejected"
+If the write or sync fails, the record may or may not be on disk (a complete record whose sync
+failed can still survive). The client is told the outcome is uncertain and must retry with
+the same `request_id` after restart. If the record survived, replay rebuilt the request map
+and the retry returns the original result. If it did not, the retry executes the command for
+the first time. Either way there is exactly one logical mutation per request id. This is
+idempotent command application, not exactly-once delivery.
+
+## D10. Durability modes
+* `sync` (default): the strongest flush the platform offers before acknowledging. That is
+  `fdatasync` on Linux and `fcntl(F_FULLFSYNC)` on macOS, falling back to `fsync` if the
+  filesystem rejects it. Plain `fsync` on macOS does not flush the drive's write cache.
+* `fsync`: POSIX `fsync` only, for comparison benchmarks.
+* `none`: acknowledge after `write()` returns. Survives a process crash (the data is in the
+  kernel page cache) but not an OS crash or power loss.
+New journal files are created with `O_EXCL`, the header is synced, and the parent directory is
+fsynced so the directory entry is durable as well.
+
+## D11. Recovery classification
+Complete, CRC-valid, sequence-contiguous records are replayed. An incomplete *tail* is
+recoverable: a partial 8-byte frame header, a payload shorter than its declared length, or an
+all-zero tail (a common power-loss artifact). Under `sync` mode such a tail can never be an
+acknowledged command, because acknowledgment requires the whole record to be synced. The
+default policy preserves the tail bytes in `<journal>.tail-<offset>.bin` and truncates the
+journal to the last complete record. These are hard errors that refuse startup
+(`JOURNAL_CORRUPT`): bad magic, version or flags; a declared length of 0 or >4096 with
+non-zero bytes; a CRC mismatch on a complete record; an undecodable payload; a sequence gap or
+regression; and a replay divergence (the state machine does not accept the record exactly as
+logged). Nothing is ever silently truncated in the middle of a file.
+
+## D12. Single writer
+The journal file is held with `flock(LOCK_EX | LOCK_NB)` for the lifetime of the writer, so a
+second server on the same journal fails fast instead of interleaving appends. `replay
+--verify` reads without taking the writer lock and never modifies the file unless
+`--repair-tail` is given, which needs the exclusive lock.
