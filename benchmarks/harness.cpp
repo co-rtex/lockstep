@@ -196,7 +196,7 @@ std::string csv_header() {
     return "started_utc,git_sha,compiler,build_type,system,measurement,scenario,seed,orders,"
            "symbols,prefill,trial,accepted,rejected,executions,commands_with_fills,cancels,"
            "elapsed_ns,throughput_cmd_per_s,cpu_ns,lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p95_ns,"
-           "lat_p99_ns,lat_p999_ns,lat_max_ns,timer_overhead_ns,timer_tick_ns,peak_rss_kib,"
+           "lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,timer_tick_ns,peak_rss_kib,"
            "state_hash_prefix";
 }
 
@@ -226,8 +226,8 @@ void append_csv(const BenchReport& report, const std::string& path) {
             << std::setprecision(0) << t.throughput_per_s << ',' << t.cpu_ns << ','
             << std::setprecision(1) << t.latency.mean_ns << ',' << t.latency.p50_ns << ','
             << t.latency.p90_ns << ',' << t.latency.p95_ns << ',' << t.latency.p99_ns << ','
-            << t.latency.p999_ns << ',' << t.latency.max_ns << ','
-            << report.timer.median_overhead_ns << ',' << report.timer.min_nonzero_tick_ns << ','
+            << t.latency.p999_ns << ',' << t.latency.max_ns << ',' << std::setprecision(1)
+            << report.timer.mean_call_ns << ',' << report.timer.min_nonzero_tick_ns << ','
             << report.peak_rss_kib << ',' << t.state_hash.substr(0, 16) << "\n";
     };
     for (const auto& t : report.trials) {
@@ -265,8 +265,9 @@ void print_report(const BenchReport& r, std::ostream& out) {
             << "  p99 " << m.latency.p99_ns << "  p99.9 " << m.latency.p999_ns << "  max "
             << m.latency.max_ns << "\n";
     }
-    out << "  timer: now() overhead ~" << r.timer.median_overhead_ns << " ns, smallest tick "
-        << r.timer.min_nonzero_tick_ns << " ns; peak RSS " << r.peak_rss_kib / 1024 << " MiB\n"
+    out << std::setprecision(1) << "  timer: now() call ~" << r.timer.mean_call_ns
+        << " ns, smallest observed tick " << r.timer.min_nonzero_tick_ns << " ns; peak RSS "
+        << r.peak_rss_kib / 1024 << " MiB\n"
         << "  state hash " << m.state_hash.substr(0, 16) << " (identical across all trials)\n";
 }
 

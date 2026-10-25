@@ -40,15 +40,18 @@ LatencyStats summarize(std::vector<std::uint64_t>& samples) {
 TimerCharacteristics measure_timer(std::size_t iterations) {
     std::vector<std::uint64_t> deltas;
     deltas.reserve(iterations);
-    auto prev = Clock::now();
+    const auto start = Clock::now();
+    auto prev = start;
     for (std::size_t i = 0; i < iterations; ++i) {
         const auto now = Clock::now();
         deltas.push_back(elapsed_ns(prev, now));
         prev = now;
     }
     TimerCharacteristics t;
+    t.mean_call_ns = iterations == 0 ? 0.0
+                                     : static_cast<double>(elapsed_ns(start, prev)) /
+                                           static_cast<double>(iterations);
     std::sort(deltas.begin(), deltas.end());
-    t.median_overhead_ns = percentile_sorted(deltas, 0.5);
     const auto nonzero = std::upper_bound(deltas.begin(), deltas.end(), std::uint64_t{0});
     t.min_nonzero_tick_ns = nonzero == deltas.end() ? 0 : *nonzero;
     return t;

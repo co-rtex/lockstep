@@ -36,7 +36,7 @@ struct LatencyStats {
 
 // Measures back-to-back steady_clock::now() calls.
 struct TimerCharacteristics {
-    std::uint64_t median_overhead_ns = 0;   // median delta between consecutive now() calls
+    double mean_call_ns = 0;                // total time / calls for back-to-back now() calls
     std::uint64_t min_nonzero_tick_ns = 0;  // smallest observed nonzero delta (resolution bound)
 };
 [[nodiscard]] TimerCharacteristics measure_timer(std::size_t iterations = 200'000);
