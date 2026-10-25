@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -44,8 +45,8 @@ struct Counters {
 // subscriber list; the socket is closed when the last reference goes away.
 class Session {
 public:
-    Session(std::uint64_t id, Socket socket, std::size_t capacity)
-        : id_(id), socket_(std::move(socket)), out_(capacity) {}
+    Session(std::uint64_t id, Socket socket, std::size_t capacity, std::size_t byte_limit)
+        : id_(id), socket_(std::move(socket)), out_(capacity), byte_limit_(byte_limit) {}
 
     [[nodiscard]] int fd() const noexcept { return socket_.fd(); }
     [[nodiscard]] std::uint64_t id() const noexcept { return id_; }
@@ -55,9 +56,11 @@ public:
     // frame is queued in the reserved slot and the queue is closed, so the writer flushes what
     // is queued and disconnects. Returns false when `frame` was not queued.
     bool enqueue(const Frame& frame, Counters& counters) {
-        if (out_.try_push(frame)) {
+        const std::size_t bytes = frame->size();
+        if (queued_bytes_.fetch_add(bytes) + bytes <= byte_limit_ && out_.try_push(frame)) {
             return true;
         }
+        queued_bytes_.fetch_sub(bytes);
         if (!overflowed_.exchange(true) && !out_.closed()) {
             const std::string notice =
                 subscribed.load() ? resync_message("slow_consumer", last_event_queued.load())
@@ -69,6 +72,9 @@ public:
         }
         return false;
     }
+
+    // Called by the writer after a frame has been sent (or dropped).
+    void sent(std::size_t bytes) noexcept { queued_bytes_.fetch_sub(bytes); }
 
     std::atomic<bool> input_done{false};
     std::atomic<bool> subscribed{false};  // written by the sequencer only
@@ -83,6 +89,8 @@ private:
     std::uint64_t id_;
     Socket socket_;
     BoundedQueue<Frame> out_;
+    std::size_t byte_limit_;
+    std::atomic<std::size_t> queued_bytes_{0};
     std::atomic<bool> overflowed_{false};
 };
 
@@ -147,8 +155,14 @@ public:
     explicit Impl(ServerOptions options)
         : opts_(std::move(options)), backend_(opts_, recovery_), ingress_(opts_.ingress_capacity) {
         if (opts_.max_clients == 0 || opts_.ingress_capacity == 0 || opts_.outbound_capacity == 0 ||
-            opts_.max_batch == 0) {
+            opts_.max_batch == 0 || opts_.outbound_byte_limit == 0) {
             throw std::invalid_argument("server limits must be positive");
+        }
+        const bool loopback = opts_.host == "localhost" || opts_.host.rfind("127.", 0) == 0;
+        if (!loopback && !opts_.allow_remote) {
+            throw std::invalid_argument(
+                "refusing to bind " + opts_.host +
+                ": the protocol has no authentication; use a loopback address or allow_remote");
         }
         listener_ = listen_tcp(opts_.host, opts_.port);
         port_ = local_port(listener_.fd());
@@ -268,7 +282,7 @@ private:
             }
             counters_.connections_accepted.fetch_add(1);
             auto s = std::make_shared<Session>(++next_session_, std::move(sock),
-                                               opts_.outbound_capacity);
+                                               opts_.outbound_capacity, opts_.outbound_byte_limit);
             s->reader = std::thread([this, s] { reader_loop(s); });
             s->writer = std::thread([this, s] { writer_loop(s); });
             sessions_.push_back(std::move(s));
@@ -332,6 +346,13 @@ private:
                     partial_since.reset();
                 } else if (!partial_since) {
                     partial_since = Clock::now();
+                } else if (Clock::now() - *partial_since > opts_.partial_frame_timeout) {
+                    // A frame trickled in slower than the deadline (slowloris): disconnect.
+                    counters_.protocol_errors.fetch_add(1);
+                    submit(s, ReplyOnly{make_frame(error_message(
+                                  ErrorCode::InvalidRequest,
+                                  "protocol error: incomplete frame timed out; closing"))});
+                    break;
                 }
                 continue;
             }
@@ -364,10 +385,10 @@ private:
             items.clear();
             (void)s->out().pop_batch(items, 64, kPollTick);
             for (const auto& f : items) {
-                if (send_all(s->fd(), *f) != 0) {
+                if (healthy && send_all(s->fd(), *f) != 0) {
                     healthy = false;  // reset, or send timeout expired (slow reader)
-                    break;
                 }
+                s->sent(f->size());
             }
             if (!healthy || s->out().closed_and_empty()) {
                 break;
@@ -521,6 +542,12 @@ private:
         }
         const ErrorCode err = backend_.flush();
         counters_.batches.fetch_add(1);
+        if (err != ErrorCode::None && !failure_logged_) {
+            // Operator detail stays local; clients get a generic, stable error (see below).
+            std::fprintf(stderr, "enginex server: journal failure, now fail-stop: %s\n",
+                         backend_.failure().c_str());
+            failure_logged_ = true;
+        }
         const auto size = static_cast<std::uint64_t>(pending_.size());
         if (size > counters_.max_batch_seen.load()) {
             counters_.max_batch_seen = size;
@@ -530,8 +557,8 @@ private:
             if (err != ErrorCode::None && p.state_dependent) {
                 reply = make_frame(error_message(
                     ErrorCode::JournalIoError,
-                    "journal failure (" + backend_.failure() +
-                        "); outcome unknown, retry with the same request_id after restart",
+                    "journal failure; outcome unknown, retry with the same request_id after "
+                    "restart",
                     p.request_id, p.command_type));
             }
             (void)p.session->enqueue(reply, counters_);
@@ -558,6 +585,7 @@ private:
     CommandResult scratch_;
     EventSeq published_event_ = 0;
     EventSeq staged_event_ = 0;
+    bool failure_logged_ = false;
 };
 
 Server::Server(ServerOptions options) : impl_(std::make_unique<Impl>(std::move(options))) {}

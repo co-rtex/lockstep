@@ -32,8 +32,8 @@ bool Client::send(codec::Json message) {
 }
 
 bool Client::send_raw(std::string_view bytes) {
-    if (closed_ || send_all(socket_.fd(), bytes) != 0) {
-        closed_ = true;
+    if (closed_ || write_failed_ || !socket_.valid() || send_all(socket_.fd(), bytes) != 0) {
+        write_failed_ = true;
         return false;
     }
     return true;
@@ -55,7 +55,7 @@ std::optional<codec::Json> Client::receive(std::chrono::milliseconds timeout) {
         if (status == FrameDecoder::Status::Error) {
             throw std::runtime_error("server sent an invalid frame: " + decoder_.error());
         }
-        if (closed_) {
+        if (closed_ || !socket_.valid()) {
             return std::nullopt;
         }
         const auto left =

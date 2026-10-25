@@ -159,9 +159,7 @@ void DurableExchange::make_io_error(CommandResult& out) const {
     out.type = type;
     out.accepted = false;
     out.error = ErrorCode::JournalIoError;
-    out.message = failed_ ? "journal failure (" + failure_ +
-                                "); outcome unknown, retry with the same request_id after restart"
-                          : "journal failure; outcome unknown";
+    out.message = "journal failure; outcome unknown, retry with the same request_id after restart";
     out.state_watermark = 0;
 }
 

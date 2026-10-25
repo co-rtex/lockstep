@@ -709,6 +709,67 @@ TEST(Server, ShutdownDrainsQueuedWorkAndRestartRecovers) {
     EXPECT_EQ(state_hash(again.server->state()), hash_before);
 }
 
+TEST(Server, TrickledFrameIsDisconnectedAtDeadline) {
+    ServerOptions o;
+    o.partial_frame_timeout = 400ms;
+    TestServer ts(false, o);
+    Client c = ts.connect();
+    const std::string f = encode_frame(std::string(2000, ' ') + "{}");
+    const auto t0 = std::chrono::steady_clock::now();
+    // One byte every 20 ms never lets the reader see an idle tick (slowloris pattern).
+    std::size_t i = 0;
+    for (; i < f.size() && !c.closed() && !c.write_failed(); ++i) {
+        if (!c.send_raw(std::string_view(f).substr(i, 1))) {
+            break;
+        }
+        std::this_thread::sleep_for(20ms);
+        if (std::chrono::steady_clock::now() - t0 > 5s) {
+            break;
+        }
+    }
+    auto err = c.receive(kTimeout);
+    ASSERT_TRUE(err);
+    EXPECT_NE((*err)["message"].get<std::string>().find("timed out"), std::string::npos);
+    EXPECT_LT(std::chrono::steady_clock::now() - t0, 3s);
+    EXPECT_FALSE(c.receive(kTimeout).has_value());
+}
+
+TEST(Server, OutboundByteBudgetDisconnectsSnapshotHoarder) {
+    ServerOptions o;
+    o.outbound_byte_limit = 64 * 1024;
+    o.socket_send_buffer = 8 * 1024;
+    TestServer ts(false, o);
+    {
+        Client t = ts.connect();
+        for (int i = 0; i < 300; ++i) {  // 300 price levels make each full snapshot large
+            ASSERT_TRUE(t.request(order("lvl" + std::to_string(i), "BUY", 1000 + i, 1), kTimeout));
+        }
+    }
+    Client hoarder = ts.connect();
+    std::string burst;
+    for (int i = 0; i < 400; ++i) {
+        burst += encode_frame(Json{{"protocol_version", 1},
+                                   {"type", "snapshot_request"},
+                                   {"request_id", "h" + std::to_string(i)},
+                                   {"depth", 0}}
+                                  .dump());
+    }
+    ASSERT_TRUE(hoarder.send_raw(burst));  // and never read
+    for (int i = 0; i < 100 && ts.server->stats().slow_consumer_disconnects == 0; ++i) {
+        std::this_thread::sleep_for(20ms);
+    }
+    EXPECT_GE(ts.server->stats().slow_consumer_disconnects, 1U);
+    Client ok = ts.connect();
+    EXPECT_TRUE(ok.request(order("still-ok", "BUY", 100, 1), kTimeout));
+}
+
+TEST(Server, RefusesNonLoopbackBindWithoutOptIn) {
+    ServerOptions o;
+    o.host = "0.0.0.0";
+    o.port = 0;
+    EXPECT_THROW(Server{o}, std::invalid_argument);
+}
+
 TEST(Server, JournalFailureFailStopsOverTheNetwork) {
     test::TempDir dir;
     ServerOptions o;

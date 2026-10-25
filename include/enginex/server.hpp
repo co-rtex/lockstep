@@ -34,13 +34,19 @@ struct ServerOptions {
     StateConfig state;  // used when running in memory (journal options carry their own)
     std::size_t max_clients = 64;
     std::size_t ingress_capacity = 4096;
-    std::size_t outbound_capacity = 1024;                    // frames per connection
+    std::size_t outbound_capacity = 1024;  // frames per connection
+    // Bytes queued per connection (each subscriber counts a shared event frame once). A
+    // connection exceeding either limit is treated as a slow consumer.
+    std::size_t outbound_byte_limit = 64 * 1024 * 1024;
     std::size_t max_batch = 512;                             // commands per group commit
     std::chrono::milliseconds send_timeout{2000};            // slow-reader disconnect
     std::chrono::milliseconds partial_frame_timeout{10000};  // stalled half-frame disconnect
     // SO_SNDBUF per connection (0 = OS default). Smaller values bound the bytes buffered in the
     // kernel for a slow reader, so backpressure reaches the outbound queue sooner.
     int socket_send_buffer = 0;
+    // The protocol has no authentication (spec §3.2 non-goal). Binding to anything other than a
+    // loopback address is refused unless explicitly allowed.
+    bool allow_remote = false;
 };
 
 struct ServerStats {

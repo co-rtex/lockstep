@@ -45,10 +45,11 @@ Json stats_json(const net::ServerStats& s) {
 }  // namespace
 
 int cmd_serve(const std::vector<std::string>& argv) {
-    const Args args(argv,
-                    {"host", "port", "journal", "durability", "symbols", "max-clients",
-                     "ingress-capacity", "outbound-capacity", "max-batch", "send-timeout-ms"},
-                    {"refuse-tail"});
+    const Args args(
+        argv,
+        {"host", "port", "journal", "durability", "symbols", "max-clients", "ingress-capacity",
+         "outbound-capacity", "max-batch", "send-timeout-ms", "outbound-byte-limit"},
+        {"refuse-tail", "allow-remote"});
     net::ServerOptions opts;
     opts.host = args.get_or("host", "127.0.0.1");
     opts.port = port_arg(args, 9000);
@@ -60,6 +61,12 @@ int cmd_serve(const std::vector<std::string>& argv) {
     opts.outbound_capacity = args.get_u64("outbound-capacity", 1024);
     opts.max_batch = args.get_u64("max-batch", 512);
     opts.send_timeout = std::chrono::milliseconds(args.get_u64("send-timeout-ms", 2000));
+    opts.outbound_byte_limit = args.get_u64("outbound-byte-limit", 64ULL * 1024 * 1024);
+    opts.allow_remote = args.flag("allow-remote");
+    if (opts.allow_remote) {
+        std::cerr << "enginex serve: WARNING: --allow-remote: the protocol has no "
+                     "authentication or encryption; any peer can submit and cancel orders\n";
+    }
     std::string durability = "memory";
     if (const auto path = args.get("journal")) {
         DurableOptions d;
@@ -169,7 +176,9 @@ int client_submit(const Args& args) {
         if (!reply) {
             std::cout << Json{{"type", "client_error"},
                               {"request_id", msg["request_id"]},
-                              {"message", client.closed() ? "connection closed" : "timed out"}}
+                              {"message", client.closed() || client.write_failed()
+                                              ? "connection closed"
+                                              : "timed out"}}
                              .dump()
                       << std::endl;
             return 1;  // outcome unknown: the caller must retry with the same request ids

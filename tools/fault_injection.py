@@ -22,6 +22,14 @@ Scenario B, corruption. A copy of the journal gets one flipped payload byte: `re
 exit 3 (incomplete tail) from verify, and `--repair-tail` must restore the last complete
 record and preserve the cut bytes.
 
+Scenario C, network kill -9. `enginex serve --journal --durability sync` gets traffic from 3
+concurrent TCP clients and a subscriber, and is killed with SIGKILL mid-stream. After a
+restart on the same journal: every acknowledged command is present; each client retries
+everything it sent (acknowledged requests return `duplicate` with the original sequence);
+the restarted server's final state equals an in-memory `simulate` of the commands ordered by
+their assigned command_sequence; and a fresh subscription's watermark equals the last
+sequence.
+
 Usage: tools/fault_injection.py --enginex build/release/enginex [--rounds 8] [--seed 1]
 """
 
@@ -33,7 +41,11 @@ import os
 import random
 import shutil
 import signal
+import socket
+import struct
 import subprocess
+import threading
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -209,6 +221,142 @@ def scenario_corruption(enginex: str, workdir: Path, journal: Path) -> None:
           f"{Path(rep['preserved_tail_path']).name}: OK")
 
 
+class Wire:
+    """Minimal EngineX protocol client (length-prefixed JSON)."""
+
+    def __init__(self, port: int):
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.buf = b""
+
+    def send(self, msg: dict) -> None:
+        msg = {"protocol_version": 1, **msg}
+        data = json.dumps(msg).encode()
+        self.sock.sendall(struct.pack(">I", len(data)) + data)
+
+    def recv(self) -> dict | None:
+        while True:
+            if len(self.buf) >= 4:
+                (n,) = struct.unpack(">I", self.buf[:4])
+                if len(self.buf) >= 4 + n:
+                    payload, self.buf = self.buf[4:4 + n], self.buf[4 + n:]
+                    return json.loads(payload)
+            try:
+                chunk = self.sock.recv(65536)
+            except (ConnectionResetError, socket.timeout, OSError):
+                return None
+            if not chunk:
+                return None
+            self.buf += chunk
+
+    def request(self, msg: dict) -> dict | None:
+        self.send(msg)
+        while True:
+            r = self.recv()
+            if r is None or r.get("type") != "book_update":
+                return r
+
+    def close(self) -> None:
+        self.sock.close()
+
+
+def start_server(enginex: str, journal: Path) -> tuple[subprocess.Popen, int, dict]:
+    proc = subprocess.Popen([enginex, "serve", "--port", "0", "--journal", str(journal),
+                             "--durability", "sync"],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    ready = json.loads(proc.stdout.readline())
+    check(ready["type"] == "listening", f"server did not start: {ready}")
+    return proc, ready["port"], ready
+
+
+def scenario_network_kill(enginex: str, workdir: Path, seed: int) -> None:
+    journal = workdir / "net.exj"
+    proc, port, _ = start_server(enginex, journal)
+    sent: dict[int, list[dict]] = {c: [] for c in range(3)}
+    acked: dict[str, dict] = {}
+    lock = threading.Lock()
+    stop = threading.Event()
+
+    def trader(c: int) -> None:
+        rng = random.Random(seed * 100 + c)
+        try:
+            w = Wire(port)
+        except OSError:
+            return
+        i = 0
+        while not stop.is_set():
+            side = rng.choice(["BUY", "SELL"])
+            cmd = {"type": "new_limit", "request_id": f"net{c}-{i}",
+                   "symbol": rng.choice(["AAPL", "MSFT"]), "side": side,
+                   "price": 10000 + (rng.randint(-6, 3) if side == "BUY" else rng.randint(-3, 6)),
+                   "quantity": rng.randint(1, 40)}
+            i += 1
+            with lock:
+                sent[c].append(cmd)
+            r = w.request(cmd)
+            if r is None:
+                return  # server died; this request's outcome is unknown
+            if r.get("type") == "ack":
+                with lock:
+                    acked[cmd["request_id"]] = r
+
+    sub = Wire(port)
+    sub.send({"type": "subscribe"})
+    check(sub.recv()["type"] == "snapshot_response", "no subscribe snapshot")
+    threads = [threading.Thread(target=trader, args=(c,)) for c in range(3)]
+    for t in threads:
+        t.start()
+    deadline = time.time() + 20
+    while len(acked) < 60 and time.time() < deadline:
+        time.sleep(0.01)
+    proc.send_signal(signal.SIGKILL)
+    proc.wait()
+    stop.set()
+    for t in threads:
+        t.join()
+    sub.close()
+    check(len(acked) >= 60, f"too few acknowledgments before the kill ({len(acked)})")
+    max_acked = max(r["command_sequence"] for r in acked.values())
+
+    proc, port, ready = start_server(enginex, journal)
+    check(ready["records_replayed"] >= max_acked,
+          f"acknowledged sequence {max_acked} lost: only {ready['records_replayed']} replayed")
+    sub = Wire(port)
+    sub.send({"type": "subscribe"})
+    snap = sub.recv()
+    check(snap["event_watermark"] == ready["records_replayed"],
+          "subscribe watermark does not match the recovered sequence")
+    sub.close()
+    by_seq: dict[int, dict] = {}
+    for c, cmds in sent.items():
+        w = Wire(port)
+        for cmd in cmds:
+            r = w.request(cmd)
+            check(r is not None and r["type"] == "ack", f"retry of {cmd['request_id']} failed: {r}")
+            rid = cmd["request_id"]
+            if rid in acked:
+                check(r["duplicate"] and r["command_sequence"] == acked[rid]["command_sequence"],
+                      f"acknowledged {rid} was not returned as its original result")
+            by_seq[r["command_sequence"]] = cmd
+        w.close()
+    proc.send_signal(signal.SIGTERM)
+    out, _ = proc.communicate(timeout=30)
+    final = json.loads(out.strip().splitlines()[-1])
+    check(final["type"] == "shutdown", "no shutdown summary")
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+        for seq in sorted(by_seq):
+            f.write(json.dumps(by_seq[seq]) + "\n")
+        sim_input = f.name
+    sim = subprocess.run([enginex, "simulate", "--input", sim_input, "--compact"],
+                         capture_output=True, text=True, check=True)
+    os.unlink(sim_input)
+    expected = json.loads(sim.stdout)["final_state"]["state_hash"]
+    check(sorted(by_seq) == list(range(1, len(by_seq) + 1)), "sequences are not contiguous")
+    check(final["state_hash"] == expected, "network state after crash differs from simulate")
+    print(f"  {len(acked)} acked before kill (max seq {max_acked}); {ready['records_replayed']} "
+          f"replayed; {len(by_seq)} commands after retries; state hash {expected[:16]} matches "
+          f"simulate in sequence order: OK")
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--enginex", default="build/release/enginex")
@@ -222,6 +370,8 @@ def main() -> int:
         journal = scenario_kill(args.enginex, workdir, args.rounds, args.seed)
         print("corruption scenario:")
         scenario_corruption(args.enginex, workdir, journal)
+        print("network kill -9 scenario:")
+        scenario_network_kill(args.enginex, workdir, args.seed)
         print("fault injection: ALL CHECKS PASSED")
         return 0
     except AssertionError as e:

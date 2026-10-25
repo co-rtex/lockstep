@@ -37,7 +37,10 @@ public:
 
     void shutdown_write();
     void close();
+    // True once the server closed the connection (EOF/reset seen while reading). A failed
+    // write alone does not set it, so replies already sent by the server can still be read.
     [[nodiscard]] bool closed() const noexcept { return closed_; }
+    [[nodiscard]] bool write_failed() const noexcept { return write_failed_; }
 
 private:
     explicit Client(Socket socket);
@@ -45,6 +48,7 @@ private:
     Socket socket_;
     FrameDecoder decoder_{kMaxServerFrame};
     bool closed_ = false;
+    bool write_failed_ = false;
 };
 
 }  // namespace enginex::net
