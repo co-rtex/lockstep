@@ -123,7 +123,8 @@ void configure_stream(int fd, std::chrono::milliseconds recv_timeout,
     }
 }
 
-int send_all(int fd, std::string_view bytes) {
+int send_all(int fd, std::string_view bytes, std::chrono::milliseconds deadline) {
+    const auto start = std::chrono::steady_clock::now();
 #if defined(MSG_NOSIGNAL)
     constexpr int kFlags = MSG_NOSIGNAL;
 #else
@@ -141,6 +142,10 @@ int send_all(int fd, std::string_view bytes) {
         }
         p += n;
         left -= static_cast<std::size_t>(n);
+        if (left > 0 && deadline.count() > 0 &&
+            std::chrono::steady_clock::now() - start > deadline) {
+            return ETIMEDOUT;
+        }
     }
     return 0;
 }

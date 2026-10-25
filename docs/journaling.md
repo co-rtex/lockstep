@@ -140,7 +140,8 @@ an injected crash point) and end-to-end in `tools/fault_injection.py` (real `SIG
 | ends exactly at a record boundary | clean | starts | 0 |
 | incomplete file header (a prefix of `EXJ1…`, including an empty file) | incomplete tail | header rewritten | 3 |
 | partial 8-byte frame header after the last record | incomplete tail | preserve + truncate | 3 |
-| payload shorter than its declared length | incomplete tail | preserve + truncate | 3 |
+| payload shorter than its declared length, **and** the visible bytes are a valid prefix of a record with exactly that length (or are all zero) | incomplete tail | preserve + truncate | 3 |
+| payload shorter than its declared length, but the visible bytes contradict it (bad version/type, wrong sequence, or a declared length that differs from what the visible request-id/symbol lengths imply) | **corrupt** | refuses | 1 |
 | all-zero bytes after the last record (power-loss artifact) | incomplete tail | preserve + truncate | 3 |
 | CRC mismatch on a complete record (any position, including the last) | **corrupt** | refuses | 1 |
 | declared length 0 or > 4096 with non-zero bytes | **corrupt** | refuses | 1 |
@@ -160,6 +161,15 @@ incomplete on disk therefore never got an accepted reply. The test
 `TailRepair.TruncatedLastRecordIsPreservedAndTruncated` checks this. It cuts the final record
 at several byte offsets, recovers, and shows that the retry executes the command exactly
 once.
+
+**Why the prefix check matters.** The CRC covers the payload but not the length field. Without
+the check, a bit flip that raised the length of one of the last records (anything within
+4 KiB of EOF) would make complete, acknowledged records look like a torn tail, and repair
+would truncate them. A genuine torn write always leaves a prefix of the correct bytes, so
+EngineX checks every visible byte for consistency before treating the tail as incomplete
+(`JournalScan.CorruptedLengthNearEofIsCorruptNotATornTail`, mutation-checked). The finding
+came from an independent code review. A future format version could put the CRC over the
+length as well.
 
 **Corruption is never "fixed" automatically.** A damaged complete record in the middle could
 hide any number of later acknowledged commands, so EngineX refuses to start. The operator must

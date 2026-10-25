@@ -51,8 +51,11 @@ void configure_stream(int fd, std::chrono::milliseconds recv_timeout,
                       std::chrono::milliseconds send_timeout);
 
 // Sends every byte (loops over short writes and EINTR, never raises SIGPIPE).
-// Returns 0 or an errno value (EAGAIN/EWOULDBLOCK means the send timeout expired).
-[[nodiscard]] int send_all(int fd, std::string_view bytes);
+// Returns 0 or an errno value (EAGAIN/EWOULDBLOCK means the socket send timeout expired).
+// With a nonzero `deadline`, gives up with ETIMEDOUT once the whole send has taken longer
+// (a peer that drains a few bytes at a time would otherwise reset SO_SNDTIMEO forever).
+[[nodiscard]] int send_all(int fd, std::string_view bytes,
+                           std::chrono::milliseconds deadline = std::chrono::milliseconds(0));
 
 // Ignores SIGPIPE process-wide (writes to closed sockets then fail with EPIPE instead).
 void ignore_sigpipe();

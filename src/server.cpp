@@ -1,5 +1,6 @@
 #include "enginex/server.hpp"
 
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 
@@ -40,6 +41,9 @@ struct Counters {
     std::atomic<std::uint64_t> commands_staged{0};
     std::atomic<std::uint64_t> events_published{0};
     std::atomic<std::uint64_t> max_batch_seen{0};
+    std::atomic<std::uint64_t> subscribers{0};
+    std::atomic<std::uint64_t> truncated_frames{0};
+    std::atomic<std::uint64_t> internal_errors{0};
 };
 
 // One client connection. Shared by its reader thread, writer thread, queued requests and the
@@ -165,8 +169,14 @@ public:
                 "refusing to bind " + opts_.host +
                 ": the protocol has no authentication; use a loopback address or allow_remote");
         }
+        if (opts_.max_frame_bytes < 1024 || opts_.max_frame_bytes > kMaxServerFrame) {
+            throw std::invalid_argument("max_frame_bytes must be in [1024, 16 MiB]");
+        }
         listener_ = listen_tcp(opts_.host, opts_.port);
         port_ = local_port(listener_.fd());
+        // Non-blocking listener: a connection aborted between poll() and accept() must not
+        // leave the acceptor (and therefore stop()) blocked inside accept().
+        ::fcntl(listener_.fd(), F_SETFL, ::fcntl(listener_.fd(), F_GETFL, 0) | O_NONBLOCK);
         published_event_ = staged_event_ = backend_.state().last_command_sequence();
     }
 
@@ -262,8 +272,16 @@ private:
             }
             Socket sock(::accept(listener_.fd(), nullptr, nullptr));
             if (!sock.valid()) {
+                if (errno == EMFILE || errno == ENFILE || errno == ENOBUFS || errno == ENOMEM) {
+                    // Out of descriptors/memory: back off instead of spinning on a readable
+                    // listener; reaping finished sessions frees descriptors.
+                    std::this_thread::sleep_for(kPollTick);
+                }
                 continue;
             }
+            // Accepted sockets inherit O_NONBLOCK on BSD/macOS; the per-connection threads use
+            // blocking I/O with timeouts.
+            ::fcntl(sock.fd(), F_SETFL, ::fcntl(sock.fd(), F_GETFL, 0) & ~O_NONBLOCK);
             configure_stream(sock.fd(), kReadTick, opts_.send_timeout);
             if (opts_.socket_send_buffer > 0) {
                 ::setsockopt(sock.fd(), SOL_SOCKET, SO_SNDBUF, &opts_.socket_send_buffer,
@@ -384,8 +402,12 @@ private:
             (void)s->out().pop_batch(items, 64, kPollTick);
             for (const auto& f : items) {
                 if (healthy) {
-                    const int err = send_all(s->fd(), *f);
-                    if (err == EAGAIN || err == EWOULDBLOCK) {
+                    // Overall per-frame budget: the send timeout plus 1 s per MiB.
+                    const auto budget =
+                        opts_.send_timeout +
+                        std::chrono::milliseconds(static_cast<std::int64_t>(f->size() >> 10U));
+                    const int err = send_all(s->fd(), *f, budget);
+                    if (err == EAGAIN || err == EWOULDBLOCK || err == ETIMEDOUT) {
                         counters_.send_timeout_disconnects.fetch_add(1);  // slow reader
                     }
                     healthy = err == 0;
@@ -416,7 +438,8 @@ private:
         bool state_dependent = false;  // command replies (invalidated by a failed flush)
         std::string request_id;
         std::string command_type;
-        std::string event_json;  // book_update to publish after a successful flush
+        Frame event;             // book_update to publish after a successful flush
+        bool has_event = false;  // true for accepted, non-duplicate commands
         EventSeq event_seq = 0;
     };
 
@@ -425,6 +448,7 @@ private:
         while (true) {
             batch.clear();
             (void)ingress_.pop_batch(batch, opts_.max_batch, kPollTick);
+            prune_subscribers();
             if (batch.empty()) {
                 if (ingress_.closed_and_empty()) {
                     break;
@@ -432,25 +456,114 @@ private:
                 continue;
             }
             for (Request& req : batch) {
-                std::visit([&](auto& m) { handle(req.session, m); }, req.message);
+                try {
+                    std::visit([&](auto& m) { handle(req.session, m); }, req.message);
+                } catch (const std::exception& e) {
+                    internal_failure(req.session, e.what());
+                }
             }
-            commit_pending();
+            safe_commit();
         }
-        commit_pending();
+        safe_commit();
+    }
+
+    // Unexpected exceptions must not terminate the process (std::thread boundary). State may
+    // be inconsistent afterwards, so the server stops accepting commands (fail-stop) and
+    // answers INTERNAL_ERROR; operators restart it to recover from the journal.
+    void internal_failure(const SessionPtr& s, const char* what) {
+        counters_.internal_errors.fetch_add(1);
+        std::fprintf(stderr, "enginex server: internal error, now fail-stop: %s\n", what);
+        fatal_ = true;
+        Pending p;
+        p.session = s;
+        p.reply = make_frame(
+            error_message(ErrorCode::InternalError, "internal server error; server is fail-stop"));
+        pending_.push_back(std::move(p));
+    }
+
+    void safe_commit() {
+        try {
+            commit_pending();
+        } catch (const std::exception& e) {
+            counters_.internal_errors.fetch_add(1);
+            std::fprintf(stderr, "enginex server: internal error during commit: %s\n", e.what());
+            fatal_ = true;
+            for (Pending& p : pending_) {
+                p.session->in_flight.fetch_sub(1);
+            }
+            pending_.clear();
+        }
+    }
+
+    // Drops subscribers whose connection has ended, even when no events are flowing (an idle
+    // market must not keep closed sockets alive).
+    void prune_subscribers() {
+        for (auto it = subscribers_.begin(); it != subscribers_.end();) {
+            if ((*it)->out().closed() || (*it)->writer_done.load()) {
+                (*it)->subscribed = false;
+                it = subscribers_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        counters_.subscribers = subscribers_.size();
+    }
+
+    // Frames within the configured limit, or nullptr when too large.
+    Frame bounded_frame(const std::string& json) const {
+        if (json.size() > opts_.max_frame_bytes) {
+            return nullptr;
+        }
+        return std::make_shared<const std::string>(encode_frame(json, opts_.max_frame_bytes));
+    }
+
+    // Ack/event for a command whose execution list does not fit in one frame: the same
+    // message without "executions", plus "executions_truncated": true and the count. Clients
+    // can read the executions with a later snapshot/feed or from the journal.
+    Frame truncated_frame(const std::string& json, std::size_t execution_count) {
+        codec::Json j = codec::Json::parse(json);
+        j["executions"] = codec::Json::array();
+        j["executions_truncated"] = true;
+        j["execution_count"] = execution_count;
+        counters_.truncated_frames.fetch_add(1);
+        return bounded_frame(j.dump());
     }
 
     void handle(const SessionPtr& s, Command& cmd) {
-        backend_.stage(cmd, scratch_);
-        counters_.commands_staged.fetch_add(1);
         Pending p;
         p.session = s;
+        if (fatal_) {
+            p.reply = make_frame(error_message(ErrorCode::InternalError,
+                                               "server is fail-stop after an internal error",
+                                               request_id_of(cmd), to_string(type_of(cmd))));
+            pending_.push_back(std::move(p));
+            return;
+        }
+        backend_.stage(cmd, scratch_);
+        counters_.commands_staged.fetch_add(1);
         p.state_dependent = true;
         p.request_id = scratch_.request_id;
         p.command_type = std::string(to_string(scratch_.type));
-        p.reply = make_frame(result_message(scratch_, backend_.state()));
+        const std::string reply = result_message(scratch_, backend_.state());
+        p.reply = bounded_frame(reply);
+        if (!p.reply) {
+            p.reply = truncated_frame(reply, scratch_.executions.size());
+        }
         if (scratch_.accepted && !scratch_.duplicate) {
             p.event_seq = ++staged_event_;
-            p.event_json = book_update_message(backend_.state(), scratch_, p.event_seq);
+            const std::string event = book_update_message(backend_.state(), scratch_, p.event_seq);
+            p.event = bounded_frame(event);
+            if (!p.event) {
+                p.event = truncated_frame(event, scratch_.executions.size());
+            }
+            p.has_event = true;  // a null frame (levels alone too large) forces a resync
+        }
+        if (!p.reply) {
+            // Even the truncated ack does not fit: answer without details.
+            p.reply = make_frame(error_message(ErrorCode::InternalError,
+                                               "reply exceeds the frame limit; command applied, "
+                                               "retry the request_id to read its outcome",
+                                               p.request_id, p.command_type));
         }
         pending_.push_back(std::move(p));
     }
@@ -495,6 +608,10 @@ private:
             f = make_frame(error_message(ErrorCode::JournalIoError,
                                          "journal failed; cannot subscribe until restart",
                                          r.request_id, "subscribe"));
+        } else if (fatal_) {
+            f = make_frame(error_message(ErrorCode::InternalError,
+                                         "server is fail-stop after an internal error",
+                                         r.request_id, "subscribe"));
         } else if (s->subscribed.load()) {
             f = make_frame(error_message(ErrorCode::InvalidRequest, "already subscribed",
                                          r.request_id, "subscribe"));
@@ -514,18 +631,31 @@ private:
     Frame snapshot_frame(const std::string& request_id, std::optional<SymbolId> symbol,
                          std::size_t depth, bool subscribed) {
         try {
-            return make_frame(snapshot_message(backend_.state(), request_id, symbol, depth,
-                                               published_event_, subscribed));
+            if (Frame f = bounded_frame(snapshot_message(backend_.state(), request_id, symbol,
+                                                         depth, published_event_, subscribed))) {
+                return f;
+            }
         } catch (const std::length_error&) {
-            return make_frame(error_message(ErrorCode::InternalError,
-                                            "snapshot exceeds the 16 MiB frame limit", request_id,
-                                            subscribed ? "subscribe" : "snapshot_request"));
         }
+        return make_frame(error_message(ErrorCode::InternalError,
+                                        "snapshot exceeds the frame limit; request less depth",
+                                        request_id, subscribed ? "subscribe" : "snapshot_request"));
     }
 
-    void publish(EventSeq seq, const std::string& json) {
-        const Frame f = make_frame(json);
+    void publish(EventSeq seq, const Frame& f) {
         counters_.events_published.fetch_add(1);
+        if (!f) {
+            // The event cannot be framed at all: every subscriber would see a gap, so end
+            // their feeds explicitly; they resubscribe for a fresh snapshot.
+            const Frame notice = make_frame(resync_message("event_too_large", seq - 1));
+            for (const SessionPtr& s : subscribers_) {
+                (void)s->enqueue(notice, counters_);
+                s->out().close();
+                s->subscribed = false;
+            }
+            subscribers_.clear();
+            return;
+        }
         for (auto it = subscribers_.begin(); it != subscribers_.end();) {
             const SessionPtr& s = *it;
             if (s->out().closed() || !s->enqueue(f, counters_)) {
@@ -565,9 +695,9 @@ private:
             }
             (void)p.session->enqueue(reply, counters_);
             p.session->in_flight.fetch_sub(1);
-            if (err == ErrorCode::None && !p.event_json.empty()) {
+            if (err == ErrorCode::None && p.has_event) {
                 published_event_ = p.event_seq;
-                publish(p.event_seq, p.event_json);
+                publish(p.event_seq, p.event);
             }
         }
         pending_.clear();
@@ -588,6 +718,7 @@ private:
     EventSeq published_event_ = 0;
     EventSeq staged_event_ = 0;
     bool failure_logged_ = false;
+    bool fatal_ = false;
 };
 
 Server::Server(ServerOptions options) : impl_(std::make_unique<Impl>(std::move(options))) {}
@@ -639,6 +770,9 @@ ServerStats Server::stats() const {
     s.commands_staged = c.commands_staged.load();
     s.events_published = c.events_published.load();
     s.max_batch_seen = c.max_batch_seen.load();
+    s.subscribers = c.subscribers.load();
+    s.truncated_frames = c.truncated_frames.load();
+    s.internal_errors = c.internal_errors.load();
     return s;
 }
 

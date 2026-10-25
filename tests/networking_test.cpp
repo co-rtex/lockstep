@@ -763,6 +763,86 @@ TEST(Server, OutboundByteBudgetDisconnectsSnapshotHoarder) {
     EXPECT_TRUE(ok.request(order("still-ok", "BUY", 100, 1), kTimeout));
 }
 
+TEST(Server, IdleDisconnectedSubscribersAreReleased) {
+    TestServer ts(false);
+    for (int i = 0; i < 20; ++i) {
+        Client sub = ts.connect();
+        ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}}));
+        ASSERT_TRUE(sub.receive(kTimeout));
+    }  // each client disconnects; no commands are sent, so no event write would notice
+    for (int i = 0; i < 100 && ts.server->stats().subscribers > 0; ++i) {
+        std::this_thread::sleep_for(20ms);
+    }
+    EXPECT_EQ(ts.server->stats().subscribers, 0U);
+}
+
+TEST(Server, OversizedAckAndEventAreTruncatedNotFatal) {
+    ServerOptions o;
+    o.max_frame_bytes = 4096;
+    TestServer ts(false, o);
+    Client sub = ts.connect();
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}}));
+    ASSERT_TRUE(sub.receive(kTimeout));
+    Client c = ts.connect();
+    for (int i = 0; i < 60; ++i) {  // 60 resting sells at one price
+        ASSERT_TRUE(c.request(order("s" + std::to_string(i), "SELL", 10000, 1), kTimeout));
+    }
+    auto sweep = c.request(order("sweep", "BUY", 10000, 60), kTimeout);
+    ASSERT_TRUE(sweep);
+    EXPECT_EQ((*sweep)["type"], "ack");
+    EXPECT_TRUE((*sweep)["executions_truncated"].get<bool>());
+    EXPECT_EQ((*sweep)["execution_count"], 60);
+    EXPECT_EQ((*sweep)["remaining"], 0);
+    std::uint64_t last = 0;
+    std::optional<Json> ev;
+    while ((ev = sub.receive(kTimeout)) && (*ev)["command_sequence"] != 61) {
+        last = (*ev)["event_sequence"];
+    }
+    ASSERT_TRUE(ev);
+    EXPECT_EQ((*ev)["event_sequence"], last + 1);
+    EXPECT_TRUE((*ev)["executions_truncated"].get<bool>());
+    EXPECT_EQ((*ev)["levels"],
+              Json::parse(R"([{"side":"SELL","price":10000,"quantity":0,"order_count":0}])"));
+    EXPECT_GE(ts.server->stats().truncated_frames, 2U);
+    // The server keeps working.
+    EXPECT_TRUE(c.request(order("after", "BUY", 9000, 1), kTimeout));
+}
+
+TEST(Server, UnframeableEventEndsFeedsWithResync) {
+    ServerOptions o;
+    o.max_frame_bytes = 1024;
+    TestServer ts(false, o);
+    Client sub = ts.connect();  // subscribe while the book is empty (small snapshot)
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}}));
+    auto snap = sub.receive(kTimeout);
+    ASSERT_TRUE(snap);
+    ASSERT_EQ((*snap)["type"], "snapshot_response");
+    Client c = ts.connect();
+    for (int i = 0; i < 40; ++i) {  // 40 distinct ask levels, one small event each
+        ASSERT_TRUE(c.request(order("s" + std::to_string(i), "SELL", 10000 + i, 1), kTimeout));
+    }
+    // One sweep touches 40 levels: even without executions the event exceeds 1 KiB.
+    auto sweep = c.request(order("sweep", "BUY", 20000, 40), kTimeout);
+    ASSERT_TRUE(sweep);
+    EXPECT_EQ((*sweep)["type"], "ack");
+    std::uint64_t events = 0;
+    bool resync = false;
+    while (auto m = sub.receive(2s)) {
+        if ((*m)["type"] == "book_update") {
+            ++events;
+            EXPECT_EQ((*m)["event_sequence"].get<std::uint64_t>(), events);
+        } else if ((*m)["type"] == "resync_required") {
+            resync = true;
+            EXPECT_EQ((*m)["reason"], "event_too_large");
+            EXPECT_EQ((*m)["last_event_sequence"], 40);
+        }
+    }
+    EXPECT_EQ(events, 40U);  // every event before the oversized one, then an explicit end
+    EXPECT_TRUE(resync);
+    EXPECT_TRUE(sub.closed());
+    EXPECT_TRUE(c.request(order("after", "BUY", 100, 1), kTimeout));
+}
+
 TEST(Server, RefusesNonLoopbackBindWithoutOptIn) {
     ServerOptions o;
     o.host = "0.0.0.0";

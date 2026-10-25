@@ -21,6 +21,8 @@ feed and makes no low-latency claims. Implementation: `include/enginex/protocol.
 * Both sides handle arbitrary segmentation: frames may arrive one byte at a time or many per
   read. Tests cover byte-by-byte delivery, several frames coalesced into one write, and splits
   inside a header.
+* The listening socket is non-blocking. If accepting fails because descriptors are
+  exhausted, the acceptor backs off for one tick instead of spinning.
 * An invalid length (0 or over the limit) is a fatal stream error. The server replies with an
   `error` (`INVALID_REQUEST`, "protocol error: invalid frame length …") and closes the
   connection, because the byte stream cannot be resynchronized.
@@ -105,8 +107,22 @@ subscribe snapshot maintains an exact aggregated book. `SubscribeHandoffUnderLoa
 checks this against a fresh full snapshot.
 
 ### `resync_required`
-`reason` (`"slow_consumer"`) and `last_event_sequence` (the last event queued to this
-subscriber). The feed ends after it and the server closes the connection.
+`reason` and `last_event_sequence` (the last event queued to this subscriber). The feed
+ends after it and the server closes the connection. Reasons:
+
+* `slow_consumer`: the subscriber's outbound queue overflowed.
+* `event_too_large`: an event could not be framed even in truncated form (see below), so
+  every subscriber's feed ends rather than skipping it silently.
+
+### Oversized acks and events
+A single aggressive order can sweep tens of thousands of resting orders, and its execution
+list would exceed the server's frame limit (16 MiB by default, configurable down to 1 KiB
+for tests). In that case the `ack` and/or `book_update` is sent **without** its executions:
+`"executions": []`, `"executions_truncated": true` and `"execution_count": N`. Every other
+field (sequences, remaining quantity, changed `levels`, best bid/ask) is still present, so
+book mirroring stays exact. If even the truncated event is too large (a sweep that touches an
+enormous number of price levels), subscribers get `resync_required` with reason
+`event_too_large`.
 
 ## 5. Ordering, watermarks and the snapshot handoff
 
@@ -146,7 +162,8 @@ because the request map is rebuilt from the journal (`RetryAfterDisconnectProduc
 | connections | 64 (`--max-clients`) | extra connection gets `error SERVER_OVERLOADED` and is closed |
 | ingress queue (all connections) | 4096 requests (`--ingress-capacity`) | request answered immediately with `SERVER_OVERLOADED`, not processed |
 | outbound queue per connection | 1024 frames (`--outbound-capacity`) | connection marked overflowed: a final `resync_required` (subscriber) or `SERVER_OVERLOADED` error (non-subscriber) goes into a reserved slot, the subscription is dropped, and the socket closes after the queue drains |
-| socket send stall | 2 s (`--send-timeout-ms`) | writer gives up and closes the connection |
+| socket send stall | 2 s (`--send-timeout-ms`) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
+| frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth") |
 | group commit batch | 512 commands (`--max-batch`) | larger bursts span several batches |
 
 The sequencer never blocks on a client. It only `try_push`es into outbound queues.

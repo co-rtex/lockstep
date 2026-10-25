@@ -142,3 +142,20 @@ notice. The client must reconnect and subscribe again for a fresh snapshot.
 Client→server frames are limited to 32 KiB (spec §10.1) and the declared length is checked
 before any allocation. Server→client frames may be up to 16 MiB, because a full-depth
 subscribe snapshot of a large book can exceed 32 KiB. Clients enforce that limit.
+
+## D18. Hardening after an independent review of the R3 server and journal
+A read-only review found three defects, all fixed with regression tests:
+1. **Idle subscriber leak.** Closed subscribers were pruned only when an event was published,
+   so an idle market kept their sockets open. The sequencer now prunes on every loop
+   iteration (`IdleDisconnectedSubscribersAreReleased`).
+2. **Oversized frames.** An ack or event for a huge sweep could exceed the frame limit, and
+   the resulting exception would terminate the process from the sequencer thread. Frames are
+   now size-checked. Over the limit, they are sent without the execution list
+   (`executions_truncated`), or the feeds are ended with `resync_required`
+   (`event_too_large`). Any unexpected exception in the sequencer is caught and puts the
+   server into fail-stop (`INTERNAL_ERROR`) instead of `std::terminate`.
+3. **Length corruption near EOF.** This could be misclassified as a torn tail (see
+   journaling.md §4). It is now rejected by validating the visible payload prefix.
+Also adopted from the review's lower-confidence notes: an overall per-frame send deadline, so
+a slowly draining peer cannot reset `SO_SNDTIMEO` forever; a non-blocking listener, so
+`accept` cannot hang shutdown; and a back-off when descriptors run out.

@@ -105,6 +105,54 @@ bool all_zero(std::string_view bytes) {
     return std::all_of(bytes.begin(), bytes.end(), [](char c) { return c == 0; });
 }
 
+// Validates the visible prefix of a payload whose frame claims `declared` bytes but which is
+// cut off by EOF. Returns an empty string when the bytes are consistent with a torn write of a
+// genuine record (including an all-zero region), otherwise a description of the mismatch.
+std::string partial_payload_problem(std::string_view visible, std::size_t declared,
+                                    CommandSeq expected) {
+    if (all_zero(visible)) {
+        return {};  // payload region allocated but never written
+    }
+    const std::size_t n = visible.size();
+    auto byte = [&](std::size_t i) { return static_cast<unsigned char>(visible[i]); };
+    if (n >= 1 && byte(0) != kPayloadVersion) {
+        return "bad payload version";
+    }
+    if (n >= 2 && byte(1) != static_cast<unsigned char>(CommandType::NewLimit) &&
+        byte(1) != static_cast<unsigned char>(CommandType::Cancel)) {
+        return "unknown command type";
+    }
+    if (n >= 10 && get_le(visible, 2, 8) != expected) {
+        return "sequence does not continue the journal";
+    }
+    if (n < 11) {
+        return {};
+    }
+    const std::size_t rid = byte(10);
+    if (rid == 0 || rid > kMaxRequestIdBytes) {
+        return "bad request id length";
+    }
+    std::size_t exact = 0;
+    if (byte(1) == static_cast<unsigned char>(CommandType::Cancel)) {
+        exact = 11 + rid + 8;
+    } else {
+        const std::size_t sym_at = 11 + rid;
+        if (n <= sym_at) {
+            return {};
+        }
+        const std::size_t sym = byte(sym_at);
+        if (sym == 0 || sym > kMaxSymbolBytes) {
+            return "bad symbol length";
+        }
+        exact = sym_at + 1 + sym + 1 + 8 + 8 + 8;
+    }
+    if (exact != declared) {
+        return "declared " + std::to_string(declared) + " bytes, record needs " +
+               std::to_string(exact);
+    }
+    return {};
+}
+
 [[noreturn]] void corrupt(const std::string& message, std::uint64_t offset) {
     throw JournalError(ErrorCode::JournalCorrupt, message + " at offset " + std::to_string(offset),
                        offset);
@@ -355,6 +403,15 @@ ScanResult scan_bytes(std::string_view bytes, const RecordCallback& on_record) {
             corrupt("invalid record length " + std::to_string(length), offset);
         }
         if (remaining - kFrameHeaderSize < length) {
+            // The CRC covers only the payload, so a corrupted length field near EOF could
+            // masquerade as a torn write. A real torn write leaves a prefix of a valid record:
+            // check every byte that is visible before calling it an incomplete tail.
+            if (const std::string why = partial_payload_problem(
+                    bytes.substr(offset + kFrameHeaderSize), length, expected);
+                !why.empty()) {
+                corrupt("record length inconsistent with its visible payload (" + why + ")",
+                        offset);
+            }
             r.tail = TailState::Incomplete;
             r.tail_reason = "partial record payload (" +
                             std::to_string(remaining - kFrameHeaderSize) + " of " +

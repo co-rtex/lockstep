@@ -33,6 +33,16 @@ std::string journal_with(int n) {
     return bytes;
 }
 
+std::uint32_t get_length(const std::string& bytes, std::size_t off) {
+    std::uint32_t v = 0;
+    for (int b = 0; b < 4; ++b) {
+        v |= static_cast<std::uint32_t>(
+                 static_cast<unsigned char>(bytes[off + static_cast<std::size_t>(b)]))
+             << (8 * b);
+    }
+    return v;
+}
+
 std::size_t record_size(CommandSeq seq, const Command& c) {
     return kFrameHeaderSize + encode_payload(seq, c).size();
 }
@@ -278,6 +288,43 @@ TEST(JournalScan, SequenceGapAndRegressionAreCorrupt) {
     std::string starts_at_two = encode_header();
     append_record(starts_at_two, 2, order_cmd("a", Side::Buy, 1, 1));
     EXPECT_THROW((void)scan_bytes(starts_at_two, nullptr), JournalError);
+}
+
+TEST(JournalScan, CorruptedLengthNearEofIsCorruptNotATornTail) {
+    // The CRC covers only the payload. Raising a length field so the frame "extends" past EOF
+    // must not turn complete, acknowledged records into a repairable tail.
+    const std::string bytes = journal_with(5);
+    std::size_t off = kHeaderSize;
+    std::vector<std::size_t> offsets;
+    for (int i = 1; i <= 5; ++i) {
+        offsets.push_back(off);
+        off += kFrameHeaderSize + get_length(bytes, off);
+    }
+    for (const std::size_t rec : offsets) {
+        for (const std::uint32_t bump : {1U, 40U, 300U, 4000U}) {
+            std::string damaged = bytes;
+            const std::uint32_t len = get_length(bytes, rec) + bump;
+            if (len > kMaxPayloadSize) {
+                continue;
+            }
+            for (int b = 0; b < 4; ++b) {
+                damaged[rec + static_cast<std::size_t>(b)] =
+                    static_cast<char>((len >> (8 * b)) & 0xFFU);
+            }
+            EXPECT_THROW((void)scan_bytes(damaged, nullptr), JournalError)
+                << "record at " << rec << " length +" << bump;
+        }
+    }
+}
+
+TEST(JournalScan, ZeroPayloadAfterValidFrameHeaderIsIncomplete) {
+    // File extended past a written frame header but the payload never reached the disk.
+    std::string bytes = journal_with(2);
+    const std::string third = journal_with(3).substr(bytes.size());
+    bytes += third.substr(0, kFrameHeaderSize) + std::string(10, '\0');
+    const ScanResult r = scan_bytes(bytes, nullptr);
+    EXPECT_EQ(r.tail, TailState::Incomplete);
+    EXPECT_EQ(r.records, 2U);
 }
 
 TEST(JournalScan, MiddleRecordTruncationThenMoreDataIsCorrupt) {

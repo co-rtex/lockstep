@@ -47,6 +47,9 @@ struct ServerOptions {
     // The protocol has no authentication (spec §3.2 non-goal). Binding to anything other than a
     // loopback address is refused unless explicitly allowed.
     bool allow_remote = false;
+    // Largest server→client frame (≤ protocol limit of 16 MiB). An ack or event that would be
+    // larger is sent in a bounded form with "executions_truncated": true (see protocol.md).
+    std::size_t max_frame_bytes = 16 * 1024 * 1024;
 };
 
 struct ServerStats {
@@ -61,6 +64,9 @@ struct ServerStats {
     std::uint64_t commands_staged = 0;
     std::uint64_t events_published = 0;
     std::uint64_t max_batch_seen = 0;
+    std::uint64_t subscribers = 0;       // currently registered subscribers
+    std::uint64_t truncated_frames = 0;  // acks/events sent without their execution list
+    std::uint64_t internal_errors = 0;   // unexpected exceptions caught in the sequencer
 };
 
 class Server {
