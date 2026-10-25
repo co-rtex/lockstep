@@ -4,7 +4,8 @@ add_executable(enginex_tests
     matching_test.cpp
     cancel_test.cpp
     state_test.cpp
-    canonical_test.cpp)
+    canonical_test.cpp
+    invariants_test.cpp)
 target_link_libraries(enginex_tests PRIVATE enginex_core GTest::gtest_main)
 target_include_directories(enginex_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(enginex_tests PRIVATE
