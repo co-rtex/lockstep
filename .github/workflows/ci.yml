@@ -1,0 +1,107 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CTEST_OUTPUT_ON_FAILURE: "1"
+
+jobs:
+  gcc-debug:
+    name: Linux GCC Debug (unit, invariant, fixture, journal, network tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_ENABLE_TESTS=ON
+        env:
+          CXX: g++
+      - name: Build
+        run: cmake --build build/debug --parallel
+      - name: Test
+        run: ctest --test-dir build/debug --output-on-failure -j 4
+
+  clang-asan-ubsan:
+    name: Linux Clang Debug + ASan/UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 libclang-rt-18-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build/asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_ENABLE_TESTS=ON
+          -DENGINEX_SANITIZER=address,undefined
+        env:
+          CXX: clang++-18
+      - name: Build
+        run: cmake --build build/asan --parallel
+      - name: Test
+        run: ctest --test-dir build/asan --output-on-failure -j 4
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+  clang-tsan:
+    name: Linux Clang + ThreadSanitizer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 libclang-rt-18-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DENGINEX_ENABLE_TESTS=ON -DENGINEX_SANITIZER=thread
+        env:
+          CXX: clang++-18
+      - name: Build
+        run: cmake --build build/tsan --parallel
+      - name: Test
+        run: ctest --test-dir build/tsan --output-on-failure -j 4
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+
+  release:
+    name: Linux Release, CLI smoke test and seeded benchmark
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DENGINEX_ENABLE_TESTS=ON
+      - name: Build
+        run: cmake --build build/release --parallel
+      - name: Test
+        run: ctest --test-dir build/release --output-on-failure -j 4
+      - name: CLI smoke tests
+        run: scripts/check.sh smoke build/release
+      - name: Short seeded benchmark (no performance thresholds)
+        run: |
+          for s in no-cross high-cross same-price-burst multi-level-sweep cancel-heavy mixed; do
+            ./build/release/enginex benchmark --scenario "$s" --seed 42 --orders 50000 \
+              --trials 3 --out ci-benchmark.csv
+          done
+      - uses: actions/upload-artifact@v4.4.3
+        with:
+          name: ci-benchmark
+          path: ci-benchmark.csv
+
+  format:
+    name: clang-format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install clang-format 19.1.7
+        run: python3 -m venv /tmp/cf && /tmp/cf/bin/pip install clang-format==19.1.7
+      - name: Check formatting
+        run: scripts/check.sh format
+        env:
+          CLANG_FORMAT: /tmp/cf/bin/clang-format
