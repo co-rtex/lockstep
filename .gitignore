@@ -1,0 +1,27 @@
+# Build output
+/build/
+/out/
+compile_commands.json
+.cache/
+
+# Generated runtime data
+/data/
+*.exj
+*.exj.*
+demo-results.json
+benchmarks/results*.csv
+!benchmarks/results/*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets
+.env
+.env.*

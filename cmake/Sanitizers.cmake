@@ -1,0 +1,13 @@
+# ENGINEX_SANITIZER: "" | "address,undefined" | "thread"
+set(ENGINEX_SANITIZER "" CACHE STRING "Sanitizers to enable (address,undefined | thread)")
+if(ENGINEX_SANITIZER)
+    if(ENGINEX_SANITIZER MATCHES "thread" AND ENGINEX_SANITIZER MATCHES "address")
+        message(FATAL_ERROR "ThreadSanitizer cannot be combined with AddressSanitizer")
+    endif()
+    message(STATUS "EngineX: enabling sanitizers: ${ENGINEX_SANITIZER}")
+    add_compile_options(-fsanitize=${ENGINEX_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${ENGINEX_SANITIZER})
+    if(ENGINEX_SANITIZER MATCHES "undefined")
+        add_compile_options(-fno-sanitize-recover=undefined)
+    endif()
+endif()
