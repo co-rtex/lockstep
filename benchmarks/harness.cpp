@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 
@@ -81,13 +82,32 @@ PassResult latency_pass(const Workload& w, std::vector<std::uint64_t>& samples) 
     return r;
 }
 
-std::string journal_path_for(const BenchOptions& o, std::size_t trial) {
-    std::filesystem::path dir = o.journal_dir.empty() ? std::filesystem::temp_directory_path()
-                                                      : std::filesystem::path(o.journal_dir);
-    return (dir /
-            ("enginex-bench-" + std::to_string(::getpid()) + "-" + std::to_string(trial) + ".exj"))
-        .string();
-}
+// Private per-run directory (mkdtemp, mode 0700) for benchmark journals, removed afterwards.
+// Using a fresh unpredictable directory avoids races with other users of a shared temp dir.
+class JournalDir {
+public:
+    explicit JournalDir(const std::string& parent) {
+        const std::filesystem::path base =
+            parent.empty() ? std::filesystem::temp_directory_path() : std::filesystem::path(parent);
+        std::string templ = (base / "enginex-bench-XXXXXX").string();
+        if (::mkdtemp(templ.data()) == nullptr) {
+            throw std::runtime_error("cannot create benchmark directory under " + base.string());
+        }
+        path_ = templ;
+    }
+    ~JournalDir() {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+    JournalDir(const JournalDir&) = delete;
+    JournalDir& operator=(const JournalDir&) = delete;
+    [[nodiscard]] std::string journal(std::size_t trial) const {
+        return (path_ / ("trial-" + std::to_string(trial) + ".exj")).string();
+    }
+
+private:
+    std::filesystem::path path_;
+};
 
 void remove_journal(const std::string& path) {
     std::error_code ec;
@@ -97,14 +117,12 @@ void remove_journal(const std::string& path) {
 // Durable acknowledgment latency: each measured command goes through DurableExchange::process,
 // which returns only after its record is written and synchronized (per --durability). The
 // prefill is group-committed with one sync and is not timed.
-PassResult durable_pass(const Workload& w, const BenchOptions& o, std::size_t trial,
+PassResult durable_pass(const Workload& w, const BenchOptions& o, const std::string& path,
                         std::vector<std::uint64_t>& samples) {
     const auto mode = journal::parse_sync_mode(o.durability);
     if (!mode) {
         throw std::invalid_argument("--durability must be sync, fsync or none");
     }
-    const std::string path = journal_path_for(o, trial);
-    remove_journal(path);
     PassResult r;
     {
         DurableOptions opts;
@@ -147,9 +165,7 @@ PassResult durable_pass(const Workload& w, const BenchOptions& o, std::size_t tr
 }
 
 // Writes the whole workload (prefill + measured) to a journal once, without timing.
-std::string build_recovery_journal(const Workload& w, const BenchOptions& o) {
-    const std::string path = journal_path_for(o, 0);
-    remove_journal(path);
+void build_recovery_journal(const Workload& w, const std::string& path) {
     DurableOptions opts;
     opts.journal_path = path;
     opts.sync = journal::SyncMode::Full;
@@ -164,7 +180,6 @@ std::string build_recovery_journal(const Workload& w, const BenchOptions& o) {
     if (ex->flush() != ErrorCode::None) {
         throw std::runtime_error("cannot build recovery journal: " + ex->failure_reason());
     }
-    return path;
 }
 
 // Recovery time: DurableExchange::open on an existing journal (read, CRC-validate, decode,
@@ -253,9 +268,14 @@ BenchReport run_benchmark(const BenchOptions& options) {
 
     std::vector<std::uint64_t> samples;
     std::string expected_hash;
+    std::optional<JournalDir> dir;
     std::string recovery_path;
+    if (options.measurement != Measurement::Core) {
+        dir.emplace(options.journal_dir);
+    }
     if (options.measurement == Measurement::Recovery) {
-        recovery_path = build_recovery_journal(w, options);
+        recovery_path = dir->journal(0);
+        build_recovery_journal(w, recovery_path);
     }
     for (std::size_t i = 0; i < options.warmup + options.trials; ++i) {
         const bool warmup = i < options.warmup;
@@ -278,7 +298,7 @@ BenchReport run_benchmark(const BenchOptions& options) {
                 throw std::runtime_error("benchmark run diverged from generator shadow run");
             }
         } else if (options.measurement == Measurement::Durable) {
-            tp = durable_pass(w, options, i, samples);
+            tp = durable_pass(w, options, dir->journal(i + 1), samples);
             t.throughput_per_s =
                 tp.elapsed_ns == 0 ? 0.0 : measured * 1e9 / static_cast<double>(tp.elapsed_ns);
             t.latency = metrics::summarize(samples);
@@ -311,10 +331,6 @@ BenchReport run_benchmark(const BenchOptions& options) {
             report.trials.push_back(std::move(t));
         }
     }
-    if (!recovery_path.empty()) {
-        remove_journal(recovery_path);
-    }
-
     const auto& tr = report.trials;
     TrialResult& m = report.median;
     m.elapsed_ns = median_of<std::uint64_t>(tr, [](const auto& t) { return t.elapsed_ns; });

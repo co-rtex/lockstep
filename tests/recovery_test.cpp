@@ -382,6 +382,21 @@ TEST(Recovery, SecondWriterIsLockedOut) {
     EXPECT_NO_THROW((void)DurableExchange::open(options_for(path)));
 }
 
+TEST(Recovery, SymlinkedJournalPathIsRefused) {
+    TempDir dir;
+    const std::string target = dir.file("target.exj");
+    {
+        auto ex = DurableExchange::open(options_for(target));
+    }
+    const std::string link = dir.file("link.exj");
+    fs::create_symlink(target, link);
+    EXPECT_EQ(open_error(options_for(link)), ErrorCode::JournalIoError);
+    const std::string dangling = dir.file("dangling.exj");
+    fs::create_symlink(dir.file("nowhere.exj"), dangling);
+    EXPECT_EQ(open_error(options_for(dangling)), ErrorCode::JournalIoError);
+    EXPECT_FALSE(fs::exists(dir.file("nowhere.exj")));
+}
+
 TEST(Recovery, MissingJournalWithoutCreateIsIoError) {
     TempDir dir;
     DurableOptions o = options_for(dir.file("absent.exj"));
@@ -451,7 +466,7 @@ INSTANTIATE_TEST_SUITE_P(
         FailCase{"write_enospc_partial", "fail_write=3,partial=11,errno=ENOSPC", false},
         FailCase{"write_error_after_full_record", "fail_write=3,partial=100000", true},
         FailCase{"sync_failure_record_written", "fail_sync=3", true}),
-    [](const auto& info) { return std::string(info.param.name); });
+    [](const auto& param_info) { return std::string(param_info.param.name); });
 
 TEST(IoFailure, EnospcMessageIsReported) {
     TempDir dir;
@@ -528,7 +543,7 @@ INSTANTIATE_TEST_SUITE_P(
                       CrashCase{"after_write_before_sync", "crash=after_write@5", true},
                       CrashCase{"after_sync_before_reply", "crash=after_sync@5", true},
                       CrashCase{"after_reply", "", true}),
-    [](const auto& info) { return std::string(info.param.name); });
+    [](const auto& param_info) { return std::string(param_info.param.name); });
 
 // ---- batching (used by the R3 sequencer for group commit) --------------------------------
 

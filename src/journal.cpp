@@ -527,9 +527,12 @@ JournalFile::~JournalFile() {
 std::unique_ptr<JournalFile> JournalFile::open(const std::string& path, bool create, SyncMode mode,
                                                FaultPlan faults) {
     bool created = false;
-    int fd = ::open(path.c_str(), O_RDWR | O_APPEND | O_CLOEXEC);
+    // O_NOFOLLOW: a journal path that is a symlink is refused, so a planted link cannot
+    // redirect appends (or the truncation done by tail repair) to another file.
+    int fd = ::open(path.c_str(), O_RDWR | O_APPEND | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0 && errno == ENOENT && create) {
-        fd = ::open(path.c_str(), O_RDWR | O_APPEND | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+        fd = ::open(path.c_str(), O_RDWR | O_APPEND | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                    0644);
         created = fd >= 0;
     }
     if (fd < 0) {
