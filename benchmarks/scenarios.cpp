@@ -268,9 +268,9 @@ std::vector<std::string> benchmark_symbols(std::size_t count) {
         } else if (i == 1) {
             out.emplace_back("MSFT");
         } else {
-            char buf[16];
-            std::snprintf(buf, sizeof buf, "S%03zu", i);
-            out.emplace_back(buf);
+            std::string digits = std::to_string(i);
+            out.push_back("S" + std::string(digits.size() < 3 ? 3 - digits.size() : 0, '0') +
+                          digits);
         }
     }
     return out;
