@@ -363,7 +363,8 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   Python, every wrong length and unknown type, framing split at every offset, a message-by-message
   differential test against a naive reference book (mutation-checked), an independent Python decoder
   that agrees field by field with the C++ one on all 23 types and on 63.7 M real messages, a
-  Python book that reproduces every price level of the C++ books on three real days, and 300 randomly
+  Python book that reproduces every price level of the C++ books on three real days (and every
+  book's best bid and ask at checkpoints every 100 k messages), and 300 randomly
   corrupted files. MoldUDP64 sequencing is tested end to end over a simulated lossy,
   duplicating and reordering channel, where the rebuilt book must hash-match a direct replay.
   A libFuzzer-compatible harness (`fuzz/`) also runs as a seeded standalone mutation fuzzer.
@@ -372,6 +373,14 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   validation bounds, journal checks, sequencing, book rules, server fail-stop), and the tests
   kill all of them. It found two real test gaps, both now covered. See
   [docs/verification.md](docs/verification.md#do-the-tests-catch-bugs).
+* `tools/cli_arg_sweep.py` gives hostile values to every CLI flag (1 302 runs). It and a
+  hostile-JSON pass found four defects, all fixed with regression tests:
+  * two capacity arguments that allocated until the OS killed the process;
+  * a zero send timeout that let one stalled subscriber block graceful shutdown;
+  * repeated JSON keys accepted with the last value, which made the idempotency key
+    ambiguous (D33).
+
+  See [docs/verification.md](docs/verification.md#hostile-command-line-arguments).
 
 See [docs/verification.md](docs/verification.md) for the full test matrix, the environments
 where each suite ran, and known limitations. One of those is that macOS 26.6 + Apple clang 17
