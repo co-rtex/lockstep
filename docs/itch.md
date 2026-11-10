@@ -195,8 +195,12 @@ synthetic streams do.
 
 ### Data layout
 
-* Orders live in one pool (`std::vector<Node>`) with a free list. Each price level holds an
-  intrusive doubly linked FIFO of 32-bit pool indices.
+* Orders live in a chunked pool (64 Ki nodes per chunk) with a free list. Growth allocates
+  a chunk and never moves existing nodes. A `std::vector<Node>` doubling past ≈ 1 M live
+  orders used to copy ≈ 50 MB inside one message (a deterministic ≈ 10 ms stall on the real
+  sample). Each price level holds an intrusive doubly linked FIFO of 32-bit pool indices.
+  `add()` performs everything that can throw (index page, level vector) before linking the
+  node, and undoes it on failure.
 * The order index is a **paged direct index** (`paged_index.hpp`, D27). Nasdaq order
   references are dense and mostly increasing. On the real sample, 73 % of adds carry a larger
   reference than the previous add, and there are ≈ 20 M distinct references in 21 M
@@ -336,4 +340,10 @@ are not wire-to-wire latencies.
   (`P`), auction state (`I`, `Q`), and halts (`H`, `h`) are recorded as statistics or state
   but do not alter the book.
 * MPID attribution is kept per order but is not part of the state hash.
+* Sorted-vector levels are fast near the top of the book but O(distance from the best price)
+  to insert or remove. A hostile feed that keeps opening levels *worse* than every existing
+  one, in a book with 10⁵–10⁶ levels, would make each insert move the whole vector. Real data
+  (and the page-budgeted index) do not have this problem, but the level structure has no
+  adversarial bound. The `std::map` variant (`-DENGINEX_ITCH_MAP_LEVELS=ON`) is O(log n)
+  everywhere.
 * Symbols are not validated against the directory beyond the `symbol_mismatch` count.

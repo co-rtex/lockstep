@@ -91,6 +91,9 @@ struct Trial {
     // sampling profiler can attach; each sample includes one timer call).
     std::array<std::uint64_t, 256> type_ns{};
     std::array<std::uint64_t, 256> type_count{};
+    std::size_t max_index = 0;  // latency pass: message with the largest sample
+    char max_type = 0;
+    std::uint64_t max_ns = 0;
 };
 
 struct Workload {
@@ -156,6 +159,11 @@ Trial run_pass(const std::string& m, const Workload& w, bool with_latency, std::
                 (void)book.apply(msg);
                 const std::uint64_t ns = metrics::elapsed_ns(s, metrics::Clock::now());
                 samples.push_back(ns);
+                if (ns > t.max_ns) {
+                    t.max_ns = ns;
+                    t.max_index = samples.size() - 1;
+                    t.max_type = header_of(msg).type;
+                }
                 const auto type = static_cast<unsigned char>(header_of(msg).type);
                 t.type_ns[type] += ns;
                 ++t.type_count[type];
@@ -400,6 +408,9 @@ int run(const Options& o) {
                 t.latency = lat.latency;
                 t.type_ns = lat.type_ns;
                 t.type_count = lat.type_count;
+                t.max_index = lat.max_index;
+                t.max_type = lat.max_type;
+                t.max_ns = lat.max_ns;
             }
             t.trial = std::to_string(i + 1);
             if (t.state_hash != first.state_hash) {
@@ -472,6 +483,11 @@ int run(const Options& o) {
                 }
             }
             std::printf("\n");
+            for (const auto& t : trials) {
+                std::printf("  trial %s: largest sample %llu ns at message %zu (type %c)\n",
+                            t.trial.c_str(), static_cast<unsigned long long>(t.max_ns),
+                            t.max_index, t.max_type == 0 ? '?' : t.max_type);
+            }
         }
         if (m != "itch_decode") {
             std::printf("  live orders at end %llu (peak %llu); state hash %.16s (identical "

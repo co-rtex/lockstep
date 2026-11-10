@@ -434,10 +434,13 @@ Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS in
 
 Book apply alone (pre-decoded messages, 3 trials; console values, not in the CSV) went from
 75.4 to 48.1 ns/msg. Mean cost by type, timer included: adds 97 → 50 ns, deletes 79 → 59,
-replaces 182 → 117, executions 109 → 79. The latency pass recorded one sample of 1.84 ms, with
-the process at 2.4 GiB RSS on an 8 GiB machine. It may come from a page fault or from growth
-of the page directory or level pool, but it was not isolated, so treat it as an
-unexplained outlier.
+replaces 182 → 117, executions 109 → 79. The latency pass recorded maxima of 1.8–10 ms. The bench
+then reported *where* the max occurred: at the same message (11 999 113) in repeated trials,
+so it was structural, not noise. The cause was the node pool, a `std::vector<Node>` that
+doubled past ≈ 1 M live orders and copied ≈ 50 MB in one message. A chunked pool (64 Ki
+nodes per chunk, never moved) removed it. The worst sample is now 97–168 µs at a different
+message in each trial (consistent with OS noise) and apply runs at 50.4 ns/msg (commit after
+`55b199d`).
 
 **How the data drove the changes.** The real per-type costs (adds ≈ 97 ns, deletes ≈ 79 ns,
 replaces ≈ 182 ns, timer included) were 3–4× the synthetic ones. New level counters showed

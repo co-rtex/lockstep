@@ -189,7 +189,12 @@ public:
         } else {
             level = &storage_->levels.emplace_back();
         }
-        v_.insert(it, Entry{r, level});
+        try {
+            v_.insert(it, Entry{r, level});
+        } catch (...) {
+            storage_->free.push_back(level);  // not leaked if the vector cannot grow
+            throw;
+        }
         created = true;
         return *level;
     }
@@ -284,11 +289,45 @@ struct DirectoryEntry {
 
 }  // namespace
 
+// Order nodes in fixed-size chunks. Growth allocates a new chunk and never moves existing
+// nodes: a std::vector<Node> doubling at ~1 M live orders copied ~50 MB inside one message
+// (a deterministic ~10 ms stall, measured on the real sample).
+class NodePool {
+public:
+    static constexpr unsigned kChunkBits = 16;
+    static constexpr std::uint32_t kChunk = std::uint32_t{1} << kChunkBits;
+
+    Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits][i & (kChunk - 1)]; }
+    const Node& operator[](std::uint32_t i) const noexcept {
+        return chunks_[i >> kChunkBits][i & (kChunk - 1)];
+    }
+    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+    // Appends a default node and returns its index.
+    std::uint32_t emplace_back() {
+        if (size_ == chunks_.size() * std::size_t{kChunk}) {
+            if (size_ >= std::size_t{UINT32_MAX} - kChunk) {
+                throw std::length_error("ITCH book: too many live orders");
+            }
+            chunks_.push_back(std::make_unique<Node[]>(kChunk));
+        }
+        return static_cast<std::uint32_t>(size_++);
+    }
+    void reserve(std::size_t n) {
+        while (chunks_.size() * std::size_t{kChunk} < n) {
+            chunks_.push_back(std::make_unique<Node[]>(kChunk));
+        }
+    }
+
+private:
+    std::vector<std::unique_ptr<Node[]>> chunks_;
+    std::size_t size_ = 0;
+};
+
 struct BookBuilder::Impl {
     SideLevels::Storage level_storage;  // declared first: destroyed after the books using it
     std::uint64_t levels_created = 0;
     std::uint64_t levels_removed = 0;
-    std::vector<Node> pool;
+    NodePool pool;
     std::vector<std::uint32_t> free_slots;
     Index index;
     std::vector<std::unique_ptr<Book>> books = std::vector<std::unique_ptr<Book>>(kLocates);
@@ -317,11 +356,26 @@ struct BookBuilder::Impl {
             slot = free_slots.back();
             free_slots.pop_back();
         } else {
-            slot = static_cast<std::uint32_t>(pool.size());
-            pool.emplace_back();
+            slot = pool.emplace_back();
+        }
+        // Everything that can throw (index page, level vector) happens before the node is
+        // linked, and is undone on failure, so a bad_alloc never leaves a half-added order.
+        try {
+            (void)index.insert(ref, slot);
+        } catch (...) {
+            free_slots.push_back(slot);
+            throw;
         }
         bool created = false;
-        Level& level = book(locate).side(side).get_or_create(price, created);
+        Level* level_ptr = nullptr;
+        try {
+            level_ptr = &book(locate).side(side).get_or_create(price, created);
+        } catch (...) {
+            (void)index.erase(ref);
+            free_slots.push_back(slot);
+            throw;
+        }
+        Level& level = *level_ptr;
         levels_created += created ? 1U : 0U;
         Node& n = pool[slot];
         n.ref = ref;
@@ -341,7 +395,6 @@ struct BookBuilder::Impl {
         level.tail = slot;
         level.shares += shares;
         ++level.count;
-        (void)index.insert(ref, slot);
     }
 
     void remove(std::uint32_t slot) {

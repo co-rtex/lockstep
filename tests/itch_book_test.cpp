@@ -255,6 +255,28 @@ TEST(ItchBook, DirectoryOnlyLocatesAreListedAndSymbolsHashExactly) {
     EXPECT_NE(b.state_hash(), c.state_hash());
 }
 
+TEST(ItchBook, ExtremePricesKeepBestFirstOrderOnBothSides) {
+    BookBuilder b;
+    constexpr Price4 kMax = UINT32_MAX;
+    apply(b, add(1, Side::Buy, 0, 1));
+    apply(b, add(2, Side::Buy, kMax, 2));
+    apply(b, add(3, Side::Buy, 5, 3));
+    apply(b, add(4, Side::Sell, kMax, 4));
+    apply(b, add(5, Side::Sell, 0, 5));
+    apply(b, add(6, Side::Sell, 7, 6));
+    EXPECT_EQ(b.depth(kL, Side::Buy, 0),
+              (std::vector<LevelView>{{kMax, 2, 1}, {5, 3, 1}, {0, 1, 1}}));
+    EXPECT_EQ(b.depth(kL, Side::Sell, 0),
+              (std::vector<LevelView>{{0, 5, 1}, {7, 6, 1}, {kMax, 4, 1}}));
+    EXPECT_EQ(b.top(kL).bid->price, kMax);
+    EXPECT_EQ(b.top(kL).ask->price, 0U);
+    EXPECT_TRUE(b.top(kL).crossed());
+    apply(b, del(2));
+    apply(b, del(5));
+    EXPECT_EQ(b.top(kL).bid->price, 5U);
+    EXPECT_EQ(b.top(kL).ask->price, 7U);
+}
+
 TEST(ItchBook, CrossedAndLockedBooksAreReportedNotRejected) {
     BookBuilder b;
     apply(b, add(1, Side::Buy, 100, 1));

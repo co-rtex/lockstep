@@ -181,6 +181,41 @@ TEST(PagedIndex, MatchesUnorderedMapIncludingFallbackAndPageFreeing) {
     }
 }
 
+TEST(PagedIndex, BoundaryKeysAndDirectoryGrowth) {
+    PagedIndex idx;
+    const std::uint64_t last_direct = PagedIndex::kDirectLimit - 1;
+    EXPECT_TRUE(idx.insert(last_direct, 1));  // highest page: directory grows from empty
+    EXPECT_TRUE(idx.insert(PagedIndex::kDirectLimit, 2));         // first fallback key
+    EXPECT_TRUE(idx.insert(PagedIndex::kDirectLimit + 4095, 3));  // fallback too
+    EXPECT_EQ(idx.pages(), 1U);
+    EXPECT_EQ(idx.fallback_size(), 2U);
+    EXPECT_EQ(idx.find(last_direct), 1U);
+    EXPECT_EQ(idx.find(PagedIndex::kDirectLimit), 2U);
+    EXPECT_EQ(idx.find(PagedIndex::kDirectLimit + 4095), 3U);
+    EXPECT_EQ(idx.find(last_direct - 1), PagedIndex::kEmpty);
+    EXPECT_TRUE(idx.erase(last_direct));
+    EXPECT_EQ(idx.pages(), 0U);
+    EXPECT_EQ(idx.size(), 2U);
+}
+
+TEST(PagedIndex, KeyInFallbackStaysFindableWhenItsPageAppearsAndGoes) {
+    PagedIndex idx(1);                 // one page allowed
+    EXPECT_TRUE(idx.insert(10, 1));    // page 0 created
+    EXPECT_TRUE(idx.insert(5000, 2));  // page 1 over budget -> fallback
+    EXPECT_EQ(idx.fallback_size(), 1U);
+    EXPECT_TRUE(idx.erase(10));        // page 0 freed (kept as spare)
+    EXPECT_TRUE(idx.insert(5001, 3));  // page 1 now created, from the spare
+    EXPECT_EQ(idx.pages(), 1U);
+    EXPECT_EQ(idx.find(5000), 2U);     // still found in the fallback behind an existing page
+    EXPECT_EQ(idx.find(5001), 3U);
+    EXPECT_FALSE(idx.insert(5000, 9)); // no duplicate across page and fallback
+    EXPECT_TRUE(idx.erase(5000));
+    EXPECT_EQ(idx.find(5000), PagedIndex::kEmpty);
+    EXPECT_EQ(idx.fallback_size(), 0U);
+    EXPECT_TRUE(idx.erase(5001));
+    EXPECT_EQ(idx.size(), 0U);
+}
+
 TEST(PagedIndex, PagesAreFreedWhenEmptyAndKeyZeroWorks) {
     PagedIndex idx;
     EXPECT_TRUE(idx.insert(0, 1));

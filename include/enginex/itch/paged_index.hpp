@@ -9,14 +9,24 @@
 // Recent orders, the busy ones, share a few hot pages. Pages are allocated on first use and
 // freed when their last live order is removed.
 //
-// Memory is bounded: at most `max_pages` pages exist (default 16384 = 256 MiB). A reference
-// whose page cannot be created (budget spent) or that is ≥ kDirectLimit goes to an
-// open-addressing hash table instead, so adversarial or unusual reference patterns degrade to
-// the hash table's behavior, never to unbounded memory.
+// Memory is bounded. At most `max_pages` pages exist (default 16384 × 16 388 bytes ≈ 256 MiB),
+// plus one spare page, plus the page directory (one pointer per 4096 references up to the
+// highest page used, at most 2^20 entries = 8 MiB). A reference whose page cannot be created
+// (budget spent) or that is ≥ kDirectLimit goes to an open-addressing hash table instead, which
+// grows with the orders it holds. Unusual or adversarial reference patterns therefore degrade
+// to the hash table's behavior, never to unbounded page memory. The worst case for the budget
+// is one live order per page (16 384 orders holding 256 MiB).
+//
+// One emptied page is kept as a spare (all its slots are already empty), so a stream that
+// keeps emptying and refilling the newest page does not allocate on every message.
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "enginex/itch/order_index.hpp"
@@ -74,7 +84,13 @@ public:
                     slot = kEmpty;
                     --size_;
                     if (--dir_[p]->live == 0) {
-                        dir_[p].reset();  // last live order on this page
+                        // Last live order on this page: keep it as the spare (its slots are
+                        // all kEmpty again) or free it.
+                        if (!spare_) {
+                            spare_ = std::move(dir_[p]);
+                        } else {
+                            dir_[p].reset();
+                        }
                         --pages_;
                     }
                     return true;
@@ -116,15 +132,17 @@ private:
             return nullptr;  // budget spent: use the hash table
         }
         if (p >= dir_.size()) {
-            dir_.resize(std::max(p + 1, dir_.size() * 2));
+            constexpr std::size_t kMaxDir = std::size_t{1} << (32 - kPageBits);
+            dir_.resize(std::min(kMaxDir, std::max(p + 1, dir_.size() * 2)));
         }
-        dir_[p] = std::make_unique<Page>();
+        dir_[p] = spare_ ? std::move(spare_) : std::make_unique<Page>();
         ++pages_;
         return dir_[p].get();
     }
 
     std::size_t max_pages_;
     std::vector<std::unique_ptr<Page>> dir_;  // indexed by key >> kPageBits
+    std::unique_ptr<Page> spare_;             // one emptied page kept for reuse
     OrderIndex far_;                          // references ≥ kDirectLimit or over budget
     std::size_t size_ = 0;
     std::size_t pages_ = 0;
