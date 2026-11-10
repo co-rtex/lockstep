@@ -375,7 +375,7 @@ decompression, strict replay, reference-model differential and benchmark. Done b
 ```bash
 curl -r 0-268435455 -o prefix.gz https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz
 python3 -c "import zlib,sys; d=zlib.decompressobj(31); sys.stdout.buffer.write(d.decompress(open('prefix.gz','rb').read()))" > prefix.itch
-enginex itch replay --input prefix.itch --strict --json        # exit 1 only for the cut-off last message
+./build/release/enginex itch replay --input prefix.itch --strict --json   # exit 1 only for the cut-off last message
 ENGINEX_ITCH_REAL_FILE=prefix.itch build/release/tests/enginex_tests --gtest_filter='ItchRealData*'
 ```
 
@@ -393,7 +393,7 @@ Results (21 255 695 messages, 03:03:59 to 09:37:05 ET, through the opening cross
   locked at 09:37:05. AAPL at that time: best bid 162.16 × 100, best ask 162.20 × 32,
   2 723 / 2 656 levels.
 * **Independent check:** `ItchRealData.MatchesReferenceModelIfAvailable` also replays the file
-  through the naive reference model. All 1 539 130 live orders in 17 384 books, and every
+  through the naive reference model. All 1 539 130 live orders in 17 384 non-empty book sides (bid or ask of the 8 713 books), and every
   per-message anomaly verdict, agree.
 * **What real data showed that synthetic data hid:** 43 % of adds and replaces open a new
   price level (synthetic stream: 1.6 %). Books are deep (thousands of levels). With 1.5 M live

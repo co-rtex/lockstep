@@ -748,7 +748,7 @@ TEST(ItchRealData, MatchesReferenceModelIfAvailable) {
     }
     EXPECT_EQ(compared, book.stats().live_orders);
     EXPECT_FALSE(book.check_invariants());
-    std::printf("real-data differential: %llu frames, %zu live orders in %zu books compared\n",
+    std::printf("real-data differential: %llu frames, %zu live orders in %zu book sides compared\n",
                 static_cast<unsigned long long>(r.frames), compared, groups.size());
 }
 

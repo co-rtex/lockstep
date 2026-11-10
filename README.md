@@ -113,7 +113,7 @@ ctest --preset debug                         # all unit, property, fixture, jour
 
 cmake --preset release && cmake --build --preset release
 ./build/release/enginex simulate --input examples/demo_orders.jsonl --output demo-results.json
-./build/release/enginex benchmark --seed 42 --orders 100000 --scenario mixed --out benchmarks/results.csv
+./build/release/enginex benchmark --seed 42 --orders 100000 --scenario mixed --trials 7 --out benchmarks/results.csv
 
 scripts/check.sh all            # debug+release build/test, CLI smoke tests, format check
 scripts/linux_check.sh          # Linux GCC / ASan+UBSan / TSan / release jobs in Docker
@@ -132,10 +132,16 @@ python3 tools/fault_injection.py --enginex build/release/enginex          # kill
 Networked service (R3), in three terminals:
 
 ```bash
-./build/release/enginex serve --port 9000 --journal data/demo.exj --durability sync      # A
+./build/release/enginex serve --port 9000 --journal data/net.exj --durability sync       # A
 ./build/release/enginex client subscribe --port 9000                                      # B
 ./build/release/enginex client submit --port 9000 --input examples/demo_orders.jsonl      # C
 ```
+
+Use a fresh journal: on `data/demo.exj` from the R2 block every command is answered as a
+`duplicate` retry, so B sees the snapshot but no new `book_update` events. The demo file
+deliberately contains invalid input, so C prints the error replies, a `client_error` for the
+`{not json}` line and `INVALID_REQUEST` for the `executions` query (a `simulate`-only
+command), and then exits 1.
 
 ITCH 5.0 market-data replay (independent of the exchange). `scripts/itch_demo.sh` runs the
 whole walkthrough in one command: golden fixture, malformed input, deterministic replay
