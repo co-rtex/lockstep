@@ -112,7 +112,10 @@ struct BookStats {
 
 class BookBuilder {
 public:
-    BookBuilder();
+    // `expected_orders` (optional) pre-sizes the order index and pool so that growth (a full
+    // rehash and a pool reallocation, visible as a one-off latency spike) does not happen
+    // while the book holds fewer live orders than that.
+    explicit BookBuilder(std::size_t expected_orders = 0);
     ~BookBuilder();
     BookBuilder(const BookBuilder&) = delete;
     BookBuilder& operator=(const BookBuilder&) = delete;

@@ -110,6 +110,11 @@ add_executable(enginex_bench benchmarks/bench_main.cpp)
 target_link_libraries(enginex_bench PRIVATE enginex_bench_lib)
 enginex_set_warnings(enginex_bench)
 
+# ITCH decode / book / replay measurements (counts heap allocations via operator new).
+add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
+target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
+enginex_set_warnings(enginex_itch_bench)
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------

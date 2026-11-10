@@ -3,8 +3,8 @@
 // Data layout (baseline; see docs/itch.md for measurements):
 //   * orders live in one pool (std::vector<Node>) with a free list, so steady-state adds and
 //     removes do not allocate; nodes are linked into a per-level FIFO by 32-bit indices;
-//   * a hash index maps order reference → pool slot (never iterated, so it cannot affect
-//     output order);
+//   * an open-addressing hash index (order_index.hpp) maps order reference → pool slot; it is
+//     never iterated, so it cannot affect output order;
 //   * each locate's book keeps one std::map<price, Level> per side. Node::level points at its
 //     map node, which std::map keeps stable until that level is erased; a level is erased only
 //     after its last order is unlinked.
@@ -15,9 +15,9 @@
 #include <map>
 #include <string_view>
 #include <type_traits>
-#include <unordered_map>
 
 #include "enginex/itch/byte_reader.hpp"
+#include "enginex/itch/order_index.hpp"
 #include "enginex/sha256.hpp"
 
 namespace enginex::itch {
@@ -64,7 +64,7 @@ struct DirectoryEntry {
 struct BookBuilder::Impl {
     std::vector<Node> pool;
     std::vector<std::uint32_t> free_slots;
-    std::unordered_map<OrderRef, std::uint32_t> index;
+    OrderIndex index;
     std::vector<std::unique_ptr<Book>> books = std::vector<std::unique_ptr<Book>>(kLocates);
     std::vector<DirectoryEntry> directory = std::vector<DirectoryEntry>(kLocates);
 
@@ -77,11 +77,11 @@ struct BookBuilder::Impl {
     }
 
     std::optional<std::uint32_t> lookup(OrderRef ref) const {
-        const auto it = index.find(ref);
-        if (it == index.end()) {
+        const std::uint32_t slot = index.find(ref);
+        if (slot == OrderIndex::kEmpty) {
             return std::nullopt;
         }
-        return it->second;
+        return slot;
     }
 
     void add(std::uint16_t locate, OrderRef ref, Side side, Price4 price, std::uint32_t shares,
@@ -113,7 +113,7 @@ struct BookBuilder::Impl {
         level.tail = slot;
         level.shares += shares;
         ++level.count;
-        index.emplace(ref, slot);
+        (void)index.insert(ref, slot);
     }
 
     void remove(std::uint32_t slot) {
@@ -173,7 +173,12 @@ std::uint64_t BookStats::anomaly_count() const noexcept {
     return n;
 }
 
-BookBuilder::BookBuilder() : impl_(std::make_unique<Impl>()) {}
+BookBuilder::BookBuilder(std::size_t expected_orders) : impl_(std::make_unique<Impl>()) {
+    if (expected_orders != 0) {
+        impl_->index.reserve(expected_orders);
+        impl_->pool.reserve(expected_orders);
+    }
+}
 BookBuilder::~BookBuilder() = default;
 
 ApplyOutcome BookBuilder::apply(const Message& m) {
@@ -524,8 +529,7 @@ std::optional<std::string> BookBuilder::check_invariants() const {
                         n.side != side || n.locate != locate || n.shares == 0) {
                         return "corrupt order node for ref " + std::to_string(n.ref);
                     }
-                    const auto it = im.index.find(n.ref);
-                    if (it == im.index.end() || it->second != s) {
+                    if (im.index.find(n.ref) != s) {
                         return "index does not point at ref " + std::to_string(n.ref);
                     }
                     shares += n.shares;
