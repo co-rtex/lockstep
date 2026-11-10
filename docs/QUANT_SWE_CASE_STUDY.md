@@ -58,7 +58,7 @@ are in-process and single-threaded; none is a wire latency.
   a session, partial application of a malformed update, unclamped directory growth in the
   paged index, and a JSON-output crash on non-ASCII bytes in ITCH alpha fields.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
-  kills 48/48 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
+  kills 51/51 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
   validation, journal and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
