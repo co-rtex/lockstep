@@ -428,7 +428,7 @@ Raw rows (timings only, no market data):
 | `-DENGINEX_ITCH_MAP_LEVELS=ON -DENGINEX_ITCH_HASH_INDEX=ON` | `std::map` + arena | hash | 99.3 | 10.1 M | 1.0 GiB |
 | `-DENGINEX_ITCH_HASH_INDEX=ON` | sorted vector | hash | 91.4 | 10.9 M | 1.2 GiB |
 | default at `bbd4ff6` | sorted vector | paged direct | **62.1** | **16.1 M** | 1.2 GiB |
-| default at `0ad62a6` | sorted vector + near-top scan | paged direct | **56.0** | **17.9 M** | |
+| default at `0ad62a6` | sorted vector + near-top scan | paged direct | **56.0** | **17.9 M** | (not recorded) |
 
 A later row for commit `8a40818` (chunked node pool, see below) is in the same CSV.
 The `0ad62a6` row adds one more data-driven change. A temporary histogram on two sample days

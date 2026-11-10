@@ -78,5 +78,6 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/compare_variant_hashes.py
                      $<TARGET_FILE:enginex_itch_state_hash>
                      $<TARGET_FILE:enginex_itch_state_hash_maphash>)
-    set_tests_properties(itch_layout_variants_agree PROPERTIES LABELS "itch" TIMEOUT 300)
+    set_tests_properties(itch_layout_variants_agree PROPERTIES LABELS "itch" TIMEOUT 300
+                         SKIP_RETURN_CODE 77)
 endif()

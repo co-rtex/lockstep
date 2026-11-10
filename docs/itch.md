@@ -201,7 +201,7 @@ synthetic streams do.
   sample). Each price level holds an intrusive doubly linked FIFO of 32-bit pool indices.
   `apply()` gives no exception guarantee: it throws only on allocation failure, after which
   the builder must be discarded. Catching and undoing inside the hot path was measured at
-  ≈ 0.7 ns per message (≈ 3 %) and was removed. The chunked pool itself costs ≈ 1 ns per
+  ≈ 0.7 ns per message (≈ 3 %) and was removed. The chunked pool itself costs ≈ 1–1.6 ns per
   message on the hot synthetic path, against the ≈ 10 ms stall it removes. A same-day
   interleaved A/B against `bbd4ff6` measured 22.3 → 23.9 ns/msg (synthetic, 8 symbols),
   and real-data replay is unchanged within noise (62.1 → 62.7 ns/msg).
@@ -367,8 +367,8 @@ single thread. These are not wire-to-wire latencies.
 * Files: only the 2-byte length-prefixed framing (no gap detection possible). Transport:
   MoldUDP64 packet parsing and sequencing are implemented and tested on simulated channels.
   There is no socket receiver, no live retransmission and no SoupBinTCP.
-* Real data: only the first 6.5 hours (pre-market through 09:37) of one day's sample were
-  used, not a full day or several days. The synthetic workload is *not* a model of Nasdaq
+* Real data: only the first ≈ 6.5 hours (pre-market through ≈ 09:37) of each of three
+  sample days were used, never a full session. The synthetic workload is *not* a model of Nasdaq
   traffic. It creates new levels 30× less often than the real sample, and its books are
   shallower.
 * The reconstructed book is the **displayed** Nasdaq book only. Non-displayed liquidity

@@ -39,7 +39,10 @@ for DATE in "${DATES[@]}"; do
     echo "######## $DATE"
     if [ ! -f "$GZ" ]; then
         echo "downloading the first 256 MiB of $URL"
-        curl -fsS -r 0-268435455 -o "$GZ" "$URL"
+        # --max-filesize: refuse to fetch the whole multi-GB file if a server ignores Range.
+        # Download to a temporary name so an interrupted run never leaves a partial $GZ.
+        curl -fsS -r 0-268435455 --max-filesize 268435456 -o "$GZ.part" "$URL"
+        mv "$GZ.part" "$GZ"
     fi
     actual=$(shasum -a 256 "$GZ" | cut -d' ' -f1)
     if [ "$actual" != "$(expected_sha "$DATE")" ]; then
@@ -47,13 +50,16 @@ for DATE in "${DATES[@]}"; do
         exit 1
     fi
     if [ ! -f "$ITCH" ]; then
-        python3 - "$GZ" "$ITCH" <<'PY'
+        # Decompress to a temporary name: a truncated $ITCH would otherwise be accepted later
+        # (the strict check tolerates a cut-off final message by design).
+        python3 - "$GZ" "$ITCH.tmp" <<'PY'
 import sys, zlib
 d = zlib.decompressobj(16 + zlib.MAX_WBITS)  # gzip; a truncated stream yields its valid prefix
 with open(sys.argv[1], 'rb') as src, open(sys.argv[2], 'wb') as dst:
     while chunk := src.read(1 << 20):
         dst.write(d.decompress(chunk))
 PY
+        mv "$ITCH.tmp" "$ITCH"
     fi
 
     echo "== strict replay (the only expected stop is the cut-off final message)"
@@ -73,12 +79,20 @@ sys.exit(0 if ok else 1)
 PY
 
     echo "== reference-model differential (every order of every book)"
-    ENGINEX_ITCH_REAL_FILE="$ITCH" "$BUILD/tests/enginex_tests" \
-        --gtest_filter='ItchRealData.*' | grep -E "real-data differential|OK|FAILED"
+    if ! ENGINEX_ITCH_REAL_FILE="$ITCH" "$BUILD/tests/enginex_tests" \
+            --gtest_filter='ItchRealData.*' > "$DIR/$DATE.differential.log" 2>&1; then
+        cat "$DIR/$DATE.differential.log"
+        exit 1
+    fi
+    grep -E "real-data differential|SKIPPED" "$DIR/$DATE.differential.log" || true
+    if grep -q "SKIPPED" "$DIR/$DATE.differential.log"; then
+        echo "differential test was skipped"
+        exit 1
+    fi
 
     echo "== in-memory benchmark (decode, replay)"
     for m in itch_decode itch_replay; do
-        "$BUILD/enginex_itch_bench" --input "$ITCH" --only "$m" --trials 3 |
-            grep -E "^\[|trials median"
+        "$BUILD/enginex_itch_bench" --input "$ITCH" --only "$m" --trials 3 > "$DIR/$DATE.$m.log"
+        grep -E "^\[|trials median" "$DIR/$DATE.$m.log" || true
     done
 done

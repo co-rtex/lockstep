@@ -33,7 +33,28 @@ std::string px(Price4 p) {
     return buf;
 }
 
-std::string sym(const Symbol& s) { return std::string(trim_alpha(s)); }
+// Alpha fields come straight off the wire and are not guaranteed to be ASCII; JSON output
+// must stay valid UTF-8 (nlohmann::json::dump throws otherwise). Printable ASCII is kept,
+// every other byte (and '\\') becomes the text \xNN, so no information is lost.
+std::string printable(std::string_view raw) {
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(raw.size());
+    for (const char c : raw) {
+        const auto u = static_cast<unsigned char>(c);
+        if (u >= 0x20 && u <= 0x7E && c != '\\') {
+            out += c;
+        } else {
+            out += "\\x";
+            out += kHex[u >> 4U];
+            out += kHex[u & 0xFU];
+        }
+    }
+    return out;
+}
+std::string printable(char c) { return printable(std::string_view(&c, 1)); }
+
+std::string sym(const Symbol& s) { return printable(trim_alpha(s)); }
 
 Json level_json(const LevelView& l) {
     return Json{{"price", l.price}, {"shares", l.shares}, {"orders", l.orders}};
@@ -145,7 +166,7 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
                            {"last_timestamp_ns", s.last_timestamp_ns},
                            {"last_system_event", s.last_system_event == 0
                                                      ? std::string()
-                                                     : std::string(1, s.last_system_event)}};
+                                                     : printable(s.last_system_event)}};
     j["state_hash"] = b.state_hash();
     Json books = Json::array();
     // Crossed/locked books by the symbol's last trading state ('T' trading, 'H' halted,
@@ -155,7 +176,7 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
     Json locked_by_state = Json::object();
     for (const std::uint16_t locate : b.locates()) {
         const TopOfBook t = b.top(locate);
-        const std::string state(1, b.trading_state(locate).value_or('-'));
+        const std::string state = printable(b.trading_state(locate).value_or('-'));
         if (t.crossed()) {
             crossed_by_state[state] = crossed_by_state.value(state, 0) + 1;
         }
@@ -173,13 +194,13 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
         const TopOfBook t = b.top(locate);
         Json bk;
         bk["locate"] = locate;
-        bk["symbol"] = symbol ? Json(*symbol) : Json(nullptr);
+        bk["symbol"] = symbol ? Json(printable(*symbol)) : Json(nullptr);
         bk["best_bid"] = t.bid ? level_json(*t.bid) : Json(nullptr);
         bk["best_ask"] = t.ask ? level_json(*t.ask) : Json(nullptr);
         bk["locked"] = t.locked();
         bk["crossed"] = t.crossed();
         const auto state = b.trading_state(locate);
-        bk["trading_state"] = state ? Json(std::string(1, *state)) : Json(nullptr);
+        bk["trading_state"] = state ? Json(printable(*state)) : Json(nullptr);
         bk["bid_levels"] = b.level_count(locate, Side::Buy);
         bk["ask_levels"] = b.level_count(locate, Side::Sell);
         Json bids = Json::array();
@@ -278,7 +299,7 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
 Json message_json(const Message& m) {
     const Header& h = header_of(m);
     Json j;
-    j["type"] = std::string(1, h.type);
+    j["type"] = printable(h.type);
     j["name"] = std::string(type_name(h.type));
     j["locate"] = h.stock_locate;
     j["tracking"] = h.tracking_number;
@@ -290,19 +311,19 @@ Json message_json(const Message& m) {
                 j["stock"] = sym(x.stock);
             }
             if constexpr (std::is_same_v<T, SystemEvent>) {
-                j["event_code"] = std::string(1, x.event_code);
+                j["event_code"] = printable(x.event_code);
             } else if constexpr (std::is_same_v<T, StockDirectory>) {
-                j["market_category"] = std::string(1, x.market_category);
+                j["market_category"] = printable(x.market_category);
                 j["round_lot_size"] = x.round_lot_size;
             } else if constexpr (std::is_same_v<T, StockTradingAction>) {
-                j["trading_state"] = std::string(1, x.trading_state);
+                j["trading_state"] = printable(x.trading_state);
             } else if constexpr (std::is_same_v<T, AddOrder>) {
                 j["order_ref"] = x.order_ref;
                 j["side"] = std::string(1, static_cast<char>(x.side));
                 j["shares"] = x.shares;
                 j["price"] = x.price;
                 if (x.attribution) {
-                    j["attribution"] = std::string(x.attribution->data(), 4);
+                    j["attribution"] = printable(std::string_view(x.attribution->data(), 4));
                 }
             } else if constexpr (std::is_same_v<T, OrderExecuted>) {
                 j["order_ref"] = x.order_ref;
@@ -332,7 +353,7 @@ Json message_json(const Message& m) {
                 j["shares"] = x.shares;
                 j["cross_price"] = x.cross_price;
                 j["match_number"] = x.match_number;
-                j["cross_type"] = std::string(1, x.cross_type);
+                j["cross_type"] = printable(x.cross_type);
             } else if constexpr (std::is_same_v<T, BrokenTrade>) {
                 j["match_number"] = x.match_number;
             }

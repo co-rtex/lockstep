@@ -9,7 +9,7 @@ a, b = (subprocess.run([exe], capture_output=True, text=True, check=True).stdout
 if a[0] == b[0]:
     # The main library was itself configured with the baseline layout: nothing to compare.
     print(f"skipped: both executables use {a[0]!r}")
-    sys.exit(0)
+    sys.exit(77)  # reported by ctest as skipped (SKIP_RETURN_CODE), not as a pass
 if a[1:] != b[1:]:
     sys.exit("layouts disagree:\n" + "\n".join(f"  {x}\n  {y}" for x, y in zip(a[1:], b[1:])))
 print(f"{a[0]} == {b[0]} on {len(a) - 1} workloads")

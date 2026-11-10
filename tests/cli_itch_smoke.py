@@ -50,5 +50,30 @@ with tempfile.TemporaryDirectory() as d:
     lossy = json.loads(run("itch", "mold-sim", "--input", f, "--loss-percent", "5",
                            "--no-recovery"))  # exit 0: stopped at the hole, not wrong
     assert lossy["book_matches_delivered_prefix"] and not lossy["book_matches_full_replay"], lossy
+    # Hostile alpha bytes (>= 0x80, NUL, control): a lenient replay and a dump must still
+    # produce valid JSON, not crash on invalid UTF-8 (regression: review 4).
+    import struct
+    def hdr(t, locate, ns):
+        return t + struct.pack(">HH", locate, 0) + ns.to_bytes(6, "big")
+    bad_stock = b"\xffAB\x00\x01\x80  "
+    msgs = [
+        hdr(b"R", 1, 1) + bad_stock + b"\xfe" * 2 + struct.pack(">I", 100) + b"\x81" * 5 +
+        b"\x82\x83" + struct.pack(">I", 1) + b"\x84",                     # 39 bytes
+        hdr(b"H", 1, 2) + bad_stock + b"\x80\x00" + b"\xff\x00\x01\x02",  # trading state 0x80
+        hdr(b"S", 0, 3) + b"\x9f",                                          # system event code
+        hdr(b"A", 1, 4) + struct.pack(">Q", 1) + b"B" + struct.pack(">I", 10) + bad_stock +
+        struct.pack(">I", 100),
+    ]
+    hostile = os.path.join(d, "hostile.itch")
+    with open(hostile, "wb") as fh:
+        for m in msgs:
+            fh.write(struct.pack(">H", len(m)) + m)
+    h = json.loads(run("itch", "replay", "--input", hostile, "--json"))
+    assert h["frames"] == 4 and h["book_stats"]["live_orders"] == 1, h
+    assert json.loads(run("itch", "replay", "--input", hostile, "--json", "--metrics-out",
+                          os.path.join(d, "hm.json")))["frames"] == 4
+    run("itch", "replay", "--input", hostile)  # text mode
+    for line in run("itch", "dump", "--input", hostile).splitlines():
+        json.loads(line)
     run("itch", "bogus", expect=2)
 print("cli itch smoke: ok")
