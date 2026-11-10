@@ -61,7 +61,10 @@ are in-process and single-threaded; none is a wire latency.
   differential seed. A sequencer that skips gaps fails 5 of 13 transport tests.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 8 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
-  TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request.
+  TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
+  over 200 k hostile exchange requests and 200 k random feed messages. Each test asserts
+  that its generator actually reaches the interesting paths; that assertion caught three
+  generators that were too weak to mean anything.
 
 ## Talking points (questions this project answers)
 
