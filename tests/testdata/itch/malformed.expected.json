@@ -1,0 +1,9 @@
+{
+  "frames": 4,
+  "decoded": 2,
+  "unknown_type": 1,
+  "length_mismatch": 1,
+  "frame_error": "truncated_tail",
+  "frame_error_offset": 105,
+  "live_orders": 2
+}

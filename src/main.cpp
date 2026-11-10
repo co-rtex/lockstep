@@ -108,6 +108,11 @@ Usage:
   enginex client subscribe [--host H] [--port P] [--count N] [--duration-ms MS]
                            [--slow-ms MS] [--quiet]
   enginex client snapshot  [--host H] [--port P] [--symbol S] [--depth D]
+  enginex itch generate --out FILE [--seed N] [--messages N] [--symbols N]
+                        [--anomalies-per-million N]
+  enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]
+                        [--metrics-out FILE.json]
+  enginex itch dump     --input FILE [--limit N]
   enginex version
   enginex help
 
@@ -121,6 +126,10 @@ serve:  TCP server (length-prefixed JSON, protocol_version 1). Prints a "listeni
         Without --journal it runs in memory (no durability).
 replay: validates and replays a journal from an empty state and prints the state hash.
         Exit 0 clean, 1 corrupt/unreadable, 3 incomplete tail (use --repair-tail).
+itch:   Nasdaq TotalView-ITCH 5.0 market-data tools (outbound market data, not order entry).
+        Input files use the 2-byte big-endian length-prefixed convention. `generate` writes
+        a seeded synthetic fixture. `replay` rebuilds per-symbol order books; exit 1 on a
+        framing error or (with --strict) the first decode error or book anomaly.
 )";
 }
 
@@ -152,6 +161,9 @@ int main(int argc, char** argv) {
         }
         if (command == "client") {
             return enginex::cli::cmd_client(rest);
+        }
+        if (command == "itch") {
+            return enginex::cli::cmd_itch(rest);
         }
         if (command == "version") {
             namespace bi = enginex::build_info;

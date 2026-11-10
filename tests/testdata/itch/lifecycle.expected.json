@@ -1,0 +1,82 @@
+{
+  "frames": 26,
+  "anomalies": 0,
+  "messages_by_type": {
+    "S": 6,
+    "R": 2,
+    "H": 1,
+    "A": 6,
+    "F": 1,
+    "E": 1,
+    "C": 2,
+    "X": 1,
+    "D": 1,
+    "U": 2,
+    "P": 1,
+    "Q": 1,
+    "B": 1
+  },
+  "books": {
+    "AAPL": {
+      "bids": [
+        [
+          1500000,
+          220,
+          3
+        ]
+      ],
+      "asks": [
+        [
+          1500200,
+          400,
+          1
+        ]
+      ],
+      "bid_orders": [
+        [
+          2,
+          150
+        ],
+        [
+          6,
+          60
+        ],
+        [
+          7,
+          10
+        ]
+      ],
+      "ask_orders": [
+        [
+          5,
+          400
+        ]
+      ]
+    },
+    "MSFT": {
+      "bids": [],
+      "asks": [
+        [
+          4005000,
+          20,
+          1
+        ]
+      ],
+      "bid_orders": [],
+      "ask_orders": [
+        [
+          11,
+          20
+        ]
+      ]
+    }
+  },
+  "executed_shares": 190,
+  "printable_executed_shares": 140,
+  "canceled_shares": 50,
+  "non_displayed_trade_shares": 1000,
+  "cross_shares": 25000,
+  "broken_trades": 1,
+  "live_orders": 5,
+  "last_system_event": "C"
+}

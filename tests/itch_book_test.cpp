@@ -318,6 +318,41 @@ TEST(ItchReplay, DeterministicAcrossRunsAndChunkSizes) {
     }
 }
 
+TEST(ItchSynthetic, CleanStreamsNeverLockOrCrossAndExecuteAtTheTop) {
+    SyntheticOptions o;
+    o.seed = 3;
+    o.messages = 50'000;
+    o.symbols = 3;
+    BookBuilder b;
+    std::uint64_t executions = 0;
+    std::uint64_t at_top = 0;
+    std::uint64_t checked = 0;
+    ReplayOptions opts;
+    // Before applying an execution, check that it hits the best order of its side.
+    BookBuilder shadow;
+    opts.on_message = [&](const Message& m, const ApplyOutcome& out) {
+        ASSERT_NE(out.status, ApplyStatus::Rejected);
+        const Header& h = header_of(m);
+        if (const auto* e = std::get_if<OrderExecuted>(&m)) {
+            const auto o_view = shadow.find_order(e->order_ref);
+            ASSERT_TRUE(o_view);
+            const auto best = shadow.orders(h.stock_locate, o_view->side);
+            ++executions;
+            at_top += !best.empty() && best.front().ref == e->order_ref;
+        }
+        (void)shadow.apply(m);
+        if (h.stock_locate != 0 && ++checked % 7 == 0) {
+            const TopOfBook t = b.top(h.stock_locate);
+            ASSERT_FALSE(t.locked() || t.crossed()) << "message " << checked;
+        }
+    };
+    const ReplayResult r = replay(generate_file(o), b, opts);
+    ASSERT_TRUE(r.ok());
+    EXPECT_EQ(b.stats().anomaly_count(), 0U);
+    EXPECT_GT(executions, 1000U);
+    EXPECT_EQ(at_top, executions);  // every E hits the best-priority order of its side
+}
+
 std::vector<std::uint8_t> framed(const std::vector<Message>& msgs) {
     std::vector<std::uint8_t> out;
     for (const Message& m : msgs) append_framed(out, m);

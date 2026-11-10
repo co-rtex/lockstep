@@ -102,7 +102,7 @@ enginex_set_warnings(enginex_bench_lib)
 # Executables
 # ---------------------------------------------------------------------------
 add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp
-    src/cli_net.cpp)
+    src/cli_net.cpp src/cli_itch.cpp)
 target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib enginex_itch)
 enginex_set_warnings(enginex)
 

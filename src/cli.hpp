@@ -45,5 +45,6 @@ int cmd_run(const std::vector<std::string>& args);
 int cmd_replay(const std::vector<std::string>& args);
 int cmd_serve(const std::vector<std::string>& args);
 int cmd_client(const std::vector<std::string>& args);
+int cmd_itch(const std::vector<std::string>& args);
 
 }  // namespace enginex::cli
