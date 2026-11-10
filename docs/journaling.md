@@ -176,6 +176,15 @@ hide any number of later acknowledged commands, so EngineX refuses to start. The
 then decide, for example by restoring a backup. Tests confirm the refused file is left
 byte-for-byte unchanged.
 
+**No silent divergence, tested as a property.**
+`Recovery.RandomDamageNeverYieldsAStateOutsideThePrefixes` runs 400 trials of random
+truncation, random bit flips anywhere in the file, or both, on a random 80-command
+workload. Every recovery must reproduce *exactly* the state after some journaled prefix
+(hashes from an independent in-memory run). The only other allowed outcome is refusal with
+`JOURNAL_CORRUPT`, and a pure truncation must always recover. Result: 138 recoveries, all to
+a prefix, and 262 refusals. With the record CRC check disabled (mutation), the test finds a
+divergent state.
+
 ## 5. Assumptions and limits (read before trusting it)
 
 * **Storage honesty.** `sync` mode assumes that when `fdatasync`/`F_FULLFSYNC` returns

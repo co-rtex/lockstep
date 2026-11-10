@@ -94,6 +94,9 @@ Two adversarial tests were also added in the sprint:
   hostile client requests (random bytes, random JSON, damaged and corrupted requests) go
   through `parse_client_message` into a real `ExchangeStateMachine`. Nothing throws, every
   error serializes, invariants hold, and identical inputs reproduce identical state.
+* `Recovery.RandomDamageNeverYieldsAStateOutsideThePrefixes` (`recovery_test.cpp`): 400 random
+  truncations and bit flips of a journal. Recovery yields an exact journaled prefix or
+  refuses, never anything else. Disabling the CRC check fails it.
 * `FeedMirror.RandomMessagesNeverBreakTheRules` (`mirror_test.cpp`): 200 k random server
   messages. The mirror applies an update only when live and contiguous, and is stale after
   every failure verdict. Making it accept forward gaps fails this test.

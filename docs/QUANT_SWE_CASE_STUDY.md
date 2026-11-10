@@ -62,7 +62,8 @@ are in-process and single-threaded; none is a wire latency.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 8 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
-  over 200 k hostile exchange requests and 200 k random feed messages. Each test asserts
+  over 200 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
+  journals (recovery yields an exact prefix or refuses, never a divergent state). Each test asserts
   that its generator actually reaches the interesting paths; that assertion caught three
   generators that were too weak to mean anything.
 
