@@ -36,7 +36,7 @@ A few tasks changed during implementation; those changes are noted inline.
 | 2.2 | Deterministic binary command payload codec (explicit little-endian) | round-trip + malformed-payload tests | R2.2 |
 | 2.3 | Journal file format `EXJ1`: header, framed records, max 4096-byte payloads, open/scan/validate, tail classification, exclusive lock, directory sync | journal tests: header, truncation, CRC mismatch, bad magic/version, sequence gaps | R2.2, R2.6 |
 | 2.4 | Storage abstraction with fault injection (failed write, short write, failed sync, ENOSPC) | journal fault tests | R2.6, R2.7 |
-| 2.5 | `DurableExchange`: validate → append → sync → apply → respond; fail-stop on I/O error; durability modes `sync` / `none` | ack-gating tests; fail-stop tests | R2.3, R2.6 |
+| 2.5 | `DurableExchange`: validate → apply in memory → encode journal record → write + sync (group commit) → respond; fail-stop on I/O or apply error. *Changed during implementation:* the original draft said validate → append → sync → apply; the implemented order is the one above (rationale in DECISIONS.md D8: nothing is observable before the ack, and an apply failure happens before the record reaches the journal). Durability modes `sync` / `none` | ack-gating tests; fail-stop tests | R2.3, R2.6 |
 | 2.6 | Startup recovery + replay; idempotency map reconstruction; tail repair with preserved bytes | restart tests; repeated restart hash equality | R2.4, R2.5 |
 | 2.7 | Crash-point tests via `fork` + `_exit` at each boundary; real `SIGKILL` test through the CLI | recovery_test | R2.7 |
 | 2.8 | CLI: `enginex run --journal`, `enginex replay --journal --verify [--repair-tail]`; recovery-time and durable-latency benchmarks | CLI tests; benchmark rows | R2.4, R2.6 |

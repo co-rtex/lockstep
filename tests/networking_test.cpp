@@ -846,6 +846,71 @@ TEST(Server, UnframeableEventEndsFeedsWithResync) {
     EXPECT_TRUE(c.request(order("after", "BUY", 100, 1), kTimeout));
 }
 
+// Regression: a subscribe whose initial snapshot cannot be framed must not register the
+// connection, or it would receive increments with no valid baseline.
+TEST(Server, OversizedSubscribeSnapshotDoesNotRegisterSubscriber) {
+    ServerOptions o;
+    o.max_frame_bytes = 1024;
+    TestServer ts(false, o);
+    Client c = ts.connect();
+    for (int i = 0; i < 40; ++i) {  // 40 ask levels: the full-book snapshot exceeds 1 KiB
+        ASSERT_TRUE(c.request(order("s" + std::to_string(i), "SELL", 10000 + i, 1), kTimeout));
+    }
+    Client sub = ts.connect();
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}, {"request_id", "sub"}}));
+    auto reply = sub.receive(kTimeout);
+    ASSERT_TRUE(reply);
+    EXPECT_EQ((*reply)["type"], "error");
+    EXPECT_EQ((*reply)["request_id"], "sub");
+    EXPECT_EQ(ts.server->stats().subscribers, 0U);
+    // A later accepted command must not reach the failed subscriber as a book_update.
+    ASSERT_TRUE(c.request(order("after", "BUY", 100, 1), kTimeout));
+    auto stray = sub.receive(500ms);
+    EXPECT_FALSE(stray && (*stray)["type"] == "book_update")
+        << "event delivered without a baseline: " << stray->dump();
+    // The connection stays usable: a bounded snapshot request still works.
+    auto small = sub.request(
+        Json{{"type", "snapshot_request"}, {"request_id", "q"}, {"symbol", "AAPL"}, {"depth", 1}},
+        kTimeout);
+    ASSERT_TRUE(small);
+    EXPECT_EQ((*small)["type"], "snapshot_response");
+}
+
+// Regression: after an internal fail-stop the in-memory state may contain staged commands that
+// were never made durable. Snapshot requests must refuse, like subscribe does.
+TEST(Server, SnapshotRefusedAfterInternalFailStop) {
+    test::TempDir dir;
+    const std::string path = dir.file("failstop.exj");
+    ServerOptions o;
+    o.fault_internal_error_after_stage = 2;
+    auto ts = std::make_unique<TestServer>(/*journal=*/true, o, path);
+    Client c = ts->connect();
+    auto ok = c.request(order("a", "BUY", 100, 1), kTimeout);
+    ASSERT_TRUE(ok);
+    EXPECT_EQ((*ok)["type"], "ack");
+    auto failed = c.request(order("b", "BUY", 200, 7), kTimeout);
+    ASSERT_TRUE(failed);
+    EXPECT_EQ((*failed)["code"], "INTERNAL_ERROR");
+    auto snap = c.request(Json{{"type", "snapshot_request"}, {"request_id", "s"}}, kTimeout);
+    ASSERT_TRUE(snap);
+    EXPECT_EQ((*snap)["type"], "error") << snap->dump();
+    EXPECT_EQ((*snap)["code"], "INTERNAL_ERROR");
+    auto sub = c.request(Json{{"type", "subscribe"}, {"request_id", "u"}}, kTimeout);
+    ASSERT_TRUE(sub);
+    EXPECT_EQ((*sub)["code"], "INTERNAL_ERROR");
+    EXPECT_EQ(ts->server->stats().internal_errors, 1U);
+    // Restart: only the durable command survives; "b" was never acknowledged as durable.
+    ts.reset();
+    ServerOptions again;
+    again.host = "127.0.0.1";
+    again.port = 0;
+    DurableOptions d;
+    d.journal_path = path;
+    again.journal = d;
+    Server restarted(again);
+    EXPECT_EQ(restarted.state().last_command_sequence(), 1U);
+}
+
 TEST(Server, RefusesNonLoopbackBindWithoutOptIn) {
     ServerOptions o;
     o.host = "0.0.0.0";

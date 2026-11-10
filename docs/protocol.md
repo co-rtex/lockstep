@@ -163,7 +163,7 @@ because the request map is rebuilt from the journal (`RetryAfterDisconnectProduc
 | ingress queue (all connections) | 4096 requests (`--ingress-capacity`) | request answered immediately with `SERVER_OVERLOADED`, not processed |
 | outbound queue per connection | 1024 frames (`--outbound-capacity`) | connection marked overflowed: a final `resync_required` (subscriber) or `SERVER_OVERLOADED` error (non-subscriber) goes into a reserved slot, the subscription is dropped, and the socket closes after the queue drains |
 | socket send stall | 2 s (`--send-timeout-ms`) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
-| frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth") |
+| frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth"); a `subscribe` whose initial snapshot does not fit is **not** registered (no baseline, so no increments) |
 | group commit batch | 512 commands (`--max-batch`) | larger bursts span several batches |
 
 Requests still queued from a connection the server has already closed (overflow, peer
@@ -183,8 +183,11 @@ non-reading subscriber is cut off.
 An unexpected exception inside the sequencer (a defect, or memory exhaustion) does not crash
 the process. The server enters fail-stop: nothing still staged is flushed to the journal,
 pending and later commands are answered with `INTERNAL_ERROR` (outcome unknown, retry after
-restart), and subscriptions and snapshots are refused. Restarting recovers the last durable
-state from the journal.
+restart), and subscriptions and snapshots are refused (the in-memory state may hold staged
+commands that never became durable). The reply to the request that hit the error echoes its
+`request_id` and `command_type`, so clients can correlate it. Restarting recovers the last
+durable state from the journal. `SnapshotRefusedAfterInternalFailStop` drives this path with
+the test-only `fault_internal_error_after_stage` option.
 
 ## 9. Shutdown
 

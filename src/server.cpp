@@ -467,7 +467,7 @@ private:
                 try {
                     std::visit([&](auto& m) { handle(req.session, m); }, req.message);
                 } catch (const std::exception& e) {
-                    internal_failure(req.session, e.what());
+                    internal_failure(req, e.what());
                 }
             }
             safe_commit();
@@ -478,14 +478,29 @@ private:
     // Unexpected exceptions must not terminate the process (std::thread boundary). State may
     // be inconsistent afterwards, so the server stops accepting commands (fail-stop) and
     // answers INTERNAL_ERROR; operators restart it to recover from the journal.
-    void internal_failure(const SessionPtr& s, const char* what) {
+    // The reply echoes the request's correlation fields so clients can match it.
+    void internal_failure(const Request& req, const char* what) {
         counters_.internal_errors.fetch_add(1);
         std::fprintf(stderr, "enginex server: internal error, now fail-stop: %s\n", what);
         fatal_ = true;
+        std::string request_id;
+        std::string request_type;
+        if (const auto* cmd = std::get_if<Command>(&req.message)) {
+            request_id = request_id_of(*cmd);
+            request_type = std::string(to_string(type_of(*cmd)));
+        } else if (const auto* snap = std::get_if<SnapshotRequest>(&req.message)) {
+            request_id = snap->request_id;
+            request_type = "snapshot_request";
+        } else if (const auto* sub = std::get_if<SubscribeRequest>(&req.message)) {
+            request_id = sub->request_id;
+            request_type = "subscribe";
+        }
         Pending p;
-        p.session = s;
-        p.reply = make_frame(
-            error_message(ErrorCode::InternalError, "internal server error; server is fail-stop"));
+        p.session = req.session;
+        p.reply = make_frame(error_message(ErrorCode::InternalError,
+                                           "internal server error; outcome unknown, server is "
+                                           "fail-stop; retry the request_id after restart",
+                                           request_id, request_type));
         pending_.push_back(std::move(p));
     }
 
@@ -552,6 +567,10 @@ private:
         }
         backend_.stage(cmd, scratch_);
         counters_.commands_staged.fetch_add(1);
+        if (opts_.fault_internal_error_after_stage != 0 &&
+            counters_.commands_staged.load() == opts_.fault_internal_error_after_stage) {
+            throw std::runtime_error("injected internal error after stage");
+        }
         p.state_dependent = true;
         p.request_id = scratch_.request_id;
         p.command_type = std::string(to_string(scratch_.type));
@@ -595,6 +614,11 @@ private:
                 ErrorCode::JournalIoError,
                 "journal failed (" + backend_.failure() + "); state unavailable until restart",
                 r.request_id, "snapshot_request"));
+        } else if (fatal_) {
+            // The in-memory state may hold staged commands that were never made durable.
+            f = make_frame(error_message(ErrorCode::InternalError,
+                                         "server is fail-stop after an internal error",
+                                         r.request_id, "snapshot_request"));
         } else {
             std::optional<SymbolId> symbol;
             if (r.symbol) {
@@ -605,6 +629,9 @@ private:
                                              r.request_id, "snapshot_request"));
             } else {
                 f = snapshot_frame(r.request_id, symbol, r.depth, false);
+                if (!f) {
+                    f = snapshot_too_large(r.request_id, "snapshot_request");
+                }
             }
         }
         (void)s->enqueue(f, counters_);
@@ -626,9 +653,11 @@ private:
         } else if (s->subscribed.load()) {
             f = make_frame(error_message(ErrorCode::InvalidRequest, "already subscribed",
                                          r.request_id, "subscribe"));
-        } else {
-            f = snapshot_frame(r.request_id, std::nullopt, 0, true);
+        } else if ((f = snapshot_frame(r.request_id, std::nullopt, 0, true))) {
             subscribe = true;
+        } else {
+            // No baseline could be sent: the connection must not receive increments.
+            f = snapshot_too_large(r.request_id, "subscribe");
         }
         // Snapshot and registration happen together on this thread: no event can fall between.
         s->last_event_queued = published_event_;
@@ -639,18 +668,22 @@ private:
         s->in_flight.fetch_sub(1);
     }
 
+    // The snapshot frame, or nullptr when it does not fit in one frame. Callers must treat
+    // nullptr as failure: in particular a subscribe without a baseline must not register.
     Frame snapshot_frame(const std::string& request_id, std::optional<SymbolId> symbol,
                          std::size_t depth, bool subscribed) {
         try {
-            if (Frame f = bounded_frame(snapshot_message(backend_.state(), request_id, symbol,
-                                                         depth, published_event_, subscribed))) {
-                return f;
-            }
+            return bounded_frame(snapshot_message(backend_.state(), request_id, symbol, depth,
+                                                  published_event_, subscribed));
         } catch (const std::length_error&) {
+            return nullptr;
         }
+    }
+
+    static Frame snapshot_too_large(const std::string& request_id, const char* request_type) {
         return make_frame(error_message(ErrorCode::InternalError,
                                         "snapshot exceeds the frame limit; request less depth",
-                                        request_id, subscribed ? "subscribe" : "snapshot_request"));
+                                        request_id, request_type));
     }
 
     void publish(EventSeq seq, const Frame& f) {
