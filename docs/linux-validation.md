@@ -16,7 +16,7 @@ page records why, and the shortest way to get those results.
 | GCC 13 | **not run** | no GCC installed on this machine |
 | Docker (`scripts/linux_check.sh`) | **blocked** | `docker` is installed, but the sandbox denies the socket: `dial unix /var/run/docker.sock: connect: operation not permitted` |
 | GitHub Actions on the branch | **not read** | `gh` cannot read its config in the sandbox (`open ~/.config/gh/config.yml: operation not permitted`). The branch is pushed by the owner's own sync process, not from this session |
-| clang-format 19.1.7 | **not run** | not installed; running a pip-downloaded binary was refused by the sandbox |
+| clang-format 19.1.7 | **dry run only: fails** | A read-only review ran the PyPI wheel's clang-format 19.1.7 with `--dry-run`; the binary's SHA-256 matches the wheel's RECORD. It reports **802 violations in 43 files**, many of them lines over 100 columns. Every file was clean at `418d247`. Applying it (`-i`) from this session was refused by the sandbox (`[Code from External]`), so the formatting commit is left to the owner (step 1 below) |
 | Python tools on Python 3.8–3.12 | checked statically | every tracked `.py` parses with `ast.parse(feature_version=(3, 8))`, `(3, 10)` and `(3, 12)`; no f-string reuses its own quote (PEP 701 syntax) |
 
 Partial proxies run here: a clang build with `-Wshadow-all` (0 warnings), a scripted search
@@ -62,6 +62,24 @@ These are the riskiest places, from the portability review and from what is new 
   the connected socket for that peer, which the sender handles (`via_fd`), but this has never
   run there. Linux also doubles `SO_RCVBUF`, which changes how many datagrams the
   small-buffer test drops (it asserts recovery, not a drop count).
+* **Specific tests named by the portability review**, all plausible rather than certain:
+  * `MoldUdp.UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook`. Linux charges
+    each datagram's full kernel buffer against `SO_RCVBUF`, so a 32 KiB buffer (64 KiB after
+    doubling) holds only ≈ 20–30 datagrams. The receiver's request socket uses the same size,
+    so retransmission bursts are mostly dropped again, and recovery advances about one buffer
+    per 50 ms retry. It should converge (idle timeout 5 s). If it times out under TSan,
+    either size the request socket separately or lengthen the timeouts.
+  * `FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook`. It needs ≈ 1.5 s of
+    traffic to overflow an 8-frame queue plus the socket buffers, which are larger on Linux.
+    If the traders are too slow under TSan, the slow-consumer assertion fails. Fix by
+    lowering the client's `SO_RCVBUF` or lengthening the stall.
+  * The ASan job runs LeakSanitizer, which has never run on the sprint code. A read-through
+    found no leak; macOS `leaks` reported 0 over 501 gtests.
+  * GCC Release at `-O3 -Werror` can raise `-Wmaybe-uninitialized` and
+    `-Wstringop-overflow` false positives that the `-O0` Debug job cannot. The review named
+    two candidate patterns: `std::optional<Session>` in `Sequencer::Options`, and the sized
+    `std::vector` plus insert in MoldUDP64 packet building. If they fire, demote just that
+    warning for GCC Release.
 * **Timing-sensitive tests under sanitizers.** The TSan build is several times slower. Socket
   tests with timeouts (`MoldUdp.*`, `Server.*Timeout*`, `FeedMirrorSession.*`) are the
   candidates. `ctest -R 'MoldUdp|Server\.|FeedMirrorSession|exchange_pymodel'` reruns just
