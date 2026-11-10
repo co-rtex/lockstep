@@ -407,6 +407,9 @@ MALFORMED = [  # well-framed messages that must each be answered INVALID_REQUEST
     b'"price":5,"quantity":1,"extra":true}',
     b'{"protocol_version":1,"type":"cancel","request_id":""}',
     b"{" * 5000 + b"}" * 5000,
+    # 65 keys: over the per-object bound (D33 addendum), which keeps parsing linear
+    b'{"protocol_version":1,"type":"subscribe",' +
+    b",".join(b'"k%d":1' % i for i in range(63)) + b"}",
 ]
 
 
