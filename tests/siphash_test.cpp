@@ -58,5 +58,30 @@ TEST(SipHash, RandomIndexKeysDoNotChangeResults) {
     }
 }
 
+// With 400 k ids, about n^2 / 2^33 ≈ 18 pairs share a 32-bit fingerprint (P(none) ≈ 1e-8), so the
+// exact request_id comparison after a fingerprint match is exercised: every id must still
+// resolve to its own record, and unknown ids to none.
+TEST(RequestIndex, FingerprintCollisionsStillResolveToTheRightRecord) {
+    StateConfig cfg;
+    cfg.max_open_orders = 1'000'000;
+    ExchangeStateMachine s(cfg);
+    CommandResult r;
+    constexpr int kIds = 400'000;
+    for (int i = 0; i < kIds; ++i) {
+        s.process(NewLimitOrder{"k" + std::to_string(i), "AAPL", Side::Buy, 10000, 1}, r);
+        ASSERT_TRUE(r.accepted);
+    }
+    for (int i = 0; i < kIds; ++i) {
+        const std::string id = "k" + std::to_string(i);
+        const CommandRecord* rec = s.find_request(id);
+        ASSERT_NE(rec, nullptr) << id;
+        ASSERT_EQ(request_id_of(rec->command), id);
+        ASSERT_EQ(rec->sequence, static_cast<CommandSeq>(i + 1));
+    }
+    for (int i = 0; i < 1000; ++i) {
+        ASSERT_EQ(s.find_request("unknown-" + std::to_string(i)), nullptr);
+    }
+}
+
 }  // namespace
 }  // namespace enginex
