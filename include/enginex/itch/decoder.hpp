@@ -29,7 +29,8 @@ namespace enginex::itch {
 // Why a single payload could not be decoded. None of these break the framing, so a replay can
 // skip the message and continue (counted), or stop in strict mode.
 enum class DecodeError : std::uint8_t {
-    Empty,           // zero-length payload
+    Empty,           // zero-length payload (only via decode({}); the framer treats a zero
+                     // length prefix as a fatal FrameError instead)
     UnknownType,     // type byte is not one of kKnownTypes
     LengthMismatch,  // known type, but payload length differs from the specified length
     InvalidField,    // enumerated field with a value outside the specification (side, printable)
@@ -58,7 +59,7 @@ enum class FrameError : std::uint8_t {
 //
 // feed() accepts arbitrary chunk boundaries. Complete messages inside the chunk are handed to
 // the callback as spans into the chunk itself (zero copy); only a message split across chunks
-// is copied into a small carry buffer (≤ 65'536 bytes). Spans are valid only during the
+// is copied into a small carry buffer (≤ 2 + 65'535 bytes). Spans are valid only during the
 // callback. After a FrameError the framer stays failed and ignores further input.
 class StreamFramer {
 public:

@@ -53,8 +53,12 @@ int cmd_generate(const std::vector<std::string>& argv) {
         throw UsageError("--symbols must be in [1, 65535]");
     }
     o.symbols = static_cast<std::uint16_t>(symbols);
-    o.anomalies_per_million = static_cast<std::uint32_t>(a.get_u64("anomalies-per-million", 0));
     const std::string out = a.require("out");
+    const std::uint64_t anomalies = a.get_u64("anomalies-per-million", 0);
+    if (anomalies > 1'000'000) {
+        throw UsageError("--anomalies-per-million must be in [0, 1000000]");
+    }
+    o.anomalies_per_million = static_cast<std::uint32_t>(anomalies);
     const std::vector<std::uint8_t> bytes = generate_file(o);
     std::ofstream f(out, std::ios::binary | std::ios::trunc);
     f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -81,7 +85,8 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
     Json j;
     j["type"] = "itch_replay";
     j["input"] = input;
-    j["bytes"] = r.bytes;
+    j["bytes_read"] = r.bytes_read;
+    j["bytes_processed"] = r.bytes_processed;
     j["frames"] = r.frames;
     j["decoded"] = r.decoded;
     Json errs = Json::object();
@@ -167,7 +172,7 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
 
 void print_text(const Json& j) {
     std::cout << "ITCH 5.0 replay of " << j["input"].get<std::string>() << "\n"
-              << "  bytes " << j["bytes"] << ", frames " << j["frames"] << ", decoded "
+              << "  bytes " << j["bytes_processed"] << ", frames " << j["frames"] << ", decoded "
               << j["decoded"] << "\n"
               << "  decode errors " << j["decode_errors"].dump() << "\n"
               << "  messages by type " << j["messages_by_type"].dump() << "\n"
@@ -217,6 +222,9 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
     const auto t0 = std::chrono::steady_clock::now();
     const ReplayResult r = replay(*in, book, opts);
     const auto t1 = std::chrono::steady_clock::now();
+    if (only && !book.find_locate(*only)) {
+        throw UsageError("--symbol " + *only + ": no such symbol in " + input);
+    }
     Json j = replay_json(input, r, book, depth, only);
     if (const auto out = a.get("metrics-out")) {
         Json m = j;

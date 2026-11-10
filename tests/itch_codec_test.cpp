@@ -364,6 +364,26 @@ TEST(ItchMalformed, RandomBytesNeverCrashAndAreClassified) {
     }
 }
 
+// The generic random test almost never produces a decodable A/F/C (length and enum byte must
+// both match), so exercise their lossless round trip explicitly.
+TEST(ItchMalformed, RandomValidOrderMessagesRoundTrip) {
+    Rng rng(42);
+    for (int i = 0; i < 50'000; ++i) {
+        const char t = "AFC"[rng.below(3)];
+        std::vector<std::uint8_t> bytes(*message_length(t));
+        for (auto& b : bytes) b = static_cast<std::uint8_t>(rng.next());
+        bytes[0] = static_cast<std::uint8_t>(t);
+        if (t == 'C') {
+            bytes[31] = rng.chance(50) ? 'Y' : 'N';
+        } else {
+            bytes[19] = rng.chance(50) ? 'B' : 'S';
+        }
+        const DecodeResult r = decode(bytes);
+        ASSERT_TRUE(std::holds_alternative<Message>(r)) << t;
+        ASSERT_EQ(encode(std::get<Message>(r)), bytes) << t;
+    }
+}
+
 TEST(ByteReader, ThrowsInsteadOfReadingPastEnd) {
     const std::vector<std::uint8_t> bytes = {1, 2, 3};
     const ByteReader r(bytes);

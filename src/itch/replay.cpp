@@ -16,9 +16,9 @@ public:
         if (r_.stopped) {
             return false;
         }
-        r_.bytes += chunk.size();
+        r_.bytes_read += chunk.size();
         const FrameError e = framer_.feed(chunk, [&](std::span<const std::uint8_t> payload) {
-            if (!r_.stopped) {
+            if (!r_.stopped) {  // the framer finishes its chunk; nothing after a stop counts
                 on_payload(payload);
             }
         });
@@ -29,18 +29,23 @@ public:
     }
 
     void finish() {
-        r_.frames = framer_.frames();
-        if (r_.stopped) {
-            return;
+        if (!r_.stopped) {
+            if (const FrameError e = framer_.finish(); e != FrameError::None) {
+                frame_failed(e);
+            }
         }
-        if (const FrameError e = framer_.finish(); e != FrameError::None) {
-            frame_failed(e);
+    }
+
+    void read_failed() {
+        if (!r_.stopped) {
+            r_.stopped = "read error";
         }
     }
 
 private:
     void on_payload(std::span<const std::uint8_t> payload) {
-        ++frame_no_;
+        ++r_.frames;
+        r_.bytes_processed += 2 + payload.size();
         const DecodeResult d = decode(payload);
         if (const auto* err = std::get_if<DecodeError>(&d)) {
             ++r_.decode_errors[static_cast<std::size_t>(*err)];
@@ -67,25 +72,25 @@ private:
     }
 
     void frame_failed(FrameError e) {
+        if (r_.stopped) {
+            return;  // already stopped earlier in this chunk: later bytes are not examined
+        }
         r_.frame_error = e;
         r_.frame_error_offset = framer_.error_offset();
-        if (!r_.stopped) {
-            r_.stopped = "framing error " + std::string(to_string(e)) + " at byte offset " +
-                         std::to_string(framer_.error_offset());
-            r_.stopped_at_message = frame_no_ + 1;
-        }
+        r_.stopped = "framing error " + std::string(to_string(e)) + " at byte offset " +
+                     std::to_string(framer_.error_offset());
+        r_.stopped_at_message = r_.frames + 1;
     }
 
     void stop(std::string why) {
         r_.stopped = std::move(why);
-        r_.stopped_at_message = frame_no_;
+        r_.stopped_at_message = r_.frames;
     }
 
     BookBuilder& book_;
     const ReplayOptions& options_;
     ReplayResult& r_;
     StreamFramer framer_;
-    std::uint64_t frame_no_ = 0;
 };
 
 }  // namespace
@@ -116,7 +121,7 @@ ReplayResult replay(std::istream& in, BookBuilder& book, const ReplayOptions& op
         }
     }
     if (in.bad()) {
-        r.stopped = "read error";
+        d.read_failed();
     }
     d.finish();
     return r;

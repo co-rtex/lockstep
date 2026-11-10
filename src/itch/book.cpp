@@ -332,7 +332,7 @@ ApplyOutcome BookBuilder::apply(const Message& m) {
 std::vector<std::uint16_t> BookBuilder::locates() const {
     std::vector<std::uint16_t> out;
     for (std::size_t i = 0; i < kLocates; ++i) {
-        if (impl_->books[i]) {
+        if (impl_->books[i] || impl_->directory[i].symbol) {
             out.push_back(static_cast<std::uint16_t>(i));
         }
     }
@@ -437,6 +437,14 @@ std::optional<OrderView> BookBuilder::find_order(OrderRef ref) const {
     return OrderView{n.ref, n.side, n.price, n.shares};
 }
 
+std::optional<Mpid> BookBuilder::attribution(OrderRef ref) const {
+    const auto slot = impl_->lookup(ref);
+    if (!slot) {
+        return std::nullopt;
+    }
+    return impl_->pool[*slot].attribution;
+}
+
 std::size_t BookBuilder::level_count(std::uint16_t locate, Side side) const {
     const auto& b = impl_->books[locate];
     return b ? b->side(side).size() : 0;
@@ -446,10 +454,27 @@ std::string BookBuilder::canonical_state(bool include_orders) const {
     std::string out;
     char buf[96];
     for (const std::uint16_t locate : locates()) {
-        const auto sym = symbol(locate);
-        std::snprintf(buf, sizeof buf, "locate %u %s\n", static_cast<unsigned>(locate),
-                      sym ? sym->c_str() : "-");
+        std::snprintf(buf, sizeof buf, "locate %u ", static_cast<unsigned>(locate));
         out += buf;
+        // All 8 symbol bytes, non-printables escaped: distinct symbols never collide (an
+        // embedded NUL or different padding stays visible).
+        if (const auto& sym = impl_->directory[locate].symbol) {
+            for (const char c : *sym) {
+                const auto u = static_cast<unsigned char>(c);
+                if (u >= 0x21 && u <= 0x7E && c != '\\') {
+                    out += c;
+                } else {
+                    std::snprintf(buf, sizeof buf, "\\x%02X", u);
+                    out += buf;
+                }
+            }
+        } else {
+            out += '-';
+        }
+        out += '\n';
+        if (!impl_->books[locate]) {
+            continue;  // directory entry only: no orders seen
+        }
         for (const Side side : {Side::Buy, Side::Sell}) {
             for_each_level(impl_->books[locate]->side(side), side, 0,
                            [&](Price4 p, const Level& l) {
@@ -482,6 +507,9 @@ std::optional<std::string> BookBuilder::check_invariants() const {
     const Impl& im = *impl_;
     std::size_t linked = 0;
     for (const std::uint16_t locate : locates()) {
+        if (!im.books[locate]) {
+            continue;
+        }
         for (const Side side : {Side::Buy, Side::Sell}) {
             for (const auto& [price, level] : im.books[locate]->side(side)) {
                 if (level.count == 0) {

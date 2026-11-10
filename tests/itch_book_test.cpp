@@ -127,6 +127,10 @@ TEST(ItchBook, ReplaceLosesPriorityEvenAtTheSamePriceAndSize) {
     apply(b, replace(2, 5, 7, 105));
     EXPECT_EQ(refs(b, Side::Buy), (std::vector<OrderRef>{4, 5, 3}));
     EXPECT_EQ(b.find_order(5)->side, Side::Buy);
+    // Attribution survives a replace (the U message carries none).
+    ASSERT_TRUE(b.attribution(3));
+    EXPECT_EQ(std::string(b.attribution(3)->data(), 4), "GSCO");
+    EXPECT_FALSE(b.attribution(5));
     EXPECT_EQ(b.depth(kL, Side::Buy, 0), (std::vector<LevelView>{{105, 8, 2}, {100, 10, 1}}));
     EXPECT_EQ(b.stats().replaces, 2U);
 }
@@ -190,6 +194,10 @@ TEST(ItchBook, AnomaliesAreRejectedWithoutChangingTheBook) {
         {add(1, Side::Buy, 100, 5), Anomaly::DuplicateOrderRef},
         {replace(1, 2, 5, 100), Anomaly::DuplicateOrderRef},  // new ref already live
         {del(1, 7), Anomaly::LocateMismatch},
+        {OrderExecuted{hdr('E', 7), 1, 1, 1}, Anomaly::LocateMismatch},
+        {OrderExecutedWithPrice{hdr('C', 7), 1, 1, 1, true, 1}, Anomaly::LocateMismatch},
+        {OrderCancel{hdr('X', 7), 1, 1}, Anomaly::LocateMismatch},
+        {OrderReplace{hdr('U', 7), 1, 50, 1, 1}, Anomaly::LocateMismatch},
     };
     for (const Case& c : cases) {
         const ApplyOutcome out = apply(b, c.m);
@@ -222,6 +230,25 @@ TEST(ItchBook, DirectorySymbolMismatchAndConflictAreInformational) {
     d.stock = make_symbol("MSFT");
     EXPECT_EQ(apply(b, d).anomaly, Anomaly::DirectoryConflict);
     EXPECT_EQ(b.symbol(kL), "MSFT");
+}
+
+TEST(ItchBook, DirectoryOnlyLocatesAreListedAndSymbolsHashExactly) {
+    BookBuilder a;
+    StockDirectory d;
+    d.h = hdr('R', 9);
+    d.stock = make_symbol("ZVZZT");
+    apply(a, d);
+    EXPECT_EQ(a.locates(), (std::vector<std::uint16_t>{9}));
+    EXPECT_TRUE(a.depth(9, Side::Buy, 0).empty());
+    EXPECT_NE(a.canonical_state(true).find("locate 9 ZVZZT"), std::string::npos);
+    // Symbols differing only in an embedded NUL vs space must not hash the same.
+    BookBuilder b;
+    BookBuilder c;
+    StockDirectory e = d;
+    e.stock[5] = '\0';
+    apply(b, d);
+    apply(c, e);
+    EXPECT_NE(b.state_hash(), c.state_hash());
 }
 
 TEST(ItchBook, CrossedAndLockedBooksAreReportedNotRejected) {
@@ -280,6 +307,8 @@ TEST_P(ItchDifferential, MatchesReferenceModelMessageByMessage) {
         }
     }
     compare_books(b, ref, o.symbols, stream.size());
+    EXPECT_EQ(b.stats().executed_shares, ref.executed_shares());
+    EXPECT_EQ(b.stats().canceled_shares, ref.canceled_shares());
     if (o.anomalies_per_million == 0) {
         EXPECT_EQ(anomalies, 0U) << "clean synthetic stream must replay without anomalies";
         EXPECT_EQ(b.stats().anomaly_count(), 0U);
@@ -398,6 +427,43 @@ TEST(ItchReplay, StrictStopsOnBookAnomaly) {
     EXPECT_EQ(s.stopped_at_message, 2U);
     EXPECT_NE(s.stopped->find("over_execution"), std::string::npos);
     EXPECT_EQ(b.stats().live_orders, 1U);
+}
+
+// Regression (independent review): after a strict stop the result must describe the stop
+// point only — later frames are not counted and later framing errors are not reported.
+TEST(ItchReplay, StrictStopFreezesTheResultAtTheStopPoint) {
+    auto file = framed({add(1, Side::Buy, 100, 10), cancel(1, 11), del(1), add(2, Side::Buy, 1, 1)});
+    file.insert(file.end(), {0x00, 0x00});  // a framing error after the stop
+    for (const bool use_stream : {false, true}) {
+        BookBuilder b;
+        ReplayOptions so;
+        so.strict = true;
+        so.chunk_bytes = 5;
+        ReplayResult r;
+        if (use_stream) {
+            std::istringstream in(std::string(file.begin(), file.end()));
+            r = replay(in, b, so);
+        } else {
+            r = replay(file, b, so);
+        }
+        ASSERT_FALSE(r.ok());
+        EXPECT_EQ(r.stopped_at_message, 2U);
+        EXPECT_EQ(r.frames, 2U) << use_stream;
+        EXPECT_EQ(r.decoded, 2U);
+        EXPECT_EQ(r.bytes_processed, 38U + 25U) << use_stream;  // A (2+36) + X (2+23)
+        EXPECT_EQ(r.frame_error, FrameError::None) << use_stream;
+        EXPECT_NE(r.stopped->find("over_execution"), std::string::npos);
+    }
+}
+
+TEST(ItchReplay, LenientResultCountsEveryFrame) {
+    const auto file = framed({add(1, Side::Buy, 100, 10), cancel(1, 11), del(1)});
+    BookBuilder b;
+    const ReplayResult r = replay(file, b);
+    ASSERT_TRUE(r.ok());
+    EXPECT_EQ(r.frames, 3U);
+    EXPECT_EQ(r.bytes_processed, file.size());
+    EXPECT_EQ(r.bytes_read, file.size());
 }
 
 TEST(ItchReplay, TruncatedAndZeroLengthStreamsAreFatal) {

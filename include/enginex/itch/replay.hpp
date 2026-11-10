@@ -5,9 +5,13 @@
 // Error policy:
 //   * framing errors (zero-length prefix, truncated final message) are fatal: message
 //     boundaries after them are unknown;
-//   * decode errors (unknown type, wrong length, invalid field) and book anomalies are counted
-//     and the message is skipped, unless `strict`, in which case replay stops at the first one.
-// The result reports which of these ended the replay, with the 1-based message number.
+//   * decode errors (unknown type, wrong length, invalid field) are counted and the frame is
+//     skipped; book anomalies are counted (rejected messages leave the book unchanged;
+//     SymbolMismatch/DirectoryConflict are applied and only counted);
+//   * with `strict`, replay stops at the first decode error or anomaly of any kind.
+// Replay stops at the *first* problem. The result then describes the stop point only: frames
+// and bytes after it are neither processed nor counted, and later framing errors are not
+// examined.
 
 #include <cstdint>
 #include <functional>
@@ -29,16 +33,19 @@ struct ReplayOptions {
 };
 
 struct ReplayResult {
-    std::uint64_t bytes = 0;
-    std::uint64_t frames = 0;
+    std::uint64_t bytes_read = 0;       // input bytes read (may exceed bytes_processed)
+    std::uint64_t bytes_processed = 0;  // through the end of the last processed frame
+    std::uint64_t frames = 0;           // frames processed (decoded or counted as errors)
     std::uint64_t decoded = 0;
     std::array<std::uint64_t, 4> decode_errors{};  // indexed by DecodeError
     std::array<std::uint64_t, 256> unknown_types{};
     FrameError frame_error = FrameError::None;
     std::uint64_t frame_error_offset = 0;
-    // Set when replay stopped early (framing error, or strict mode). Human-readable.
+    // Set when replay stopped early (framing error, strict mode, read error). Human-readable.
     std::optional<std::string> stopped;
-    std::uint64_t stopped_at_message = 0;  // 1-based frame number, 0 if not stopped
+    // 1-based number of the frame that caused the stop (for a framing error: the frame that
+    // could not be read). 0 if not stopped, or stopped by a read error.
+    std::uint64_t stopped_at_message = 0;
 
     [[nodiscard]] bool ok() const noexcept { return !stopped; }
     [[nodiscard]] std::uint64_t decode_error_count() const noexcept {

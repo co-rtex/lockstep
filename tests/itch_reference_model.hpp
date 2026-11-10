@@ -33,13 +33,13 @@ public:
             return Anomaly::None;
         }
         if (const auto* e = std::get_if<OrderExecuted>(&m)) {
-            return take(e->order_ref, h.stock_locate, e->executed_shares);
+            return take(e->order_ref, h.stock_locate, e->executed_shares, &executed_);
         }
         if (const auto* c = std::get_if<OrderExecutedWithPrice>(&m)) {
-            return take(c->order_ref, h.stock_locate, c->executed_shares);
+            return take(c->order_ref, h.stock_locate, c->executed_shares, &executed_);
         }
         if (const auto* x = std::get_if<OrderCancel>(&m)) {
-            return take(x->order_ref, h.stock_locate, x->canceled_shares);
+            return take(x->order_ref, h.stock_locate, x->canceled_shares, &canceled_);
         }
         if (const auto* d = std::get_if<OrderDelete>(&m)) {
             auto it = orders_.find(d->order_ref);
@@ -94,21 +94,26 @@ public:
     }
 
     std::size_t live() const { return orders_.size(); }
+    std::uint64_t executed_shares() const { return executed_; }
+    std::uint64_t canceled_shares() const { return canceled_; }
 
 private:
-    Anomaly take(OrderRef ref, std::uint16_t locate, std::uint32_t shares) {
+    Anomaly take(OrderRef ref, std::uint16_t locate, std::uint32_t shares, std::uint64_t* total) {
         auto it = orders_.find(ref);
         if (it == orders_.end()) return Anomaly::UnknownOrderRef;
         if (it->second.locate != locate) return Anomaly::LocateMismatch;
         if (shares == 0) return Anomaly::ZeroShares;
         if (shares > it->second.shares) return Anomaly::OverExecution;
         it->second.shares -= shares;
+        *total += shares;
         if (it->second.shares == 0) orders_.erase(it);
         return Anomaly::None;
     }
 
     std::map<OrderRef, Order> orders_;
     std::uint64_t clock_ = 0;
+    std::uint64_t executed_ = 0;
+    std::uint64_t canceled_ = 0;
 };
 
 }  // namespace enginex::itch::test

@@ -121,7 +121,7 @@ public:
 
     [[nodiscard]] const BookStats& stats() const noexcept { return stats_; }
 
-    // Locates that have (or had) a book, ascending.
+    // Locates with a directory entry or at least one add, ascending.
     [[nodiscard]] std::vector<std::uint16_t> locates() const;
     [[nodiscard]] std::optional<std::string> symbol(std::uint16_t locate) const;
     [[nodiscard]] std::optional<std::uint16_t> find_locate(std::string_view symbol) const;
@@ -134,6 +134,8 @@ public:
     // Every order of one side in priority order: best price first, FIFO within a level.
     [[nodiscard]] std::vector<OrderView> orders(std::uint16_t locate, Side side) const;
     [[nodiscard]] std::optional<OrderView> find_order(OrderRef ref) const;
+    // MPID of a live order added with 'F' (kept across replaces); nullopt otherwise.
+    [[nodiscard]] std::optional<Mpid> attribution(OrderRef ref) const;
     [[nodiscard]] std::size_t level_count(std::uint16_t locate, Side side) const;
 
     // Deterministic text form of every book (levels and, optionally, every order in priority

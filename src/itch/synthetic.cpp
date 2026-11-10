@@ -314,11 +314,21 @@ private:
                 }
                 break;
             default:
-                if (!refs_.empty() && o_.symbols > 1) {  // delete with the wrong locate
+                if (!refs_.empty() && o_.symbols > 1) {  // modify with the wrong locate
                     const OrderRef ref = random_ref();
                     const auto wrong =
                         static_cast<std::uint16_t>(live_.at(ref).locate % o_.symbols + 1);
-                    emit(OrderDelete{header('D', wrong), ref});
+                    switch (rng_.below(4)) {
+                        case 0: emit(OrderDelete{header('D', wrong), ref}); break;
+                        case 1:
+                            emit(OrderExecuted{header('E', wrong), ref, 1, next_match_++});
+                            break;
+                        case 2: emit(OrderCancel{header('X', wrong), ref, 1}); break;
+                        default:
+                            emit(OrderReplace{header('U', wrong), ref, next_ref_++, 100,
+                                              live_.at(ref).price});
+                            break;
+                    }
                     return;
                 }
                 break;
