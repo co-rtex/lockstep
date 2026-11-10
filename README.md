@@ -56,9 +56,9 @@ runs).
 
 The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
 *ITCH* and *Sprint* have been verified locally only: macOS, Apple clang 17, release suite,
-UBSan, hardened libc++ (bounds-checked containers), coverage and fuzz runs. GCC, ASan and
-TSan have not run on them yet
-([docs/PROGRESS.md](docs/PROGRESS.md#market-data-sprint-2026-11-10-branch-enginex-quant-sprint-20261109)).
+UBSan, hardened libc++ (bounds-checked containers), coverage and fuzz runs. GCC, ASan,
+TSan and clang-format have not run on them yet. Why, and how to close the gap:
+[docs/linux-validation.md](docs/linux-validation.md).
 
 ## Architecture
 
