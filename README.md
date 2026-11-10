@@ -275,7 +275,7 @@ The first five columns are the original R1 measurements. The *current* columns a
 workloads after the R4 pool and the D31 request-id index (`6f655cd`, medians of 3 trials,
 measured interleaved with a control under a busier machine;
 [`core-request-index-ab-macos-m3.csv`](benchmarks/results/core-request-index-ab-macos-m3.csv)).
-Every row ends in the same state hash as before. An optional R4 change, which moved book nodes
+Every row ends in the same state hash as the original R1 run (checked against both CSVs). An optional R4 change, which moved book nodes
 into a per-engine `std::pmr` pool after an allocation probe found 2–3.5 heap calls per
 command, measured +14–28 % in the five scenarios that recycle nodes. Examples: `mixed` 8.18 M
 → 9.63 M cmd/s, `cancel-heavy` 8.12 M → 10.41 M. `no-cross` is unchanged, and every pair
