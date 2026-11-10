@@ -75,6 +75,14 @@ are loopback measurements on this one machine. None is an exchange wire latency.
   validation, journal, the UDP request planner and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
+* **A complexity audit** looked for input-triggered super-linear work and found real issues.
+  * The ITCH fallback index used an invertible, unkeyed hash. Crafted order references cost
+    43 µs per message at 40 000 adds, quadratic in total. After switching to a keyed SipHash
+    (D34) they cost 83–114 ns per message up to 1 M.
+  * `ordered_json` made parsing an object O(keys²): 40 000 keys took 1.39 s. Objects are now
+    limited to 64 keys, and 1 M keys are refused in 0.10 s.
+  * Two linear amplifications are measured and documented rather than fixed: replaying a
+    100 000-execution result as a duplicate (≈ 0.15 s each), and full-depth snapshots.
 * **Hostile arguments.** A sweep over every CLI flag (`tools/cli_arg_sweep.py`, 1 302 runs)
   found two capacity arguments that allocated until the OS killed the process. Reviewing which
   hostile values `serve` accepted found a real hang: `--send-timeout-ms 0` disabled the send
@@ -83,7 +91,7 @@ are loopback measurements on this one machine. None is an exchange wire latency.
   with the last value, which makes the idempotency key ambiguous to anyone who reads the
   first. Repeated keys are now `INVALID_REQUEST` (D33). All four are fixed, with regression
   tests.
-* **Fuzzing:** a libFuzzer-compatible harness, more than 50 M inputs without a violation (UBSan
+* **Fuzzing:** a libFuzzer-compatible harness, more than 54 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
   over 100 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
@@ -177,5 +185,8 @@ are loopback measurements on this one machine. None is an exchange wire latency.
 * The price-level structure is tuned for real books (≤ 3.8 k levels per side here). Its
   adversarial worst case was measured at 25 µs/msg and is now bounded (96 ns/msg, D32), but a
   monotone-improving 200 k-level side is slower than before (54 vs 17 ns/msg).
+* Without authentication, a client can make the sequencer do work linear in a previous
+  result per small request. That happens with duplicates of a huge sweep and with full-depth
+  snapshots of a huge book. Both are measured, and neither is rate-limited.
 * It is a lab, not trading software: no risk checks, no real connectivity, no
   authentication.
