@@ -160,6 +160,13 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
     had added for bad_alloc safety cost ≈ 0.7 ns/msg; they were removed, and the API now
     states that a builder is discarded after an allocation failure.
 
+11. **Generalizing the real-data result.** Two more sample days, from 2019 and 2020, gave the
+    same outcome: zero decode errors, zero anomalies, and agreement with the reference model on
+    1.6 M live orders each. They also contained crossed books, and every one belonged to a
+    halted or LULD-paused symbol. That is a direct, data-backed justification for reporting
+    crosses rather than rejecting them, and the replay output now shows the trading state
+    next to each crossed book.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every

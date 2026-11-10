@@ -19,8 +19,9 @@ rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md); the engin
 with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md)). ITCH is an outbound
 market-data feed, not an order-entry protocol. That path never sends anything to the
 synthetic exchange. Its committed test data are synthetic fixtures built from the public
-specification. It was also validated locally on 21.26 M real messages from a public Nasdaq
-sample file, which is not redistributed (`scripts/real_data_check.sh` reproduces the run).
+specification. It was also validated locally on three public Nasdaq sample days (≈ 64 M real
+messages in total), which are not redistributed (`scripts/real_data_check.sh` reproduces the
+runs).
 
 ## Status
 
@@ -48,7 +49,7 @@ sample file, which is not redistributed (`scripts/real_data_check.sh` reproduces
 | ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
 | MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels (no socket receiver) |
-| Validation on real Nasdaq data: 21.26 M messages from a public sample (pre-market to 09:37), zero decode errors, zero book anomalies, every live order matching the reference model | ITCH | **Verified locally** (data not redistributed; see docs/itch.md) |
+| Validation on real Nasdaq data: three public sample days (2019-01-30, 2019-03-27, 2020-01-30), ≈ 21 M messages each through the 09:30 open; zero decode errors, zero book anomalies, every live order matching the reference model; crossed books only in halted/paused symbols | ITCH | **Verified locally** (data not redistributed; `scripts/real_data_check.sh`; docs/itch.md) |
 | UDP multicast receiver, live retransmission, SoupBinTCP, full-day or multi-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
 The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked

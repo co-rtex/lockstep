@@ -321,8 +321,28 @@ Results (21 255 695 messages, 03:03:59 to 09:37:05 ET, through the opening cross
   price level (synthetic stream: 1.6 %). Books are deep (thousands of levels). With 1.5 M live
   orders, a hash index no longer fits in cache. Both findings changed the data layout below.
 
-Not covered by this sample: the rest of the trading day (≈ 95 % of the file), the closing
-cross, halts and LULD collars in volume, and other days.
+### Two more days
+
+The same procedure was then repeated on two more public sample days from different years:
+`01302020.NASDAQ_ITCH50.gz` and `03272019.NASDAQ_ITCH50.gz`, first 256 MiB of each (SHA-256
+in `scripts/real_data_check.sh`, which checks all three days). The 2018 entries in Nasdaq's
+listing have only `.md5sum` files left (HTTP 404 for the data), so no 2018 day was used.
+
+| day | messages (to) | decode errors | anomalies (`--strict`) | live orders = reference model | crossed books (trading state) | decode ns/msg | replay ns/msg |
+|---|---:|---:|---:|---:|---|---:|---:|
+| 2019-01-30 | 21 255 695 (09:37:05) | 0 | 0 | 1 539 130 ✓ | none | 13.0 | 62–67 |
+| 2020-01-30 | 21 051 558 (09:33:12) | 0 | 0 | 1 649 825 ✓ | 4 (all `H`, halted) | 13.0 | 65 |
+| 2019-03-27 | 21 375 302 (09:37:04) | 0 | 0 | 1 578 860 ✓ | 5 (3 `H`, 2 `P` LULD-paused) | 12.9 | 59–60 |
+
+The later days also contain `K` (IPO quoting period) and `J` (LULD auction collar)
+messages, which decode without error. **Every crossed book on every day belongs to a halted
+or paused symbol.** Those symbols keep accepting orders but do not match them, which is the
+practical reason the reconstructor reports crossed books instead of rejecting them. The
+replay JSON now lists each book's `trading_state` and counts `crossed_books_by_trading_state`.
+No rule "crossed ⇒ halted" is enforced, because the specification does not promise it.
+Benchmark rows for all three days are in `benchmarks/results/itch-real-sample-macos-m3.csv`.
+
+Not covered: the rest of each trading day (≈ 95 % of each file), closing crosses, other dates.
 
 ## Performance
 
