@@ -381,3 +381,36 @@ commit without the check (5 runs each, interleaved, same state hash). That is ab
 ≈ 0.3 µs per command, small next to a TCP round trip. *Rejected:* first-value-wins (still
 ambiguous to anyone who keeps the last); a custom SAX parser (more code than the callback
 for the same result).
+
+## D34. Keyed hash for the ITCH order-reference fallback index
+
+**Problem.** An independent complexity audit pointed out that `OrderIndex` placed keys by the
+top bits of `ref × 2⁶⁴/φ`. That multiplier is odd and public, so it can be inverted.
+References `(C + i)·φ⁻¹ mod 2⁶⁴` all share one home bucket at every table size. They are
+≥ 2³², so the default paged index sends them to its `OrderIndex` fallback. Linear probing
+then turns every insert, and every miss that falls through to the fallback, into a scan of
+the cluster.
+
+Measured with `tools/itch_adversarial.py N hashflood` (book apply, 1 trial):
+
+| crafted adds | before | after |
+|---:|---:|---:|
+| 5 000 | 5.4 µs/msg | 83 ns/msg |
+| 40 000 | 43 µs/msg | 84 ns/msg |
+| 1 000 000 | not run (≈ 1 ms/msg extrapolated) | 114 ns/msg |
+
+Before the change the cost per message doubled with N, so total work was quadratic.
+
+**Decision.** Same as D31: SipHash-2-4 of the reference's little-endian bytes under a random
+per-instance key (`std::random_device`, fail-closed). Placement never affects results:
+nothing iterates the table for output, and the state hash of a real day is unchanged. Real
+data never pays for it. Its references are below 2³² and fit the page budget, and the paged
+index does not consult an empty fallback. Tests that build collision chains pass a fixed
+key. `OrderIndex.CraftedReferencesDoNotShareAHomeBucket` checks that the crafted references
+spread over the table.
+
+*Rejected:* a random odd multiplier for multiply-shift. It is as cheap as the original, but
+linear probing needs more independence than a 2-universal family gives, so structured key
+sets could still cluster. *Not changed:* the `-DENGINEX_ITCH_STD_INDEX` A/B baseline
+(`std::unordered_map` with the identity hash) is still floodable. It is a benchmark
+comparison build, not the default.

@@ -75,13 +75,15 @@ TEST(OrderIndex, ExtremeKeysAndMixedHomeChains) {
     EXPECT_EQ(idx.find(UINT64_MAX), 1U);
     // Keys whose home buckets are 14 and 15 interleave in one wrapped chain; deleting any of
     // them must not move an entry before its own home.
+    const SipKey fixed{0x0123456789abcdefULL, 0xfedcba9876543210ULL};
+    const OrderIndex probe(16, fixed);
     std::vector<std::uint64_t> keys;
     for (std::uint64_t k = 1; keys.size() < 6; ++k) {
-        const auto home = (k * 0x9E3779B97F4A7C15ULL) >> 60;
+        const auto home = probe.home_bucket(k);
         if (home == 14 || home == 15) keys.push_back(k);
     }
     for (std::size_t victim = 0; victim < keys.size(); ++victim) {
-        OrderIndex t(16);
+        OrderIndex t(16, fixed);
         for (std::size_t i = 0; i < keys.size(); ++i) {
             ASSERT_TRUE(t.insert(keys[i], static_cast<std::uint32_t>(i)));
         }
@@ -114,14 +116,16 @@ TEST(OrderIndex, ReserveAndClear) {
 // all remaining keys reachable.
 TEST(OrderIndex, DeletionInsideCollisionChains) {
     std::vector<std::uint64_t> same_bucket;
-    // Find keys colliding in a 16-slot table by brute force (bucket = top 4 bits of k*phi).
+    // Find keys colliding in a 16-slot table by brute force, under a fixed hash key.
+    const SipKey fixed{1, 2};
+    const OrderIndex probe(16, fixed);
     for (std::uint64_t k = 1; same_bucket.size() < 6; ++k) {
-        if (((k * 0x9E3779B97F4A7C15ULL) >> 60) == 15) {  // last bucket: chains wrap around
+        if (probe.home_bucket(k) == 15) {  // last bucket: chains wrap around
             same_bucket.push_back(k);
         }
     }
     for (std::size_t victim = 0; victim < same_bucket.size(); ++victim) {
-        OrderIndex idx(16);
+        OrderIndex idx(16, fixed);
         for (std::size_t i = 0; i < same_bucket.size(); ++i) {
             ASSERT_TRUE(idx.insert(same_bucket[i], static_cast<std::uint32_t>(i)));
         }
@@ -232,6 +236,36 @@ TEST(PagedIndex, PagesAreFreedWhenEmptyAndKeyZeroWorks) {
     EXPECT_TRUE(idx.erase(0));
     EXPECT_EQ(idx.pages(), 0U);
     EXPECT_THROW(idx.insert(1, PagedIndex::kEmpty), std::invalid_argument);
+}
+
+// References crafted against the old unkeyed multiplicative hash, (C + i) * phi^-1 mod 2^64:
+// every one of them had the same home bucket at every table size, so 40 000 such adds cost
+// 43 µs each (D34). Under the keyed hash they spread like any other keys.
+TEST(OrderIndex, CraftedReferencesDoNotShareAHomeBucket) {
+    constexpr std::uint64_t kPhi = 0x9E3779B97F4A7C15ULL;
+    std::uint64_t inverse = kPhi;  // Newton iteration for phi^-1 mod 2^64 (phi is odd)
+    for (int i = 0; i < 6; ++i) {
+        inverse *= 2 - kPhi * inverse;
+    }
+    ASSERT_EQ(kPhi * inverse, 1U);
+    constexpr std::uint64_t kCount = 20'000;
+    OrderIndex idx;
+    std::vector<std::uint64_t> keys;
+    for (std::uint64_t i = 0; i < kCount; ++i) {
+        keys.push_back(((std::uint64_t{1} << 40U) + i) * inverse);
+        // The attack premise: all share the top bits the old hash used.
+        ASSERT_EQ((keys.back() * kPhi) >> 40U, 1U);
+        ASSERT_TRUE(idx.insert(keys.back(), static_cast<std::uint32_t>(i)));
+    }
+    std::unordered_map<std::size_t, int> homes;
+    for (const std::uint64_t k : keys) {
+        ++homes[idx.home_bucket(k)];
+    }
+    // 20 000 keys over 65 536 buckets: about 17 000 distinct homes expected, never one.
+    EXPECT_GT(homes.size(), kCount / 2);
+    for (std::uint64_t i = 0; i < kCount; ++i) {
+        ASSERT_EQ(idx.find(keys[i]), i);
+    }
 }
 
 }  // namespace
