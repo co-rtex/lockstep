@@ -38,21 +38,21 @@ set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
-# Build metadata recorded in benchmark output.
+# Build metadata recorded in benchmark output. Compiler and build type are fixed per build
+# directory (configure time); the git revision is refreshed on every build (cmake/git_info.cmake).
 find_package(Git QUIET)
-set(ENGINEX_GIT_SHA "unknown")
-if(GIT_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE ENGINEX_GIT_SHA
-        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if(NOT ENGINEX_GIT_SHA)
-        set(ENGINEX_GIT_SHA "unknown")
-    endif()
-endif()
 configure_file(cmake/build_info.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/build_info.hpp
                @ONLY)
+add_custom_target(enginex_git_info
+    COMMAND ${CMAKE_COMMAND}
+        -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DIN=${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_info.hpp.in
+        -DOUT=${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/git_info.hpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_info.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/git_info.hpp
+    COMMENT "Recording the git revision"
+    VERBATIM)
 
 # ---------------------------------------------------------------------------
 # Libraries
@@ -69,6 +69,7 @@ target_include_directories(enginex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 enginex_set_warnings(enginex_core)
+add_dependencies(enginex_core enginex_git_info)  # everything that reads build_info links core
 option(ENGINEX_CORE_STD_ALLOC "Benchmark baseline: book nodes use operator new, not the engine pool" OFF)
 if(ENGINEX_CORE_STD_ALLOC)
     target_compile_definitions(enginex_core PRIVATE ENGINEX_CORE_STD_ALLOC)

@@ -4,6 +4,16 @@ All numbers on this page were produced by the commands shown, on the machine des
 from the commit recorded in each CSV row. Raw rows (every trial plus a median row) are in
 [`benchmarks/results/`](../benchmarks/results). Nothing here is extrapolated.
 
+**Caveat on the `git_sha` column.** Until the build-time fix (see below), the revision was
+captured when CMake *configured* a build directory, not when it was built. A row's `git_sha`
+is therefore the commit at that directory's last configure. CMake reconfigures whenever a
+`CMakeLists.txt` changes, and A/B builds were usually configured fresh, but a reused
+directory can name an earlier commit than the code it measured. Those rows were not
+re-labelled. When the exact code matters, the prose names the commit and how the comparison
+was built. The revision is now generated at build time (`cmake/git_info.cmake`), and a tree
+with modified tracked files is labelled `<sha>-dirty`. This was found when a fresh benchmark
+at `f365234` reported `776cdec`.
+
 The spec (§12.1) separates four kinds of measurement for the exchange. They are never
 combined into one number. The ITCH market-data measurements are a separate fifth family
 ([§ ITCH](#itch-50-decoding-and-reconstruction)):
