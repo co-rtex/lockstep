@@ -168,14 +168,14 @@ int client_submit(const Args& args) {
         }
         // Same strictness as the server (D33): re-serializing would otherwise silently drop all
         // but the last value of a repeated key before the server could refuse it.
-        bool repeated = false;
-        Json msg = codec::parse_json(line, repeated);
-        if (msg.is_discarded() || !msg.is_object() || repeated) {
-            std::cout << Json{{"type", "client_error"},
-                              {"message", repeated ? "repeated field in input line"
-                                                   : "malformed input line"}}
-                             .dump()
-                      << std::endl;
+        codec::KeyIssue issue = codec::KeyIssue::None;
+        Json msg = codec::parse_json(line, issue);
+        if (msg.is_discarded() || !msg.is_object() || issue != codec::KeyIssue::None) {
+            const std::string why = issue == codec::KeyIssue::None
+                                        ? std::string("malformed input line")
+                                        : std::string(codec::key_issue_message(issue)) +
+                                              " in input line";
+            std::cout << Json{{"type", "client_error"}, {"message", why}}.dump() << std::endl;
             ++failures;
             continue;
         }

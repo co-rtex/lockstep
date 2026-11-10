@@ -113,6 +113,32 @@ TEST(JsonCodec, RepeatedKeysAreRejected) {
         R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"quantity":1})")));
 }
 
+// ordered_json inserts keys by linear scan, so one object with k keys cost O(k^2) to parse
+// (40 000 keys: 1.4 s). Objects are limited to kMaxKeysPerObject keys, at any depth.
+TEST(JsonCodec, ObjectsWithTooManyKeysAreRejected) {
+    auto object_with = [](std::size_t keys) {
+        std::string s = "{";
+        for (std::size_t i = 0; i < keys; ++i) {
+            s += (i ? ",\"k" : "\"k") + std::to_string(i) + "\":1";
+        }
+        return s + "}";
+    };
+    auto message_of = [](const std::string& text) {
+        const auto parsed = codec::parse_input(text);
+        return std::holds_alternative<ParseError>(parsed) ? std::get<ParseError>(parsed).message
+                                                          : std::string("accepted");
+    };
+    const std::size_t limit = codec::kMaxKeysPerObject;
+    EXPECT_EQ(message_of(object_with(limit + 1)), "too many fields in one object");
+    EXPECT_EQ(message_of(object_with(200'000)), "too many fields in one object");
+    EXPECT_NE(message_of(object_with(limit)), "too many fields in one object");  // other error
+    EXPECT_EQ(message_of(R"({"type":"new_limit","x":)" + object_with(limit + 1) + "}"),
+              "too many fields in one object");
+    codec::KeyIssue issue = codec::KeyIssue::None;
+    (void)codec::parse_json(object_with(limit), issue);
+    EXPECT_EQ(issue, codec::KeyIssue::None);
+}
+
 TEST(JsonCodec, ErrorEchoesRequestIdAndType) {
     auto parsed = codec::parse_input(
         R"({"type":"new_limit","request_id":"abc","symbol":"AAPL","side":"BUY","price":1})");

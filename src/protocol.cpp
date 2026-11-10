@@ -104,13 +104,13 @@ Json base(std::string_view type) {
 }  // namespace
 
 codec::Parsed<ClientMessage> parse_client_message(std::string_view json) {
-    bool repeated = false;
-    Json obj = codec::parse_json(json, repeated);
+    codec::KeyIssue issue = codec::KeyIssue::None;
+    Json obj = codec::parse_json(json, issue);
     if (obj.is_discarded()) {
         return bad("malformed JSON");
     }
-    if (repeated) {
-        return bad("repeated field");
+    if (issue != codec::KeyIssue::None) {
+        return bad(codec::key_issue_message(issue));
     }
     if (!obj.is_object()) {
         return bad("message must be a JSON object");

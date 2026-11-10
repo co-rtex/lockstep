@@ -382,6 +382,14 @@ commit without the check (5 runs each, interleaved, same state hash). That is ab
 ambiguous to anyone who keeps the last); a custom SAX parser (more code than the callback
 for the same result).
 
+*Addendum (key count).* The complexity audit behind D34 also found that `ordered_json`
+inserts each key with a linear scan, so parsing one object with k keys costs O(k²): 40 000
+keys took 1.39 s in one `simulate` line, and a 32 KiB TCP frame can hold a few thousand. The
+same callback now refuses a 65th key in any object, and returning `false` discards the pair
+before insertion. The message is rejected with "too many fields in one object". Valid
+messages have at most 8 fields. Measured after the change: 40 000 keys 0.012 s, 1 000 000 keys
+(an 11 MB line) 0.10 s. Test: `JsonCodec.ObjectsWithTooManyKeysAreRejected`.
+
 ## D34. Keyed hash for the ITCH order-reference fallback index
 
 **Problem.** An independent complexity audit pointed out that `OrderIndex` placed keys by the

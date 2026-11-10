@@ -137,8 +137,8 @@ Parsed<Command> parse_command(const Json& object,
     return make_error(ErrorCode::InvalidRequest, "unknown command type \"" + *type + "\"", object);
 }
 
-Json parse_json(std::string_view text, bool& repeated_key) {
-    repeated_key = false;
+Json parse_json(std::string_view text, KeyIssue& issue) {
+    issue = KeyIssue::None;
     std::vector<std::set<std::string>> open;  // keys seen in each object being parsed
     const Json::parser_callback_t track = [&](int /*depth*/, Json::parse_event_t event,
                                               Json& parsed) {
@@ -152,28 +152,47 @@ Json parse_json(std::string_view text, bool& repeated_key) {
                 }
                 break;
             case Json::parse_event_t::key:
-                if (!open.empty() && parsed.is_string() &&
-                    !open.back().insert(parsed.get_ref<const std::string&>()).second) {
-                    repeated_key = true;
+                if (open.empty() || !parsed.is_string()) {
+                    break;
+                }
+                if (open.back().size() >= kMaxKeysPerObject) {
+                    // Discarding the pair skips ordered_json's linear-scan insertion, so a
+                    // hostile object costs O(keys), not O(keys^2) (D33). The message is refused.
+                    issue = KeyIssue::TooManyKeys;
+                    return false;
+                }
+                if (!open.back().insert(parsed.get_ref<const std::string&>()).second &&
+                    issue == KeyIssue::None) {
+                    issue = KeyIssue::RepeatedKey;
                 }
                 break;
             default:
                 break;
         }
-        return true;  // keep every value: only detection happens here
+        return true;
     };
     return Json::parse(text.begin(), text.end(), track, /*allow_exceptions=*/false);
 }
 
+const char* key_issue_message(KeyIssue issue) noexcept {
+    switch (issue) {
+        case KeyIssue::RepeatedKey: return "repeated field";
+        case KeyIssue::TooManyKeys: return "too many fields in one object";
+        case KeyIssue::None: break;
+    }
+    return "";
+}
+
 Parsed<Input> parse_input(std::string_view text) {
-    bool repeated = false;
-    Json object = parse_json(text, repeated);
+    KeyIssue issue = KeyIssue::None;
+    Json object = parse_json(text, issue);
     if (object.is_discarded()) {
         return ParseError{ErrorCode::InvalidRequest, "malformed JSON", {}, {}};
     }
-    if (repeated) {
-        // No request_id echo: which of the repeated values is meant is exactly what is unclear.
-        return ParseError{ErrorCode::InvalidRequest, "repeated field", {}, {}};
+    if (issue != KeyIssue::None) {
+        // No request_id echo: with a repeated key, which value is meant is exactly what is
+        // unclear; with too many keys, the parse kept only some of them.
+        return ParseError{ErrorCode::InvalidRequest, key_issue_message(issue), {}, {}};
     }
     if (!object.is_object()) {
         return ParseError{ErrorCode::InvalidRequest, "input must be a JSON object", {}, {}};
