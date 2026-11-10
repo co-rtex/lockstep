@@ -239,6 +239,7 @@ Commands and results (latest):
 
 * Fresh clone (`git clone` of this repository into a temporary directory, Release, pinned
   dependencies from the local download cache): 471/471 passed; `scripts/itch_demo.sh` exit 0.
+  Again at `c565469`: 520/520, and the binary reports `git c565469badf4` (not dirty).
 * `scripts/check.sh smoke build/release` (R1–R3 CLI smoke incl. kill -9 harness, serve/client,
   network benchmark): `smoke OK`. `scripts/demo.sh`: exit 0 (crash recovery, retry idempotency,
   corruption refusal, slow-consumer cut-off, graceful shutdown).
