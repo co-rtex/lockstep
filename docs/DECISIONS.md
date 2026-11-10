@@ -261,3 +261,13 @@ with an identical book. The earlier variants stay behind `-DENGINEX_ITCH_MAP_LEV
 `-DENGINEX_ITCH_HASH_INDEX=ON`. *Data handling:* the sample is used locally only, never
 committed, and no build or test requires it (the real-data test skips unless
 `ENGINEX_ITCH_REAL_FILE` is set).
+
+## D28. Near-top linear scan before binary search for price levels (measured)
+A temporary histogram on two real sample days showed that ≈ 70 % of level lookups (add,
+replace, level removal) land within 4 entries of the best price and ≈ 80 % within 8.
+`SideLevels::position()` scans those 8 entries linearly from the back of the sorted vector
+(two cache lines) and binary-searches the remainder only on a miss. Interleaved A/B: real
+replay −8 % on both days tested, synthetic 5000 symbols −6 %, 8 symbols unchanged. *Rejected:*
+galloping search from the top (more branches for the same coverage), and a separate hot-top
+array (a second structure to keep consistent). A mutation of the scan's comparison fails
+many book tests.
