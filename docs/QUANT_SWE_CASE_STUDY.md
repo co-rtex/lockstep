@@ -151,6 +151,11 @@ are loopback measurements on this one machine. None is an exchange wire latency.
      copies brought that to 20 ns. The differential test proved the semantics unchanged,
      and the remaining ceiling (≈ 50 k packets/s) is consistent with the measured ≈ 12.8 µs
      per `recv()`.
+   * That cost is per call, not per byte: 13–15 µs from 64 B to 9 KB. So 8 KB datagrams
+     halved a lossless real day on loopback, 11.7 s down to 5.6 s. With 5 % loss they
+     gained only 1.25×, because a lost 8 KB packet stalls about 257 messages per retry. To
+     show that, the sequencer now reports *which* bound stopped it. It is the look-ahead
+     window first, then the byte bound, and it never skips messages.
 9. *"Your matching engine gets slower the longer it runs. Why?"* The engine keeps every
    request id so retries are idempotent. In a node-based hash map, each new id missed DRAM
    twice. Benchmarking at four history sizes exposed it (108 → 296 ns/cmd from 100 k to 3 M
