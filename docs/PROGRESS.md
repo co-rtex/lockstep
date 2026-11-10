@@ -188,6 +188,8 @@ pushed, so GitHub CI has not run on them.
 | Third independent review (sorted-vector levels, paged index) | done | no correctness bug in the new layout; directory growth clamped, spare page, memory bound documented in `deb39c3` |
 | Fourth independent review (latest changes): confirmed JSON crash on non-ASCII wire bytes | fixed | `f6f2ffe`; hostile-bytes regression + CLI-level mutation fuzz in `tests/cli_itch_smoke.py` |
 | Layout variants reconstruct identical books | done | ctest `itch_layout_variants_agree` |
+| MoldUDP64 over UDP on loopback (D29): sender with re-request answers, receiver, `RequestPlanner`, source filter, answer budget | done | `MoldUdp.*`, `MoldRequestPlanner.*`, `tests/cli_itch_smoke.py`, `scripts/mold_udp_demo.sh`, `mold-udp-loopback-macos-m3.csv` (3 real days exact at 50 k packets/s with 5 %/10 % loss); macOS only |
+| Reorder buffer redesign (D30) | done | `mold-sequencer-macos-m3.csv`: 121–147 → 20–21 ns/msg behind holes; set-model differential unchanged |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
 
 Commands and results (latest):
@@ -195,7 +197,7 @@ Commands and results (latest):
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
   500/500 passed (commit `bfd47a1`; 1 opt-in real-data test skips without its file). Debug
   build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
-  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 497/497 at `dcc4d38` (85 s). UBSan
+  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 497/497 at `dcc4d38` (85 s, console). UBSan
   (below): 500/500 at `bfd47a1`, no runtime errors.
 * `python3 tools/mutation_check.py`: 51/51 mutants killed (≈ 4 min, release build, commit `bfd47a1`).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,

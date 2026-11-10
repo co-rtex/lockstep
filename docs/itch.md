@@ -93,8 +93,8 @@ of the specification and the Wireshark dissector, which agree.
   a model that only records *which* sequence numbers have arrived. Over 20 seeds × 1 500 steps
   of loss, duplication, delay, overlapping retransmissions, heartbeats and re-requests, the
   delivered stream, next sequence, horizon, buffered count, `missing()` ranges, state and
-  counters must match the model after every packet. It is the only test that kills a mutant
-  computing the packet horizon one message short.
+  counters must match the model after every packet. It is the only test that kills the
+  "adjacent holes not merged" mutant (and, before the D30 rewrite, a horizon-one-short one).
 * `enginex itch mold-sim --input FILE [--loss-percent P] [--no-recovery]` runs the same
   experiment from the command line, on a **simulated** channel. It reports packets lost and
   duplicated, gaps opened and closed, and whether the rebuilt book equals a direct replay.
@@ -157,12 +157,13 @@ Tests (`itch_mold_udp_test.cpp`, threads on loopback):
 * Garbage, a foreign-session data packet and bad requests queued before the feed are counted
   and ignored. Without a configured session, a stray packet would claim the sequencer
   (`MoldSequencer.ConfiguredSessionCannotBeClaimedByAStrayPacket`).
-* An unpaced burst into an unread 32 KiB socket buffer makes the kernel drop about half the
-  datagrams; recovery restores the exact book.
+* An unpaced burst into an unread 32 KiB socket buffer makes the kernel drop datagrams (how
+  many is OS-dependent; about half in console runs here). Recovery restores the exact book.
 * Feed datagrams from an unexpected source IP are rejected.
 
 Not implemented: multicast group handling, a separate re-request server (the sender plays
-both roles), feed failover, and SoupBinTCP. Only loopback has been exercised.
+both roles), feed failover, and SoupBinTCP. Only loopback on macOS has been exercised. The code has not been compiled with GCC or run on
+Linux, where `SO_REUSEPORT` semantics differ.
 
 ### Payload decoding
 

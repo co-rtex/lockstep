@@ -82,8 +82,8 @@ Deliberate mutations, each reverted after the check:
 **Scripted mutation check.** `tools/mutation_check.py` applies 51 hand-chosen bugs one at a
 time across the ITCH decoder, book builder, order indexes, framer, MoldUDP64 sequencer,
 mirror, matching engine (price-time priority, marketability), idempotency, journal (CRC,
-torn-tail classification, truncation), request validation bounds and server
-(publication and replies after a failed flush, fail-stop). For each one it rebuilds and runs the
+torn-tail classification, truncation), request validation bounds, the UDP request planner
+and server (publication and replies after a failed flush, fail-stop). For each one it rebuilds and runs the
 relevant tests, then restores the file. It refuses to start when those files have
 uncommitted changes and checks afterwards that all were restored. The first run of 22 killed
 19 of 20 valid mutants (2 had not compiled under `-Werror` and were rewritten). The one
@@ -99,8 +99,8 @@ rollback after a failed commit cannot be observed, because both failure modes ar
 fail-stops. The current score is **51/51** (≈ 4 min on the M3 with an incremental release
 build). Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
-`mutation_results.json` in the build directory. The latest full run, with the failing tests
-for each mutant, is in
+`mutation_results.json` in the build directory. The latest full run, with up to four failing tests
+per mutant (none listed when the test binary crashed), is in
 [`benchmarks/results/mutation-check-macos-m3.json`](../benchmarks/results/mutation-check-macos-m3.json). Mutants are written into the source tree, so no other
 build may run at the same time: a UBSan build compiled concurrently once picked up a mutated
 `book.cpp` and failed 18 tests until rebuilt from clean sources. The mutants are chosen by
@@ -139,7 +139,7 @@ Three adversarial property tests were also added in the sprint:
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass (R3, commit `418d247`) |
-| macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | 486/486 in each (commit `63a2475`); GCC/ASan/TSan not re-run for the sprint (see below) |
+| macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | Release 501/501 (`801625a`), UBSan 500/500 (`bfd47a1`), Debug 497/497 (`dcc4d38`); earlier 486/486 in each at `63a2475`. GCC/ASan/TSan not re-run for the sprint (see below) |
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
 | Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 375/375 |
 | Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 375/375 |

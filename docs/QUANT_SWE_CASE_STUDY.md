@@ -60,7 +60,7 @@ are in-process and single-threaded; none is a wire latency.
   paged index, and a JSON-output crash on non-ASCII bytes in ITCH alpha fields.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
   kills 51/51 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
-  validation, journal and server. It found two real test gaps, both now covered. One was a
+  validation, journal, the UDP request planner and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 15 M inputs without a violation (UBSan
@@ -97,7 +97,7 @@ are in-process and single-threaded; none is a wire latency.
 8. *"What broke when you put it on a real socket?"* Three things, each found by measuring.
    * The receiver re-requested every hole every round, so answers in flight were requested
      again. The result was a retransmission storm: 305 s and 1.8 M requests for a lossless
-     run. A per-hole retry timer fixed it.
+     run. A 50 ms retry timer per requested range fixed it.
    * An unconnected `sendto()` cost ≈ 69 µs against 1.7 µs for a connected `send()`, so the
      hot paths moved to connected sockets.
    * The reorder buffer cost 121–147 ns/msg behind a hole against 4 ns in order. A receiver
@@ -109,7 +109,7 @@ are in-process and single-threaded; none is a wire latency.
 
 * MoldUDP64 over UDP has only run on loopback (unicast, the sender doubles as the re-request
   server). There is no multicast and no SoupBinTCP. Here it is exact up to ≈ 50 k packets/s,
-  a limit set by a measured ≈ 12.8 µs per `recv()`.
+  a limit consistent with a measured ≈ 12.8 µs per `recv()` (the receiver was not profiled).
 * Real data covers the first ≈ 6.5 h of three days, not full sessions or closing crosses.
 * GCC, ASan, TSan and clang-format have not run on the sprint's code. The sandbox blocked
   them locally, and the branch has not been pushed to CI. UBSan, coverage, fuzzing and leak

@@ -280,12 +280,14 @@ with the simulator), paces the live feed, repeats end-of-session, and answers 20
 requests from the same store. The receiver feeds the real `Sequencer`, re-requests
 `missing()` ranges and rebuilds the books. Decisions, each driven by a measurement or a
 failure:
-* **Per-hole retry timer.** The first receiver re-requested every hole every round. Answers
+* **Retry timer per requested range.** The first receiver re-requested every hole every round. Answers
   in flight were requested again, the answers snowballed, and a lossless 300 k packets/s
-  run took 305 s and failed with 1.8 M requests and 90 M duplicate messages. A requested range
+  run took 305 s and failed with 1.8 M requests and 90 M duplicate messages (console run). A requested range
   is now asked again only after `retry_after` (50 ms). An independent review then found that
   keying this by hole start let a partly answered hole look new. `RequestPlanner` keys it by
-  requested range: 58 k → 45 k retransmitted packets at 50 k packets/s with 5 % loss.
+  requested range. Retransmitted packets at 50 k packets/s with 5 % / 10 % loss on 2019-03-27
+  went from 53 311 (`7c2ae17`) to 42 503 (`bfd47a1`) in `mold-udp-loopback-macos-m3.csv`
+  (single runs).
 * **Connected sockets on hot paths.** Here an unconnected `sendto()` costs ≈ 69 µs and a
   connected `send()` ≈ 1.7 µs (`enginex_udp_syscall_bench`). The live feed and the
   receiver's requests use connected sockets. Answers go out on per-peer connected sockets
@@ -305,7 +307,7 @@ bypass (out of scope; see the mandate).
 The sequencer used to buffer each out-of-order message as its own `std::map` node with a
 `std::vector` copy. `enginex_mold_bench` measured 121–147 ns/msg behind a hole against 4 ns
 in order. A UDP receiver under steady loss is almost always behind a hole, so it fell behind
-the feed and failed (5 % loss: exact at 20 k packets/s, failure at 50 k). Now a `std::deque`
+the feed and failed (5 % loss: exact at 20 k packets/s, failure at 50 k; console runs). Now a `std::deque`
 of 12-byte slots, indexed by `sequence − next`, points into one copy per packet. Copies are
 recycled with their capacity, and the capacity a copy retains counts against the byte bound
 (a security review found the first version could exceed it). Missing ranges live in a map of

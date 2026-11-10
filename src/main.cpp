@@ -117,11 +117,13 @@ Usage:
   enginex itch dump     --input FILE [--limit N]
   enginex itch mold-sim --input FILE [--seed N] [--loss-percent P] [--duplicate-percent P]
                         [--reorder-window N] [--mtu BYTES] [--no-recovery]   (simulation)
-  enginex itch mold-send --input FILE --dest-port P [--port P] [--drop-percent P]
-                        [--retransmit-drop-percent P] [--rate-pps N] [--linger-ms MS]
-                        [--mtu BYTES] [--seed N] [--session NAME]       (UDP, loopback)
-  enginex itch mold-recv --port P --request-port P [--no-recovery] [--idle-timeout-ms MS]
-                        [--session NAME]                                 (UDP, loopback)
+  enginex itch mold-send --input FILE --dest-port P [--dest-host H] [--port P]
+                        [--drop-percent P] [--retransmit-drop-percent P] [--rate-pps N]
+                        [--linger-ms MS] [--mtu BYTES] [--seed N] [--session NAME]
+                        [--allow-remote]                                 (UDP, loopback)
+  enginex itch mold-recv --port P --request-port P [--request-host H] [--no-recovery]
+                        [--idle-timeout-ms MS] [--request-interval-ms MS]
+                        [--max-buffered-messages N] [--session NAME] [--allow-remote]
   enginex version
   enginex help
 

@@ -72,7 +72,7 @@ The tests are designed so that the code and the tests cannot share one mistake:
   relies on. Every finding was turned into a regression test.
 * **Coverage** (clang source-based, `scripts/coverage.sh`) was used to find untested code, not
   as a target. It showed the CLI `generate`/`dump` paths, the stream read-error path and the
-  capacity hint were never executed. All are tested now. The latest run (commit `9c98867`)
+  capacity hint were never executed. All are tested now. A run at commit `9c98867`
   measured 94.2 % lines and 86.4 % branches over the new code. After the UDP transport
   (`85d38f4`) it was 94.5 % lines and 85.5 % branches.
 * **Fault injection** over real sockets: a TCP relay that silently drops one `book_update`
