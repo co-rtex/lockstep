@@ -166,9 +166,15 @@ int client_submit(const Args& args) {
         if (line.find_first_not_of(" \t\r") == std::string::npos) {
             continue;
         }
-        Json msg = Json::parse(line, nullptr, false);
-        if (msg.is_discarded() || !msg.is_object()) {
-            std::cout << Json{{"type", "client_error"}, {"message", "malformed input line"}}.dump()
+        // Same strictness as the server (D33): re-serializing would otherwise silently drop all
+        // but the last value of a repeated key before the server could refuse it.
+        bool repeated = false;
+        Json msg = codec::parse_json(line, repeated);
+        if (msg.is_discarded() || !msg.is_object() || repeated) {
+            std::cout << Json{{"type", "client_error"},
+                              {"message", repeated ? "repeated field in input line"
+                                                   : "malformed input line"}}
+                             .dump()
                       << std::endl;
             ++failures;
             continue;
