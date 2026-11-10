@@ -86,6 +86,12 @@ add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/clien
 target_link_libraries(enginex_net PUBLIC enginex_codec enginex_journal Threads::Threads)
 enginex_set_warnings(enginex_net)
 
+# enginex_itch: Nasdaq TotalView-ITCH 5.0 decoding and order-book reconstruction from historical
+# market data. Independent of the synthetic exchange (it only reuses SHA-256 from the core).
+add_library(enginex_itch src/itch/codec.cpp)
+target_link_libraries(enginex_itch PUBLIC enginex_core)
+enginex_set_warnings(enginex_itch)
+
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
 target_include_directories(enginex_bench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
@@ -97,7 +103,7 @@ enginex_set_warnings(enginex_bench_lib)
 # ---------------------------------------------------------------------------
 add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp
     src/cli_net.cpp)
-target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib)
+target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib enginex_itch)
 enginex_set_warnings(enginex)
 
 add_executable(enginex_bench benchmarks/bench_main.cpp)
