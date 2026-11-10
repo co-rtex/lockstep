@@ -4,12 +4,15 @@
 //
 //   enginex_mold_bench [--messages N] [--trials T] [--out FILE.csv]
 #include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <deque>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "enginex/build_info.hpp"
@@ -54,17 +57,41 @@ Result run(const mold::PacketStore& store, std::size_t late_every, std::size_t d
     return Result{s * 1e9 / static_cast<double>(n), n, q.stats().buffered_peak};
 }
 
+// An unsigned integer in [1, max], or 0 if the text is not one (std::stoull would abort on
+// garbage and silently wrap "-1").
+std::uint64_t bounded_arg(const char* text, std::uint64_t max) {
+    std::uint64_t v = 0;
+    const char* end = text + std::strlen(text);
+    const auto [ptr, ec] = std::from_chars(text, end, v);
+    return ec == std::errc{} && ptr == end && v >= 1 && v <= max ? v : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     std::uint64_t messages = 2'000'000;
     int trials = 5;
     std::string out;
-    for (int i = 1; i + 1 < argc; i += 2) {
-        if (std::strcmp(argv[i], "--messages") == 0) messages = std::stoull(argv[i + 1]);
-        else if (std::strcmp(argv[i], "--trials") == 0) trials = std::stoi(argv[i + 1]);
-        else if (std::strcmp(argv[i], "--out") == 0) out = argv[i + 1];
-        else { std::fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
+    for (int i = 1; i < argc; i += 2) {
+        if (i + 1 >= argc) {
+            std::fprintf(stderr, "usage: enginex_mold_bench [--messages N] [--trials T] [--out FILE]\n");
+            return 2;
+        }
+        if (std::strcmp(argv[i], "--messages") == 0) {
+            messages = bounded_arg(argv[i + 1], 100'000'000);
+        } else if (std::strcmp(argv[i], "--trials") == 0) {
+            trials = static_cast<int>(bounded_arg(argv[i + 1], 1000));
+        } else if (std::strcmp(argv[i], "--out") == 0) {
+            out = argv[i + 1];
+        } else {
+            std::fprintf(stderr, "unknown option %s\n", argv[i]);
+            return 2;
+        }
+        if (messages == 0 || trials == 0) {
+            std::fprintf(stderr, "enginex_mold_bench: --messages must be in [1, 100000000] and "
+                                 "--trials in [1, 1000]\n");
+            return 2;
+        }
     }
     SyntheticOptions so;
     so.seed = 1;
