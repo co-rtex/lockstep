@@ -93,8 +93,10 @@ of the specification and the Wireshark dissector, which agree.
   experiment from the command line, on a **simulated** channel. It reports packets lost and
   duplicated, gaps opened and closed, and whether the rebuilt book equals a direct replay.
   Example: 200 010 messages in 4 799 packets, 143 lost, 82 gaps opened and all closed by
-  re-request, book hash identical to the direct replay. Exit 0 only if the book equals the
-  delivered prefix (never silently wrong) and, with recovery, delivery is complete.
+  re-request, book hash identical to the direct replay. On real messages (the first 2.87 M
+  of the Nasdaq sample): 61 107 packets, 1 852 lost, 1 072 gaps opened and closed, and the
+  same book as the direct replay. Exit 0 only if the book equals the delivered prefix (never
+  silently wrong) and, with recovery, delivery is complete.
 * Not implemented: a UDP socket receiver, multicast group handling, a re-request client and
   server on the wire (retransmission is simulated in-process), and SoupBinTCP.
 
