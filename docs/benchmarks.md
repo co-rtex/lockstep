@@ -573,6 +573,20 @@ a sample). The median ratio was 1.019 (IQR 0.94–1.05), and the current code wa
 not been attributed to a specific change. The state hash is identical. Raw pairs:
 [`itch-replay-regression-ab-macos-m3.txt`](../benchmarks/results/itch-replay-regression-ab-macos-m3.txt).
 
+Re-checked later with the acceptance gate (`tools/paired_ab.py`, 20 pairs each, `562c56d` as
+the control, 2019-03-27, load average ≈ 6–7, identical state hash in every run):
+
+| workload | median ratio (current / `562c56d`) | IQR | current slower in | sign test p | verdict |
+|---|---:|---:|---:|---:|---|
+| full replay (`itch_replay`) | 1.036 | 0.986–1.108 | 13 of 20 | 0.26 | no measurable difference |
+| book apply (`itch_book_apply`) | 0.970 | 0.748–1.200 | 10 of 20 | 1.0 | no measurable difference |
+
+No regression is demonstrated. This host, at this load, cannot resolve one of a few percent:
+the apply medians (71–82 ns/msg) are far above the ≈ 43 ns/msg measured on a quieter machine
+earlier, and the spread is ±25 %. A quiet machine and the same command would settle it. Raw
+pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-replay-regression-gate-macos-m3.csv),
+[`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
+
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
 process peaked at 296 / 327–332 / 282–302 MiB (2019-01-30 / 2020-01-30 / 2019-03-27, two
