@@ -74,6 +74,19 @@ Deliberate mutations, each reverted after the check:
 * Disabling the journal CRC comparison failed `ChecksumMismatchIsHardErrorAnywhere` and
   `CorruptedRecordRefusesStartupAndLeavesFileUntouched`.
 * Releasing an accepted reply even when the flush failed failed all 5 `IoFailure` tests.
+* (Sprint) Removing the new `fatal_` check from snapshot requests failed
+  `Server.SnapshotRefusedAfterInternalFailStop`: the snapshot exposed a never-durable bid.
+* (Sprint, ITCH) Letting a same-price replace keep queue priority failed 2 scenario tests and
+  all 12 `ItchDifferential` seeds.
+
+## Test matrix (ITCH 5.0 market data)
+
+Full table in [itch.md § Verification](itch.md#verification): golden bytes for all 23 types,
+Python-packed fixtures with hand-derived books, malformed and truncated input, framing at every
+split offset, scenario tests per book rule, a message-by-message differential test against a
+naive reference book, corrupted-file fuzzing, and `OrderIndex` against `std::unordered_map`.
+The P0 server regressions (`Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber`,
+`Server.SnapshotRefusedAfterInternalFailStop`) are in `networking_test.cpp`.
 
 ## Where suites have run
 

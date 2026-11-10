@@ -1,0 +1,42 @@
+book reserve hint: 0 orders; order index: std_unordered_map
+[itch_decode]
+  first pass 62.35 M msg/s; trials median 68.52 M msg/s [min 68.25, max 68.67] = 14.6 ns/msg, 2138 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 17.89 M msg/s; trials median 19.03 M msg/s [min 18.84, max 19.08] = 52.5 ns/msg
+  heap allocations in timed region: median 482179 (0.482 per message), first pass 482179
+  per-message latency (ns, median of trials, includes one now() call): mean 52.5 p50 42 p90 84 p99 125 p99.9 167 max 287709
+  mean ns by type (trial 1 latency pass; incl. ~15 ns timer): S=49(0%) R=10(0%) H=16(0%) A=50(32%) F=48(6%) E=43(13%) C=43(3%) X=36(10%) D=60(22%) U=99(10%) P=15(3%) Q=16(0%) B=16(0%) I=15(0%)
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)
+[itch_replay]
+  first pass 15.39 M msg/s; trials median 14.83 M msg/s [min 14.33, max 15.33] = 67.4 ns/msg, 463 MiB/s
+  heap allocations in timed region: median 482179 (0.482 per message), first pass 482179
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)
+book reserve hint: 0 orders; order index: open_addressing
+[itch_decode]
+  first pass 62.87 M msg/s; trials median 68.23 M msg/s [min 67.27, max 68.65] = 14.7 ns/msg, 2129 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 30.13 M msg/s; trials median 31.06 M msg/s [min 30.69, max 31.21] = 32.2 ns/msg
+  heap allocations in timed region: median 7579 (0.008 per message), first pass 7579
+  per-message latency (ns, median of trials, includes one now() call): mean 31.0 p50 41 p90 42 p99 84 p99.9 125 max 612625
+  mean ns by type (trial 1 latency pass; incl. ~15 ns timer): S=70(0%) R=26(0%) H=16(0%) A=33(32%) F=29(6%) E=26(13%) C=26(3%) X=24(10%) D=29(22%) U=55(10%) P=15(3%) Q=15(0%) B=16(0%) I=16(0%)
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)
+[itch_replay]
+  first pass 22.64 M msg/s; trials median 22.80 M msg/s [min 22.74, max 22.85] = 43.9 ns/msg, 712 MiB/s
+  heap allocations in timed region: median 7579 (0.008 per message), first pass 7579
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)
+book reserve hint: 262144 orders; order index: open_addressing
+[itch_decode]
+  first pass 67.27 M msg/s; trials median 69.04 M msg/s [min 68.90, max 69.36] = 14.5 ns/msg, 2155 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 34.28 M msg/s; trials median 37.38 M msg/s [min 36.71, max 37.66] = 26.8 ns/msg
+  heap allocations in timed region: median 7553 (0.008 per message), first pass 7553
+  per-message latency (ns, median of trials, includes one now() call): mean 25.0 p50 41 p90 42 p99 83 p99.9 125 max 1625
+  mean ns by type (trial 1 latency pass; incl. ~15 ns timer): S=42(0%) R=10(0%) H=15(0%) A=26(32%) F=26(6%) E=22(13%) C=22(3%) X=21(10%) D=23(22%) U=41(10%) P=15(3%) Q=15(0%) B=15(0%) I=15(0%)
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)
+[itch_replay]
+  first pass 25.59 M msg/s; trials median 26.42 M msg/s [min 26.39, max 26.45] = 37.8 ns/msg, 825 MiB/s
+  heap allocations in timed region: median 7553 (0.008 per message), first pass 7553
+  live orders at end 88788 (peak 88792); state hash 3380cb95a962ddfa (identical across trials)

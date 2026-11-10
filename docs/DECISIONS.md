@@ -159,3 +159,44 @@ A read-only review found three defects, all fixed with regression tests:
 Also adopted from the review's lower-confidence notes: an overall per-frame send deadline, so
 a slowly draining peer cannot reset `SO_SNDTIMEO` forever; a non-blocking listener, so
 `accept` cannot hang shutdown; and a back-off when descriptors run out.
+
+## D19. Snapshot/subscribe failure paths (sprint P0)
+A subscribe registers the connection only if its initial snapshot frame was actually built.
+An oversized snapshot is an `INTERNAL_ERROR` reply ("request less depth") and the connection
+stays unsubscribed. *Rejected alternative:* send a depth-limited baseline. A partial baseline
+followed by full-depth increments diverges silently. Snapshot requests are refused after the
+sequencer's internal fail-stop (`fatal_`), as subscribes already were. The in-memory state can
+then contain staged commands that were never flushed, and a snapshot must not expose
+non-durable state. Both were reproduced by failing tests first (`networking_test.cpp`), using
+the test-only `ServerOptions::fault_internal_error_after_stage`.
+
+## D20. ITCH is a separate system, not an input to the exchange
+The ITCH path (`enginex_itch`, docs/itch.md) has its own types (`itch::Side`, `OrderRef`,
+`Message`) and shares only SHA-256 with the core. *Rejected alternative:* convert ITCH adds
+into `NewLimitOrder` commands and "replay the market" through the matching engine. That would
+re-match orders the exchange already matched, invent executions and fills, and misrepresent
+market data as order flow. Reconstruction applies the feed's own reported executions instead.
+
+## D21. ITCH input framing and no gap detection
+Only the 2-byte big-endian length-prefixed *file* convention of Nasdaq's sample files is
+supported. MoldUDP64/SoupBinTCP are out of scope. Consequently no gap detection is claimed:
+the file carries no sequence numbers, and ITCH timestamps are not sequence numbers.
+Framing errors are fatal (boundaries are lost after them); payload errors are per message.
+
+## D22. ITCH anomaly policy: reject, count, never repair
+Messages that contradict the reconstructed book (unknown or duplicate reference,
+over-execution, zero shares, locate mismatch) are rejected with the book unchanged and
+counted; `--strict` stops at the first. *Rejected alternatives:* clamping over-executions
+(hides data errors), or auto-creating unknown orders (fabricates state). Locked and crossed
+books are reported, not rejected, because historical feeds can show them legitimately.
+
+## D23. ITCH order index: open addressing, chosen by measurement
+`std::unordered_map` cost 0.48 heap allocations per message and dominated add/delete/replace
+in a per-type cost breakdown (no sampling profiler can attach in this environment). An
+open-addressing table (linear probing, Fibonacci hash, backward-shift deletion, load ≤ ½) cut
+book apply from 52.5 to 32.2 ns/msg on the 1 M-message workload with identical state hashes.
+It made the single worst latency worse (one full rehash during a doubling, 613 µs). An
+optional capacity hint removes that (max 1.6 µs). The old index stays behind
+`-DENGINEX_ITCH_STD_INDEX=ON` so the comparison is reproducible from one commit. Price levels
+remain `std::map`: they account for the remaining 0.008 allocations/msg, and no measurement
+has yet shown them to be the bottleneck.

@@ -1,6 +1,7 @@
 # Progress
 
-Last updated: 2026-10-25. Status vocabulary: **done** (verified by a run whose output was
+Last updated: 2026-11-10 (sprint section below); R1–R3 sections unchanged from 2026-10-25.
+Status vocabulary: **done** (verified by a run whose output was
 observed), **in progress**, **blocked** (external reason), **outstanding**.
 
 ## Current state
@@ -161,6 +162,44 @@ started.
 Documentation-only commits made after `418d247` (recording this result) have not been pushed,
 so GitHub has no run for them. They change no code, build file or workflow.
 
+## Market-data sprint (2026-11-10, branch `enginex-quant-sprint-20261109`)
+
+Local evidence only (macOS, Apple clang 17.0.0 clang-1700.6.4.2). These commits have not been
+pushed, so GitHub CI has not run on them.
+
+| Item | Status | Evidence |
+|---|---|---|
+| P0: subscribe with oversized snapshot no longer registers the subscriber | done | `Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber` (failed before the fix: event 41 delivered with no baseline) |
+| P0: snapshot refused after internal fail-stop | done | `Server.SnapshotRefusedAfterInternalFailStop`; with the guard removed, the snapshot exposed a never-durable bid (`200x7`) |
+| P0: fail-stop reply echoes request_id | done | same test (the client previously timed out) |
+| ITCH 5.0 decoder, 23 message types, file framing | done | `ItchGolden.*`, `ItchMalformed.*`, `StreamFramer.*`, `ItchFixture.*` |
+| ITCH book reconstruction + replay policy | done | `ItchBook.*`, `ItchDifferential.*` (12 seeds), `ItchReplay.*`, `ItchSynthetic.*` |
+| Independent review of the ITCH code (separate agent, read-only) | done | 1 confirmed defect (strict replay counters after stop), fixed with regression tests in `ffec5ac`; test-coverage and comment findings addressed |
+| Order index optimization, measured | done | docs/benchmarks.md § ITCH; `benchmarks/results/itch-macos-m3.csv` |
+| R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
+
+Commands and results (latest):
+
+* `cmake --preset release && cmake --build --preset release && ctest --preset release`:
+  438/438 passed.
+* UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
+  `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 438/438
+  (33.9 s) on the tree of the docs commit; ITCH tests were also re-run under UBSan after every
+  ITCH change.
+* `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
+  on the ITCH tests (UBSan build): passed.
+* `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
+
+Blocked in this environment (exact symptoms), so they are not claimed for the sprint commits:
+
+* ASan: even `int main(){}` built with `-fsanitize=address` hangs after
+  `==N==FindDynamicShadowStart, space_size = 0x0fffffffffff` (seen with `verbosity=3`). The
+  `asan` preset's test discovery therefore times out.
+* TSan: a trivial two-thread program exits 139 (SIGSEGV) with no report.
+* Sampling profilers: `sample <pid>` reports the target as not running, and `pgrep` is denied.
+  The ITCH optimization used allocation counts and per-type timing instead (docs/benchmarks.md).
+* Linux/Docker and GitHub CI: no Docker here, and pushing is not permitted in this sprint.
+
 ## Blocked / external
 
 * None for R1–R3.
@@ -169,5 +208,7 @@ so GitHub has no run for them. They change no code, build file or workflow.
 
 ## Next tasks
 
-1. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
-2. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.
+1. Push the sprint branch and confirm CI (ASan/UBSan/TSan on Linux) covers the ITCH and P0
+   changes; this needs the owner (pushing was out of scope for the sprint).
+2. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
+3. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.

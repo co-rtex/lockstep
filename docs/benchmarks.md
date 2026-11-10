@@ -4,7 +4,9 @@ All numbers on this page were produced by the commands shown, on the machine des
 from the commit recorded in each CSV row. Raw rows (every trial plus a median row) are in
 [`benchmarks/results/`](../benchmarks/results). Nothing here is extrapolated.
 
-The spec (§12.1) separates four kinds of measurement. They are never combined into one number:
+The spec (§12.1) separates four kinds of measurement for the exchange. They are never
+combined into one number. The ITCH market-data measurements are a separate fifth family
+([§ ITCH](#itch-50-decoding-and-reconstruction)):
 
 | # | Measurement | What is timed | Where |
 |---|---|---|---|
@@ -89,6 +91,14 @@ latency pass and carry the timer caveat above.
 
 Peak RSS was 53 MiB for the 100k runs and 305 MiB for the 1M run. The process holds the
 workload, two trial states and the latency samples.
+
+**Reproducibility re-run (2026-11-10).** The same command
+(`enginex_bench --seed 42 --orders 100000 --trials 7`) was re-run with the matching core
+unchanged. All six scenarios ended with the same state hashes as the recorded run, and every
+median throughput was within +0.3 % to +3.6 % of the table above (for example mixed
+8.49 M vs 8.19 M cmd/s). Raw rows:
+[`r1-core-macos-m3-rerun-20261110.csv`](../benchmarks/results/r1-core-macos-m3-rerun-20261110.csv).
+The table keeps the original run.
 
 ### Interpretation
 
@@ -218,6 +228,82 @@ Interpretation:
   behind each other on one core.
 * Loopback only: no real network, NIC or kernel-bypass is involved, and nothing here supports
   a "low-latency" claim. Client and server share the same 8-core laptop.
+
+## ITCH 5.0 decoding and reconstruction
+
+These measure the separate market-data path ([itch.md](itch.md)), not the exchange, and are
+not comparable with the R1–R3 rows: different input, different work.
+
+Same machine as above (the hardware model could not be re-read in this session because
+`sysctl` is blocked by the sandbox). Release build at commit `51ea715bf7d6`, Apple clang
+17.0.0 (clang-1700.6.4.2), `-O3 -DNDEBUG`. 7 trials after 1 untimed warm-up ("first pass",
+reported separately), medians. Raw rows:
+[`benchmarks/results/itch-macos-m3.csv`](../benchmarks/results/itch-macos-m3.csv) and
+console output [`itch-macos-m3.txt`](../benchmarks/results/itch-macos-m3.txt).
+
+**Workload.** A synthetic ITCH stream from `generate()` with seed 42, 1 000 000 lifecycle
+messages (1 000 014 in total with start/end-of-day messages), 8 symbols, 32.7 MB in the
+length-prefixed file format. The mix is in `include/enginex/itch/synthetic.hpp`. The book
+peaks at 88 792 live orders. The stream is generated and fully in memory before timing. Every
+trial uses a fresh `BookBuilder`. All trials, and all three builds below, end with the same
+state hash `3380cb95a962ddfa`.
+
+**What is timed.**
+
+| Measurement | Work inside the timer |
+|---|---|
+| `itch_decode` | `StreamFramer::feed` over the whole buffer + `decode()` of every payload (no book) |
+| `itch_book_apply` | `BookBuilder::apply` over pre-decoded `Message`s (no framing or decoding) |
+| `itch_replay` | `replay()`: framing + decoding + book, from the in-memory buffer |
+
+The binary replaces global `operator new` with a counter, so the heap allocations inside each
+timed region are exact. `itch_book_apply` also has a separate latency pass, with a
+`steady_clock` read around every message. As in R1, these per-message samples are quantized
+to 41.7 ns ticks and include one ~15 ns timer call, so p50/p90 mean "one or two ticks". Use the
+throughput pass for average cost.
+
+| build | measurement | msgs/s (median) | ns/msg | min – max (M/s) | allocs / msg | p99 | p99.9 | max |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `std::unordered_map` index | `itch_decode` | 68.5 M | 14.6 | 68.3 – 68.7 | 0 | | | |
+| `std::unordered_map` index | `itch_book_apply` | 19.0 M | 52.5 | 18.8 – 19.1 | 0.482 | 125 ns | 167 ns | 288 µs |
+| `std::unordered_map` index | `itch_replay` | 14.8 M | 67.4 | 14.3 – 15.3 | 0.482 | | | |
+| open addressing | `itch_book_apply` | 31.1 M | 32.2 | 30.7 – 31.2 | 0.008 | 84 ns | 125 ns | 613 µs |
+| open addressing | `itch_replay` | 22.8 M | 43.9 | 22.7 – 22.9 | 0.008 | | | |
+| open addressing, `--reserve 262144` | `itch_book_apply` | 37.4 M | 26.8 | 36.7 – 37.7 | 0.008 | 83 ns | 125 ns | 1.6 µs |
+| open addressing, `--reserve 262144` | `itch_replay` | 26.4 M | 37.8 | 26.4 – 26.5 | 0.008 | | | |
+
+```bash
+cmake -S . -B build/rel-stdidx -G Ninja -DCMAKE_BUILD_TYPE=Release -DENGINEX_ITCH_STD_INDEX=ON
+cmake --build build/rel-stdidx && cmake --build --preset release
+./build/rel-stdidx/enginex_itch_bench --seed 42 --messages 1000000 --symbols 8 --trials 7 --out itch.csv
+./build/release/enginex_itch_bench    --seed 42 --messages 1000000 --symbols 8 --trials 7 --out itch.csv
+./build/release/enginex_itch_bench    --seed 42 --messages 1000000 --symbols 8 --trials 7 --reserve 262144 --out itch.csv
+```
+
+**How the bottleneck was found.** No sampling profiler can attach in this environment:
+`sample` reports the target as not running, and `pgrep` is denied. Two substitutes were used
+instead: allocation counting and a per-message-type cost breakdown taken from the latency
+pass (`mean ns by type` in the console output). With `std::unordered_map`, the order index
+made 0.48 heap allocations per message (one node per add/replace, freed on every
+delete/execute-to-zero). The breakdown (timer included, ≈15 ns floor) showed adds at ≈50 ns,
+deletes ≈60 ns and replaces ≈99 ns, the message types that insert into or erase from the
+index. After the index change these fell to 33 / 29 / 55 ns. The remaining 0.008
+allocations per message are `std::map` nodes for new price levels.
+
+**The tail.** Open addressing made the *maximum* worse (288 µs → 613 µs) while improving
+every percentile through p99.9. The hypothesis was a single table doubling: rehash all live
+orders into a newly allocated, never-touched array. Pre-sizing with `--reserve` (a
+`BookBuilder(expected_orders)` hint) removed it: max 1.6 µs. It also improved mean cost to
+26.8 ns, because growth and its page faults no longer happen during the run. Without a
+hint, a production consumer would see that spike once per doubling. `std::unordered_map`
+has the same issue: its 288 µs max is consistent with its own rehash, though that was not
+isolated.
+
+**Not shown / not claimed.** File I/O and cold page cache (a cache cannot be dropped without
+root on macOS; the "first pass" column in the CSV is only the first touch of freshly generated
+data in a warm process), multi-day or real Nasdaq files, and any network delivery. Decoding
+at ≈2.1 GiB/s on one core is an in-memory number and says nothing about a feed handler's
+wire-to-book latency.
 
 ## Reproducing
 

@@ -384,6 +384,13 @@ TEST(ItchMalformed, RandomValidOrderMessagesRoundTrip) {
     }
 }
 
+TEST(ItchEncode, RejectsTimestampsThatDoNotFitSixBytes) {
+    OrderDelete d{Header{'D', 1, 0, 1ULL << 48}, 1};
+    EXPECT_THROW((void)encode(d), std::out_of_range);
+    d.h.timestamp_ns = (1ULL << 48) - 1;
+    EXPECT_EQ(encode(d).size(), 19U);
+}
+
 TEST(ByteReader, ThrowsInsteadOfReadingPastEnd) {
     const std::vector<std::uint8_t> bytes = {1, 2, 3};
     const ByteReader r(bytes);

@@ -25,8 +25,10 @@ does not replace, the TradeGrid Go exchange (see
 | `enginex_codec` | JSON ⇄ typed commands/results, `simulate` | core, nlohmann/json 3.11.3 |
 | `enginex_journal` | CRC32C, EXJ1 journal codec/scan, `JournalFile` (flock, fsync modes, fault injection), `DurableExchange` | core |
 | `enginex_net` | framing + protocol v1 codec, `BoundedQueue`, POSIX sockets, `Server`, `Client` | codec, journal, threads |
+| `enginex_itch` | ITCH 5.0 decoder/encoder, file framer, `BookBuilder` reconstruction, replay, synthetic streams ([itch.md](itch.md)); separate from the exchange | core (SHA-256 only) |
 | `enginex_bench_lib` | workload generators, measurement harness (core, durable, recovery, network), metrics | core, journal, net |
-| `enginex` | CLI (`simulate`, `benchmark`, …) | all of the above |
+| `enginex` | CLI (`simulate`, `benchmark`, …, `itch`) | all of the above |
+| `enginex_itch_bench` | ITCH decode / book / replay measurements with allocation counting | itch |
 | `enginex_tests` | GoogleTest suite | all libraries |
 
 The core has no I/O, no clocks, no JSON and no threads. Everything that touches the outside

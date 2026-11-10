@@ -14,6 +14,12 @@ with bounded queues and snapshot resynchronization. EngineX is a standalone pers
 inspired by the club's [TradeGrid](https://github.com/co-rtex/tradegrid) Go exchange. It is
 not a replacement for it and not real trading software.
 
+A second, independent system decodes **Nasdaq TotalView-ITCH 5.0** binary market data and
+rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md)). ITCH is an outbound
+market-data feed, not an order-entry protocol. That path never sends anything to the
+synthetic exchange, and its test data are synthetic fixtures built from the public
+specification, not Nasdaq data.
+
 ## Status
 
 | Feature | Release | Status |
@@ -35,6 +41,10 @@ not a replacement for it and not real trading software.
 | Sequenced `book_update` feed, atomic snapshot/subscribe handoff (event watermark), reconnect resync | R3 | **Implemented, tested** (handoff under load with book mirroring) |
 | Bounded ingress/outbound queues, slow-consumer disconnect, connection cap, graceful shutdown | R3 | **Implemented, tested** (TSan clean on Linux) |
 | `enginex serve` / `enginex client`, network round-trip benchmark | R3 | **Implemented, measured** |
+| ITCH 5.0 decoder: all 23 message types, bounds-checked big-endian fields, incremental length-prefixed file framing | ITCH | **Implemented, tested** (golden bytes, Python-packed fixtures, malformed/truncated input) |
+| ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
+| `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
+| MoldUDP64 / SoupBinTCP transport, sequence-gap detection, real historical data | — | **Not implemented** (no such claim is made) |
 
 ## Architecture
 
@@ -100,6 +110,31 @@ Networked service (R3), in three terminals:
 ./build/release/enginex serve --port 9000 --journal data/demo.exj --durability sync      # A
 ./build/release/enginex client subscribe --port 9000                                      # B
 ./build/release/enginex client submit --port 9000 --input examples/demo_orders.jsonl      # C
+```
+
+ITCH 5.0 market-data replay (independent of the exchange):
+
+```bash
+./build/release/enginex itch replay --input tests/testdata/itch/lifecycle.itch --strict
+./build/release/enginex itch generate --out data/demo.itch --seed 42 --messages 200000 --symbols 4
+./build/release/enginex itch replay --input data/demo.itch --depth 5 --json
+./build/release/enginex itch dump --input tests/testdata/itch/lifecycle.itch --limit 5
+./build/release/enginex_itch_bench --seed 42 --messages 1000000 --trials 7
+```
+
+Actual output of the first command, on the hand-scripted fixture (Python-packed bytes; the
+expected book is derived by hand in `tools/itch_fixture.py`):
+
+```text
+ITCH 5.0 replay of tests/testdata/itch/lifecycle.itch
+  bytes 801, frames 26, decoded 26
+  messages by type {"S":6,"R":2,"H":1,"A":6,"F":1,"E":1,"C":2,"X":1,"D":1,"U":2,"P":1,"Q":1,"B":1}
+  anomalies {"unknown_order_ref":0, ... all 0}
+  live orders 5 (peak 6)
+  [1] AAPL  levels 1/1
+           220 @ 150.0000        |      400 @ 150.0200
+  [2] MSFT  levels 0/1
+                                 |       20 @ 400.5000
 ```
 
 `scripts/demo.sh` runs all of the spec's reviewer flows (R1–R3) in one go, including a crash
@@ -226,6 +261,18 @@ the group-commit journal), medians of 5 trials:
 | 1 client, `--durability sync` | 380 | 2.96 ms | 4.55 ms |
 | 8 clients, `--durability sync` (group commit: 4.0 commands/sync) | 1,417 | 5.98 ms | 8.23 ms |
 
+ITCH 5.0 market data, a separate in-process workload on the same machine (1 M synthetic
+messages, 8 symbols, medians of 7 trials; methodology, the profiling substitute and the tail
+investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-and-reconstruction)):
+
+| measurement | ns/msg | msgs/s | heap allocs/msg |
+|---|---:|---:|---:|
+| framing + decoding only | 14.6 | 68.5 M (≈2.1 GiB/s) | 0 |
+| book apply, `std::unordered_map` order index (baseline) | 52.5 | 19.0 M | 0.482 |
+| book apply, open-addressing order index | 32.2 | 31.1 M | 0.008 |
+| book apply, open addressing + capacity hint (max latency 613 µs → 1.6 µs) | 26.8 | 37.4 M | 0.008 |
+| full replay (framing + decoding + book), open addressing + hint | 37.8 | 26.4 M | 0.008 |
+
 ## Testing strategy
 
 * Unit tests cover every matching, cancellation, validation and idempotency rule in spec
@@ -241,6 +288,10 @@ the group-commit journal), medians of 5 trials:
 * Network tests run over real sockets: segmentation, concurrency, handoff under load, slow
   consumers, overload, reconnect, shutdown and restart.
 * Golden CLI output, benchmark-workload self-validation, ASan/UBSan and TSan on Linux.
+* ITCH: hand-written golden bytes for all 23 message types, fixtures packed independently in
+  Python, every wrong length and unknown type, framing split at every offset, a message-by-message
+  differential test against a naive reference book (mutation-checked), and 300 randomly
+  corrupted files. See [docs/itch.md § Verification](docs/itch.md#verification).
 
 See [docs/verification.md](docs/verification.md) for the full test matrix, the environments
 where each suite ran, and known limitations. One of those is that macOS 26.6 + Apple clang 17

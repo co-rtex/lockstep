@@ -137,6 +137,9 @@ public:
         std::memcpy(out_.data() + off, a.data(), N);
     }
     void header(const Header& h, char type) {
+        if (h.timestamp_ns >= (1ULL << 48U)) {
+            throw std::out_of_range("ITCH timestamp does not fit in 6 bytes");
+        }
         ch(0, type);
         be(1, h.stock_locate, 2);
         be(3, h.tracking_number, 2);
