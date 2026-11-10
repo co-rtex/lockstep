@@ -41,7 +41,7 @@ are loopback measurements on this one machine. None is an exchange wire latency.
 | What | Result | Evidence |
 |---|---|---|
 | ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
-| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs) | `itch-real-sample-macos-m3.csv` |
+| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs, at `562c56d`). Later changes are within noise: a paired check cannot exclude up to ≈ 4 % slower | `itch-real-sample-macos-m3.csv` |
 | Book memory (real data) | ≈ 188–211 bytes per live order, whole process, at 1.5–1.65 M live orders | `itch-real-memory-macos-m3.csv` |
 | Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder, and every price level equal to an independent Python book (final books, plus best bid/ask of every book every 100 k messages) | `scripts/real_data_check.sh`, `tools/itch_pydecode.py`, `tools/itch_pybook.py` |
 | Book apply per message, real data | p50 41–42 ns, p99 292–333 ns, p99.9 458–541 ns (3 days, timer included) | `itch-real-latency-macos-m3.csv` |
