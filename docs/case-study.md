@@ -61,7 +61,7 @@ The tests are designed so that the code and the tests cannot share one mistake:
   reverted. A replace that keeps priority fails 2 scenario tests and all 12 differential
   seeds. A sequencer that skips gaps fails 5 of the 13 transport tests that existed at the
   time. A snapshot path without the fail-stop check exposes a never-durable bid. Later,
-  `tools/mutation_check.py` scripted 51 such mutants across both systems. All are killed,
+  `tools/mutation_check.py` scripted 52 such mutants across both systems. All are killed,
   after two real test gaps it exposed were closed (see
   [verification.md](verification.md#do-the-tests-catch-bugs)).
 * **Adversarial reviews** by a separate agent, which read code only and was told to assume it
