@@ -280,9 +280,11 @@ the group-commit journal), medians of 5 trials:
 | 1 client, `--durability sync` | 380 | 2.96 ms | 4.55 ms |
 | 8 clients, `--durability sync` (group commit: 4.0 commands/sync) | 1,417 | 5.98 ms | 8.23 ms |
 
-ITCH 5.0 market data, a separate in-process workload on the same machine (1 M synthetic
-messages, 8 symbols, medians of 7 trials; methodology, the profiling substitute and the tail
-investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-and-reconstruction)):
+ITCH 5.0 market data is a separate in-process workload on the same machine. Unless noted,
+rows use 1 M synthetic messages over 8 symbols, medians of 7 trials. Rows are in the order the
+changes were made, and each was measured at the commit recorded in its CSV, so the last rows
+describe the current default. Methodology, the profiling substitute and the tail
+investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-and-reconstruction).
 
 | measurement | ns/msg | msgs/s | heap allocs/msg |
 |---|---:|---:|---:|
