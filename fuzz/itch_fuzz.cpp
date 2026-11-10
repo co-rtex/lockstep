@@ -48,6 +48,12 @@ void fuzz_replay(std::span<const std::uint8_t> data) {
     BookBuilder c;
     (void)replay(data, c);
     if (a.state_hash() != c.state_hash()) fail("replay not deterministic");
+    // The bounded level vector (D32) at its smallest limit: constant spill and refill must not
+    // change any book.
+    BookBuilder d(0, 2);
+    (void)replay(data, d);
+    if (const auto bad = d.check_invariants()) fail(bad->c_str());
+    if (a.state_hash() != d.state_hash()) fail("level-vector limit changed the books");
 }
 
 void fuzz_mold(std::span<const std::uint8_t> data) {
