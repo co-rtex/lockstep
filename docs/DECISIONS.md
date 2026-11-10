@@ -177,10 +177,11 @@ into `NewLimitOrder` commands and "replay the market" through the matching engin
 re-match orders the exchange already matched, invent executions and fills, and misrepresent
 market data as order flow. Reconstruction applies the feed's own reported executions instead.
 
-## D21. ITCH input framing and no gap detection
-Only the 2-byte big-endian length-prefixed *file* convention of Nasdaq's sample files is
-supported. MoldUDP64/SoupBinTCP are out of scope. Consequently no gap detection is claimed:
-the file carries no sequence numbers, and ITCH timestamps are not sequence numbers.
+## D21. ITCH input framing; gap detection only where sequence numbers exist
+Files use the 2-byte big-endian length-prefixed convention of Nasdaq's sample files. That
+framing has no sequence numbers, and ITCH timestamps are not sequence numbers, so the file
+path claims no gap detection. *(Updated in the sprint:)* MoldUDP64 sequencing was added later
+as a separate layer (D25), and gap detection is claimed only there.
 Framing errors are fatal (boundaries are lost after them); payload errors are per message.
 
 ## D22. ITCH anomaly policy: reject, count, never repair
@@ -211,3 +212,13 @@ with a flat or array-indexed level structure. The remaining cost is cache misses
 real symbol and price distribution could justify optimizing for. The same sweep showed that
 over-sizing the open-addressing index (32 MiB) costs more than it saves. The capacity hint
 should track expected peak live orders.
+
+## D25. MoldUDP64 sequencer: buffer, re-request, or stop; never skip
+The sequencer releases messages strictly in sequence order. Duplicates and overlaps are
+dropped. Packets ahead of a hole wait in a bounded reorder buffer while `missing()` ranges
+are re-requested. *Rejected alternative:* skip the hole and continue, as a "best effort" feed
+handler might. A reconstructed order book after a skipped message is silently wrong, which is
+worse than stopping. When the buffer bound is exceeded the sequencer stops (`Failed`), and the
+consumer must rebuild from a snapshot or the start of the session. Packet validation is
+all-or-nothing, so a malformed packet cannot partially advance the sequence. There is no
+socket receiver or wire re-request protocol; channels are simulated in tests.

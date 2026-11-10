@@ -51,11 +51,41 @@ boundary is copied (into a carry buffer of at most 2 + 65 535 bytes). A zero len
 or a stream that ends inside a message, is a fatal `FrameError` with the stream offset, because
 the message boundaries after it are unknown.
 
-**Gap detection is not implemented and not claimed.** The file framing carries no sequence
-numbers. ITCH timestamps are nanoseconds since midnight, not sequence numbers, and equal or
-decreasing timestamps are legal. The book counts timestamp regressions for information only.
-Detecting gaps needs the transport (MoldUDP64 sequence numbers and message counts), which is a
-separate, out-of-scope project.
+**The file path has no gap detection.** The file framing carries no sequence numbers. ITCH
+timestamps are nanoseconds since midnight, not sequence numbers, and equal or decreasing
+timestamps are legal. The book counts timestamp regressions for information only. Gap
+detection lives in the transport layer below: see *MoldUDP64*.
+
+### MoldUDP64 (transport sequencing and gaps)
+
+`include/enginex/itch/moldudp64.hpp` parses MoldUDP64 downstream packets and sequences their
+messages. Every packet has a 20-byte header (10-byte session, 8-byte sequence number of its
+first message, 2-byte message count, big-endian), followed by `count` blocks of a 2-byte
+length and the message. Count 0 is a heartbeat and 0xFFFF is end of session; both carry the
+next expected sequence number. Text could not be extracted from Nasdaq's `moldudp64.pdf`
+(custom font encoding), so the layout was cross-checked against the FINRA and Japannext copies
+of the specification and the Wireshark dissector, which agree.
+
+* `parse()` validates the whole packet (length, every block boundary, no trailing bytes,
+  control packets carry no payload, no 64-bit sequence wrap) before returning any message.
+  A malformed packet delivers nothing.
+* `Sequencer` releases messages strictly in order, each exactly once. It drops duplicates and
+  the already-delivered part of overlapping packets. It holds packets that arrive ahead of a
+  hole in a bounded reorder buffer and reports `missing()` ranges for re-request (heartbeats
+  can reveal a hole with no data packet following). When the hole is filled, it drains in
+  order. If the buffer bound would be exceeded, it goes `Failed` and **stops** rather than
+  skipping. A book built on top of it is then correct up to the hole and never silently
+  wrong after it. Packets from another session are rejected.
+* Tests (`itch_moldudp64_test.cpp`): golden packet bytes; every truncation, trailing bytes,
+  control with payload and sequence wrap; 100 000 random packets; each sequencer rule. An
+  end-to-end test sends 30 000 synthetic ITCH messages as MTU-sized packets over a simulated
+  channel with 3 % loss, 5 % duplication and reordering within 8 packets, re-requests missing
+  ranges from the sender (over a channel that is itself lossy), and requires the rebuilt book
+  hash to equal a direct replay, for three channel seeds. Without recovery, the book stops
+  exactly at the hole. Mutation check: letting the sequencer skip over gaps fails 5 of the 13
+  tests, including both end-to-end tests.
+* Not implemented: a UDP socket receiver, multicast group handling, a re-request client and
+  server on the wire (the tests simulate retransmission in-process), and SoupBinTCP.
 
 ### Payload decoding
 
@@ -232,8 +262,9 @@ are not wire-to-wire latencies.
 
 ## Limitations
 
-* Only the 2-byte length-prefixed file framing is supported. There is no MoldUDP64 or
-  SoupBinTCP, no retransmission, and no gap detection.
+* Files: only the 2-byte length-prefixed framing (no gap detection possible). Transport:
+  MoldUDP64 packet parsing and sequencing are implemented and tested on simulated channels.
+  There is no socket receiver, no live retransmission and no SoupBinTCP.
 * No historical data was available. The behavior on real full-day files (message mix,
   anomaly rates, peak order counts) is untested. The synthetic workload's mix is documented
   in `synthetic.hpp` and is not a model of Nasdaq traffic.

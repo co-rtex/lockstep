@@ -45,7 +45,8 @@ specification, not Nasdaq data.
 | ITCH 5.0 decoder: all 23 message types, bounds-checked big-endian fields, incremental length-prefixed file framing | ITCH | **Implemented, tested** (golden bytes, Python-packed fixtures, malformed/truncated input) |
 | ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
-| MoldUDP64 / SoupBinTCP transport, sequence-gap detection, real historical data | — | **Not implemented** (no such claim is made) |
+| MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels (no socket receiver) |
+| UDP multicast receiver, live retransmission, SoupBinTCP, real historical data | — | **Not implemented** (no such claim is made) |
 
 ## Architecture
 

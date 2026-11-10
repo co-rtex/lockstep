@@ -12,7 +12,7 @@
 //    convention is the one Nasdaq uses for its published historical sample files: every
 //    message is preceded by a 2-byte big-endian length. That length prefix carries no sequence
 //    number, so this layer cannot and does not detect gaps — ITCH timestamps are not sequence
-//    numbers either. Transport-level gap detection (MoldUDP64 sequence numbers) is out of scope.
+//    numbers either. Transport-level sequencing and gap detection are in moldudp64.hpp.
 
 #include <algorithm>
 #include <cstddef>
