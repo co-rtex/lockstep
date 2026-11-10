@@ -239,9 +239,13 @@ TEST(MoldUdp, UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook) {
     const Feed f = make_feed(100'000);
     udp::SenderOptions so;
     so.packets_per_second = 0;
-    so.linger = 500ms;
+    // Generous timeouts: this test starts the receiver late on purpose, and under a loaded
+    // parallel ctest run a starved receiver must still find the sender answering (one
+    // failure was seen with a 500 ms linger in a full -j8 run; not reproducible alone).
+    so.linger = 2000ms;
     udp::ReceiverOptions ro;
     ro.receive_buffer_bytes = 32 << 10;
+    ro.idle_timeout = 5000ms;
     const Outcome o = transfer(f, so, ro, {}, 100ms);
     std::printf("unpaced burst: %llu packets sent, %llu gaps, %llu requests, %llu retransmitted\n",
                 static_cast<unsigned long long>(o.sent.sent),
