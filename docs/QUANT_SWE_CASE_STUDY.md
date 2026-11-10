@@ -77,7 +77,10 @@ are in-process and single-threaded; none is a wire latency.
   found two capacity arguments that allocated until the OS killed the process. Reviewing which
   hostile values `serve` accepted found a real hang: `--send-timeout-ms 0` disabled the send
   timeout, so one subscriber that stopped reading blocked graceful shutdown indefinitely.
-  All three are fixed, with regression tests.
+  Hostile *content* found a fourth issue: a command naming `request_id` twice was accepted
+  with the last value, which makes the idempotency key ambiguous to anyone who reads the
+  first. Repeated keys are now `INVALID_REQUEST` (D33). All four are fixed, with regression
+  tests.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 50 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
