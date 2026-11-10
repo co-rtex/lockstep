@@ -4,6 +4,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <memory>
+#include <memory_resource>
 #include <unordered_map>
 #include <vector>
 
@@ -57,6 +59,14 @@ struct CancelOutcome {
 class MatchingEngine {
 public:
     explicit MatchingEngine(std::size_t symbol_count);
+    ~MatchingEngine();
+    MatchingEngine(const MatchingEngine&) = delete;
+    MatchingEngine& operator=(const MatchingEngine&) = delete;
+    // Moving keeps every container's memory resource valid: the pool lives on the heap and
+    // moves with its owner. Move *assignment* would destroy the target's pool while its
+    // containers still hold pool memory, so it is not provided.
+    MatchingEngine(MatchingEngine&&) noexcept;
+    MatchingEngine& operator=(MatchingEngine&&) = delete;
 
     // Matches `order` against the opposite side, appending one Fill per incoming/resting pair to
     // `fills` (which is not cleared). Rests any positive remainder at the tail of its level.
@@ -86,8 +96,10 @@ private:
 
     void rest(const AcceptedOrder& order, OrderBook& book, Quantity remaining);
 
+    // Declared first: destroyed after the containers that allocate from it.
+    std::unique_ptr<std::pmr::memory_resource> pool_;
     std::vector<OrderBook> books_;
-    std::unordered_map<OrderId, OrderLocation> index_;
+    std::pmr::unordered_map<OrderId, OrderLocation> index_;
 };
 
 }  // namespace enginex

@@ -69,6 +69,10 @@ target_include_directories(enginex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 enginex_set_warnings(enginex_core)
+option(ENGINEX_CORE_STD_ALLOC "Benchmark baseline: book nodes use operator new, not the engine pool" OFF)
+if(ENGINEX_CORE_STD_ALLOC)
+    target_compile_definitions(enginex_core PRIVATE ENGINEX_CORE_STD_ALLOC)
+endif()
 
 # enginex_codec: JSON at the command/transport boundary (simulate, wire protocol).
 add_library(enginex_codec src/json_codec.cpp src/simulate.cpp)
@@ -118,6 +122,11 @@ enginex_set_warnings(enginex)
 add_executable(enginex_bench benchmarks/bench_main.cpp)
 target_link_libraries(enginex_bench PRIVATE enginex_bench_lib)
 enginex_set_warnings(enginex_bench)
+
+# Exchange core: heap allocations per command by outcome (evidence for layout work).
+add_executable(enginex_core_alloc_probe benchmarks/core_alloc_probe.cpp)
+target_link_libraries(enginex_core_alloc_probe PRIVATE enginex_bench_lib)
+enginex_set_warnings(enginex_core_alloc_probe)
 
 # ITCH decode / book / replay measurements (counts heap allocations via operator new).
 add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)

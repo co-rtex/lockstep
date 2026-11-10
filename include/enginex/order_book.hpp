@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <list>
 #include <map>
+#include <memory_resource>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "enginex/types.hpp"
@@ -19,17 +21,31 @@ struct RestingOrder {
 };
 
 // All resting orders on one side at one price, oldest (highest time priority) first.
+//
+// Containers use polymorphic allocators so the engine can place every book node (levels, FIFO
+// entries, index entries) in one per-engine pool (DECISIONS.md D26). PriceLevel is
+// allocator-aware, so a level created inside a LevelMap gets the map's memory resource for its
+// order list (uses-allocator construction).
 struct PriceLevel {
+    using allocator_type = std::pmr::polymorphic_allocator<>;
+
+    PriceLevel() = default;
+    explicit PriceLevel(const allocator_type& alloc) : orders(alloc) {}
+    PriceLevel(const PriceLevel& other, const allocator_type& alloc)
+        : price(other.price), aggregate(other.aggregate), orders(other.orders, alloc) {}
+    PriceLevel(PriceLevel&& other, const allocator_type& alloc)
+        : price(other.price), aggregate(other.aggregate), orders(std::move(other.orders), alloc) {}
+
     PriceCents price = 0;
     Quantity aggregate = 0;  // sum of `remaining` over `orders`
-    std::list<RestingOrder> orders;
+    std::pmr::list<RestingOrder> orders;
 };
 
 // Both sides use the same ascending map type (see DECISIONS.md D2): the best ask is `begin()`,
 // the best bid is `std::prev(end())`. A shared iterator type lets the order index store level
 // iterators for either side.
-using LevelMap = std::map<PriceCents, PriceLevel>;
-using OrderNode = std::list<RestingOrder>::iterator;
+using LevelMap = std::pmr::map<PriceCents, PriceLevel>;
+using OrderNode = std::pmr::list<RestingOrder>::iterator;
 
 // Aggregated view of one price level (spec §6 `BookLevel`).
 struct BookLevel {
@@ -62,6 +78,9 @@ struct OrderLocation {
 // the order index so that every mutation keeps book and index consistent.
 class OrderBook {
 public:
+    OrderBook() = default;
+    explicit OrderBook(std::pmr::memory_resource* resource) : bids_(resource), asks_(resource) {}
+
     [[nodiscard]] LevelMap& levels(Side side) noexcept { return side == Side::Buy ? bids_ : asks_; }
     [[nodiscard]] const LevelMap& levels(Side side) const noexcept {
         return side == Side::Buy ? bids_ : asks_;

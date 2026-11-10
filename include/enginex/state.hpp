@@ -61,7 +61,8 @@ public:
     ExchangeStateMachine(const ExchangeStateMachine&) = delete;
     ExchangeStateMachine& operator=(const ExchangeStateMachine&) = delete;
     ExchangeStateMachine(ExchangeStateMachine&&) = default;
-    ExchangeStateMachine& operator=(ExchangeStateMachine&&) = default;
+    // Not move-assignable: the engine's node pool must outlive the containers using it (D26).
+    ExchangeStateMachine& operator=(ExchangeStateMachine&&) = delete;
 
     // Validates `cmd` against the current state without mutating anything.
     [[nodiscard]] Decision prepare(const Command& cmd) const;

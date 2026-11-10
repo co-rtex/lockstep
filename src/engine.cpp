@@ -9,11 +9,34 @@
 
 namespace enginex {
 
-MatchingEngine::MatchingEngine(std::size_t symbol_count) : books_(symbol_count) {
+namespace {
+
+// Per-engine pool for book nodes (D26). -DENGINEX_CORE_STD_ALLOC=ON keeps the same container
+// types but forwards every allocation to operator new/delete, for same-commit comparisons.
+std::unique_ptr<std::pmr::memory_resource> make_pool() {
+#ifdef ENGINEX_CORE_STD_ALLOC
+    return nullptr;
+#else
+    return std::make_unique<std::pmr::unsynchronized_pool_resource>();
+#endif
+}
+
+}  // namespace
+
+MatchingEngine::MatchingEngine(std::size_t symbol_count)
+    : pool_(make_pool()), index_(pool_ ? pool_.get() : std::pmr::new_delete_resource()) {
     if (symbol_count == 0) {
         throw std::invalid_argument("MatchingEngine requires at least one symbol");
     }
+    std::pmr::memory_resource* resource = pool_ ? pool_.get() : std::pmr::new_delete_resource();
+    books_.reserve(symbol_count);
+    for (std::size_t i = 0; i < symbol_count; ++i) {
+        books_.emplace_back(resource);
+    }
 }
+
+MatchingEngine::~MatchingEngine() = default;
+MatchingEngine::MatchingEngine(MatchingEngine&&) noexcept = default;
 
 template <Side IncomingSide>
 Quantity MatchingEngine::match(OrderBook& book, PriceCents limit, Quantity remaining,
