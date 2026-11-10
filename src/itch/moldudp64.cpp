@@ -206,31 +206,52 @@ bool Sequencer::fill_hole(std::uint64_t seq) {
 }
 
 std::uint32_t Sequencer::copy_packet(const ParsedPacket& p) {
+    // The copy spans all of the packet's blocks (duplicates included): one new message must
+    // not pin a large packet for free, so the capacity actually held counts against the bound.
     const std::uint8_t* base = p.messages.front().data();
     const std::uint8_t* last = p.messages.back().data() + p.messages.back().size();
-    std::uint32_t id;
+    const auto span = static_cast<std::size_t>(last - base);
+    const std::size_t room = o_.max_buffered_bytes - chunk_bytes_;
+    std::uint32_t id = kNoChunk;
     if (!free_chunks_.empty()) {
         id = free_chunks_.back();
+        std::vector<std::uint8_t>& old = chunks_[id].bytes;
+        const std::size_t cap = old.capacity();
+        // Reuse the old allocation only if it is not much larger than needed.
+        if (cap < span || cap > 2 * span + 4096 || cap > room) {
+            pooled_bytes_ -= cap;
+            std::vector<std::uint8_t>().swap(old);
+        }
+    }
+    const std::size_t held =
+        id != kNoChunk ? std::max(span, chunks_[id].bytes.capacity()) : span;
+    if (held > room) {
+        return kNoChunk;
+    }
+    if (id != kNoChunk) {
         free_chunks_.pop_back();
         pooled_bytes_ -= chunks_[id].bytes.capacity();
     } else {
         id = static_cast<std::uint32_t>(chunks_.size());
         chunks_.emplace_back();
     }
-    chunks_[id].bytes.assign(base, last);
-    chunks_[id].live = 0;
-    chunk_bytes_ += chunks_[id].bytes.size();
+    Chunk& c = chunks_[id];
+    c.bytes.assign(base, last);
+    c.live = 0;
+    c.charged = c.bytes.capacity();
+    chunk_bytes_ += c.charged;
     return id;
 }
 
 void Sequencer::release_chunk(std::uint32_t id) {
-    std::vector<std::uint8_t>& bytes = chunks_[id].bytes;
-    chunk_bytes_ -= bytes.size();
-    if (pooled_bytes_ + bytes.capacity() <= o_.max_buffered_bytes / 4) {
-        pooled_bytes_ += bytes.capacity();  // keep the capacity for the next packet copy
-        bytes.clear();
+    Chunk& c = chunks_[id];
+    chunk_bytes_ -= c.charged;
+    c.charged = 0;
+    if (pooled_bytes_ + c.bytes.capacity() <= o_.max_buffered_bytes / 4) {
+        pooled_bytes_ += c.bytes.capacity();  // keep the capacity for the next packet copy
+        c.bytes.clear();
     } else {
-        std::vector<std::uint8_t>().swap(bytes);  // keep the pool itself bounded
+        std::vector<std::uint8_t>().swap(c.bytes);  // keep the pool itself bounded
     }
     free_chunks_.push_back(id);
 }

@@ -198,6 +198,7 @@ private:
     // (capacity kept) when the last of them is released.
     struct Chunk {
         std::vector<std::uint8_t> bytes;
+        std::size_t charged = 0;  // capacity counted in chunk_bytes_ while live
         std::uint32_t live = 0;
     };
 
@@ -206,6 +207,8 @@ private:
     void note_horizon(std::uint64_t end);
     void open_hole(std::uint64_t end);  // [horizon_, end) is missing; horizon_ = end
     [[nodiscard]] bool fill_hole(std::uint64_t seq);  // false if seq is not in a hole
+    // Copies the packet's message blocks into a chunk, or returns kNoChunk if the capacity
+    // it would hold exceeds the byte bound.
     std::uint32_t copy_packet(const ParsedPacket& p);
     void release_chunk(std::uint32_t id);
 
@@ -226,7 +229,7 @@ private:
     std::map<std::uint64_t, std::uint64_t> holes_;
     std::size_t buffered_count_ = 0;
     std::size_t buffered_bytes_ = 0;  // payload bytes of buffered messages (statistics)
-    std::size_t chunk_bytes_ = 0;     // bytes of live packet copies (≤ max_buffered_bytes)
+    std::size_t chunk_bytes_ = 0;     // capacity held by live packet copies (≤ max_buffered_bytes)
     std::size_t pooled_bytes_ = 0;    // capacity kept by free chunks (≤ max_buffered_bytes / 4)
     Stats stats_;
 };
@@ -292,15 +295,11 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
                 return;
             }
             if (chunk == kNoChunk) {
-                // The copy spans the packet's blocks, so it is what counts against the byte
-                // bound (one new message must not pin a large packet of duplicates for free).
-                const auto span = static_cast<std::size_t>(
-                    p.messages.back().data() + p.messages.back().size() - p.messages.front().data());
-                if (span > o_.max_buffered_bytes - chunk_bytes_) {
-                    state_ = State::Failed;
+                chunk = copy_packet(p);
+                if (chunk == kNoChunk) {
+                    state_ = State::Failed;  // the copy would exceed the byte bound
                     return;
                 }
-                chunk = copy_packet(p);
             }
             const auto k = static_cast<std::size_t>(seq - next_);
             if (k >= window_.size()) {
