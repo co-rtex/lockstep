@@ -108,6 +108,18 @@ build may run at the same time: a UBSan build compiled concurrently once picked 
 hand to probe specific rules, so the score is not a measure of coverage. It complements
 `scripts/coverage.sh`.
 
+### Hostile command-line arguments
+
+`python3 tools/cli_arg_sweep.py` (≈ 2.5 min) gives every value flag of every offline
+subcommand, and the client commands against a closed port, 21 hostile values. These include
+empty, non-numeric, negative, `2^64`, `2^32`, non-ASCII and 5 000 bytes. The sweep fails if
+any run dies on a signal, aborts, prints an uncaught-exception banner, or exits outside 0–4.
+Its first run (861 runs) found two arguments that allocated until the OS killed the process:
+`itch replay --expected-orders 2^64−1` and `benchmark --orders 2^32`. Both are now bounded
+(`87a883b`; test `ItchBook.ExpectedOrdersAboveCapacityIsRejected`), and the sweep passes.
+Requests for billions of trials or generated messages run as asked; the sweep stops them
+after 20 s and lists them.
+
 ## Test matrix (ITCH 5.0 market data)
 
 Full table in [itch.md § Verification](itch.md#verification): golden bytes for all 23 types,
