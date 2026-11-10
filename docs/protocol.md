@@ -253,5 +253,8 @@ Tests (`tests/mirror_test.cpp`): every state transition on crafted messages; a s
 follows two concurrent traders with in-band verification every 100 ms; a mirror stalled for
 600 ms against a server with an 8-frame outbound queue, which is cut off, refuses the broken
 feed, reconnects and ends verified; and a subscribe whose baseline exceeds the frame limit,
-which never goes live and applies nothing. The session tests passed 15 repeated runs.
+which never goes live and applies nothing. A lossy TCP relay test puts a proxy between
+server and mirror that silently drops the 20th `book_update` frame on the first connection:
+the mirror reports exactly one gap, applies nothing after it, resubscribes through a clean
+connection and ends verified. All mirror tests passed 10 repeated runs.
 

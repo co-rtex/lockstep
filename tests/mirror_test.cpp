@@ -2,11 +2,18 @@
 // real server under load, with induced slow-consumer cut-offs and failed subscribes.
 #include <gtest/gtest.h>
 
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <atomic>
+#include <mutex>
 #include <thread>
 
 #include "enginex/client.hpp"
 #include "enginex/mirror.hpp"
+#include "enginex/protocol.hpp"
+#include "enginex/socket.hpp"
 #include "enginex/rng.hpp"
 #include "enginex/server.hpp"
 
@@ -215,6 +222,125 @@ TEST(FeedMirrorSession, StalledMirrorIsCutOffThenResyncsToTheExactBook) {
     EXPECT_EQ(r.stats.mismatches, 0U);
     EXPECT_TRUE(r.ok()) << r.last_problem;
     EXPECT_GE(rs.server->stats().slow_consumer_disconnects, 1U);
+}
+
+// TCP proxy that silently drops the `drop_nth` book_update frame on its first connection
+// (frame loss that TCP itself would never produce, e.g. a buggy relay). Later connections are
+// forwarded intact.
+class LossyProxy {
+public:
+    LossyProxy(std::uint16_t upstream, int drop_nth)
+        : upstream_(upstream), drop_nth_(drop_nth), listener_(listen_tcp("127.0.0.1", 0)) {
+        port_ = local_port(listener_.fd());
+        acceptor_ = std::thread([this] { accept_loop(); });
+    }
+    ~LossyProxy() {
+        stop_ = true;
+        ::shutdown(listener_.fd(), SHUT_RDWR);
+        acceptor_.join();
+        std::lock_guard lock(mu_);
+        for (auto& t : pumps_) t.join();
+    }
+    [[nodiscard]] std::uint16_t port() const { return port_; }
+    [[nodiscard]] int dropped() const { return dropped_.load(); }
+
+private:
+    void accept_loop() {
+        int conn_no = 0;
+        while (!stop_) {
+            // accept() does not honor SO_RCVTIMEO on macOS: wait with poll() so `stop_` is seen.
+            pollfd p{listener_.fd(), POLLIN, 0};
+            if (::poll(&p, 1, 100) <= 0) {
+                continue;
+            }
+            const int fd = ::accept(listener_.fd(), nullptr, nullptr);
+            if (fd < 0) {
+                continue;
+            }
+            auto down = std::make_shared<Socket>(fd);
+            auto up = std::make_shared<Socket>(connect_tcp("127.0.0.1", upstream_, 2s));
+            configure_stream(down->fd(), 100ms, 2000ms);
+            configure_stream(up->fd(), 100ms, 2000ms);
+            const bool lossy = conn_no++ == 0;
+            std::lock_guard lock(mu_);
+            pumps_.emplace_back([this, down, up] { copy_raw(*down, *up); });
+            pumps_.emplace_back([this, down, up, lossy] { copy_frames(*up, *down, lossy); });
+        }
+    }
+    void copy_raw(Socket& from, Socket& to) {
+        char buf[4096];
+        while (!stop_) {
+            const ssize_t n = ::recv(from.fd(), buf, sizeof buf, 0);
+            if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+                break;
+            }
+            if (n > 0 && send_all(to.fd(), std::string_view(buf, static_cast<std::size_t>(n))) != 0) {
+                break;
+            }
+        }
+        ::shutdown(to.fd(), SHUT_RDWR);
+        ::shutdown(from.fd(), SHUT_RDWR);
+    }
+    void copy_frames(Socket& from, Socket& to, bool lossy) {
+        FrameDecoder dec(kMaxServerFrame);
+        char buf[4096];
+        int updates = 0;
+        std::string payload;
+        while (!stop_) {
+            const ssize_t n = ::recv(from.fd(), buf, sizeof buf, 0);
+            if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+                break;
+            }
+            if (n <= 0) {
+                continue;
+            }
+            dec.feed(buf, static_cast<std::size_t>(n));
+            bool ok = true;
+            while (ok && dec.next(payload) == FrameDecoder::Status::Frame) {
+                if (lossy && payload.find("\"type\":\"book_update\"") != std::string::npos &&
+                    ++updates == drop_nth_) {
+                    dropped_.fetch_add(1);
+                    continue;  // the loss
+                }
+                ok = send_all(to.fd(), encode_frame(payload, kMaxServerFrame)) == 0;
+            }
+            if (!ok) {
+                break;
+            }
+        }
+        ::shutdown(to.fd(), SHUT_RDWR);
+        ::shutdown(from.fd(), SHUT_RDWR);
+    }
+
+    std::uint16_t upstream_;
+    int drop_nth_;
+    Socket listener_;
+    std::uint16_t port_ = 0;
+    std::atomic<bool> stop_{false};
+    std::atomic<int> dropped_{0};
+    std::thread acceptor_;
+    std::mutex mu_;
+    std::vector<std::thread> pumps_;
+};
+
+TEST(FeedMirrorSession, DroppedEventIsDetectedAsGapAndRecoveredBySnapshot) {
+    Running rs(ServerOptions{});
+    LossyProxy proxy(rs.server->port(), /*drop_nth=*/20);
+    std::atomic<bool> stop{false};
+    std::thread t1(trade, rs.server->port(), std::ref(stop), 5);
+    FeedMirror m;
+    MirrorOptions o;
+    o.port = proxy.port();  // the mirror reads through the lossy relay
+    o.duration = 1500ms;
+    o.verify_every = 100ms;
+    const MirrorReport r = run_mirror(o, m);
+    stop = true;
+    t1.join();
+    ASSERT_EQ(proxy.dropped(), 1);
+    EXPECT_EQ(r.stats.gaps, 1U) << r.last_problem;  // detected, not applied
+    EXPECT_EQ(r.connections, 2U);                    // resubscribed through a clean connection
+    EXPECT_EQ(r.stats.mismatches, 0U);
+    EXPECT_TRUE(r.ok()) << r.last_problem;
 }
 
 TEST(FeedMirrorSession, OversizedBaselineNeverGoesLive) {
