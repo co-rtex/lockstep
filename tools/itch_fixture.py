@@ -210,6 +210,33 @@ def mold_packets():
     return bytes(out)
 
 
+def mold_gaps():
+    """Fuzz seed for the MoldUDP64 reorder buffer: packets out of order, a heartbeat that
+    reveals a hole, a later packet that opens an adjacent hole (merge), fills in the middle
+    of holes, overlapping retransmissions and an end of session (2-byte length before each)."""
+    data, _ = lifecycle()
+    msgs, pos = [], 0
+    while pos < len(data):
+        n = struct.unpack(">H", data[pos:pos + 2])[0]
+        msgs.append(data[pos + 2:pos + 2 + n])
+        pos += 2 + n
+    session = b"FIXTURE".ljust(10)
+
+    def packet(first, count):
+        pkt = session + struct.pack(">QH", first, count)
+        for s in range(first, first + count):
+            m = msgs[(s - 1) % len(msgs)]
+            pkt += struct.pack(">H", len(m)) + m
+        return pkt
+
+    def control(next_seq, code):
+        return session + struct.pack(">QH", next_seq, code)
+
+    order = [packet(1, 3), control(13, 0), packet(16, 3), packet(7, 3), packet(2, 4),
+             packet(4, 3), packet(10, 6), control(19, 0xFFFF), packet(19, 2), control(21, 0xFFFF)]
+    return b"".join(struct.pack(">H", len(p)) + p for p in order)
+
+
 def main():
     check = "--check" in sys.argv[1:]
     stale = []
@@ -224,15 +251,16 @@ def main():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
                 print(f"wrote {path} ({len(content)} bytes)")
-    corpus = pathlib.Path(__file__).resolve().parent.parent / "fuzz" / "corpus" / "mold_packets.bin"
-    content = mold_packets()
-    if check:
-        if not corpus.exists() or corpus.read_bytes() != content:
-            stale.append(str(corpus))
-    else:
-        corpus.parent.mkdir(parents=True, exist_ok=True)
-        corpus.write_bytes(content)
-        print(f"wrote {corpus} ({len(content)} bytes)")
+    corpus_dir = pathlib.Path(__file__).resolve().parent.parent / "fuzz" / "corpus"
+    for corpus, content in ((corpus_dir / "mold_packets.bin", mold_packets()),
+                            (corpus_dir / "mold_gaps.bin", mold_gaps())):
+        if check:
+            if not corpus.exists() or corpus.read_bytes() != content:
+                stale.append(str(corpus))
+        else:
+            corpus.parent.mkdir(parents=True, exist_ok=True)
+            corpus.write_bytes(content)
+            print(f"wrote {corpus} ({len(content)} bytes)")
     if stale:
         print("stale fixtures (run tools/itch_fixture.py):", *stale, sep="\n  ")
         return 1

@@ -71,7 +71,8 @@ add_test(NAME fuzz_itch_standalone_smoke
          COMMAND enginex_fuzz_itch_standalone 20000 1
                  ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/lifecycle.itch
                  ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/malformed.itch
-                 ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_packets.bin)
+                 ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_packets.bin
+                 ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_gaps.bin)
 set_tests_properties(fuzz_itch_standalone_smoke PROPERTIES LABELS "itch;fuzz" TIMEOUT 300)
 
 # Every ITCH book layout variant must reconstruct byte-identical books (D27/D28).

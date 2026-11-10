@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     }
     std::uint64_t bytes = 0;
     for (std::uint64_t it = 0; it < iterations; ++it) {
-        std::vector<std::uint8_t> in(1, static_cast<std::uint8_t>(rng.below(2)));  // target
+        std::vector<std::uint8_t> in(1, static_cast<std::uint8_t>(rng.below(3)));  // target
         const auto& base = corpus[rng.below(corpus.size())];
         in.insert(in.end(), base.begin(), base.end());
         const std::uint64_t edits = 1 + rng.below(8);
