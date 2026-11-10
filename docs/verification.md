@@ -79,18 +79,25 @@ Deliberate mutations, each reverted after the check:
 * (Sprint, ITCH) Letting a same-price replace keep queue priority failed 2 scenario tests and
   all 12 `ItchDifferential` seeds.
 
-**Scripted mutation check.** `tools/mutation_check.py` applies 33 hand-chosen bugs one at a
+**Scripted mutation check.** `tools/mutation_check.py` applies 41 hand-chosen bugs one at a
 time across the ITCH decoder, book builder, order indexes, framer, MoldUDP64 sequencer,
 mirror, matching engine (price-time priority, marketability), idempotency, journal (CRC,
-torn-tail classification, truncation) and server. For each one it rebuilds and runs the
+torn-tail classification, truncation), request validation bounds and server
+(publication and replies after a failed flush, fail-stop). For each one it rebuilds and runs the
 relevant tests, then restores the file. It refuses to start when those files have
 uncommitted changes and checks afterwards that all were restored. The first run of 22 killed
 19 of 20 valid mutants (2 had not compiled under `-Werror` and were rewritten). The one
 survivor was real: if a retransmitted copy of a message *already buffered* behind a hole was
 not recognised as a duplicate, `std::map::emplace` quietly ignored it, but the buffer
 accounting still counted it. A lossy channel would then use up the buffer bound and fail for
-no reason. `MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity` now kills it. The current
-score is **33/33** (107 s on the M3 with an incremental release build). Run it with
+no reason. `MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity` now kills it. A later batch found a
+second gap. If the server published a command's `book_update` although the journal flush had
+failed, no test noticed, and subscribers would have seen an event that a restart would
+lose. `Server.JournalFailureNeverPublishesTheUndurableEvent` now kills it. One mutant
+was equivalent and is excluded with a comment in the script: dropping the event-watermark
+rollback after a failed commit cannot be observed, because both failure modes are permanent
+fail-stops. The current score is **41/41** (150 s on the M3 with an incremental release
+build). Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The mutants are chosen by hand to probe
 specific rules, so the score is not a measure of coverage. It complements

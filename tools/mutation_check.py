@@ -93,6 +93,19 @@ MUTANTS = [
      "if ((void)size, false) {", 0, CORE),
     ("state: conflicting body treated as duplicate", "src/state.cpp",
      "if (original->command == cmd) {", "if (true) {", 0, CORE),
+    ("state: price one tick above the maximum accepted", "src/state.cpp",
+     "order->price < kMinPrice || order->price > kMaxPrice",
+     "order->price < kMinPrice || order->price > kMaxPrice + 1", 0, CORE),
+    ("state: zero quantity accepted", "src/state.cpp",
+     "order->quantity < kMinQuantity || order->quantity > kMaxQuantity",
+     "order->quantity < kMinQuantity - 1 || order->quantity > kMaxQuantity", 0, CORE),
+    ("state: open-order limit off by one", "src/state.cpp",
+     "if (engine_.open_order_count() >= config_.max_open_orders) {",
+     "if (engine_.open_order_count() > config_.max_open_orders) {", 0, CORE),
+    ("state: request_id at the length limit rejected", "src/state.cpp",
+     "if (id.size() > kMaxRequestIdBytes) {", "if (id.size() >= kMaxRequestIdBytes) {", 0, CORE),
+    ("state: cancel may target a cancel command", "src/state.cpp",
+     "if (!std::holds_alternative<NewLimitOrder>(record.command)) {", "if (false) {", 0, CORE),
     ("journal: record CRC not checked", "src/journal.cpp",
      "if (crc32c(payload) != crc) {",
      "if (crc32c(payload) != crc && false) {", 0, CORE),
@@ -101,6 +114,16 @@ MUTANTS = [
     ("server: snapshot served after internal fail-stop", "src/server.cpp",
      "} else if (fatal_) {\n            // The in-memory state may hold",
      "} else if (false) {\n            // The in-memory state may hold", 0, "Server.*"),
+    ("server: event published although the flush failed", "src/server.cpp",
+     "if (err == ErrorCode::None && p.has_event) {", "if (p.has_event) {", 0, "Server.*"),
+    ("server: reply after a failed flush claims success", "src/server.cpp",
+     "if (err != ErrorCode::None && p.state_dependent) {", "if (false) {", 0, "Server.*"),
+    ("server: batch flushed after an internal fail-stop", "src/server.cpp",
+     "fatal_ ? ErrorCode::InternalError : backend_.flush();", "backend_.flush();", 0, "Server.*"),
+    # Not listed: removing `staged_event_ = published_event_;` (watermark rollback after a
+    # failed commit) survives because it is equivalent: both failures are permanent
+    # fail-stops (DurableExchange::failed_ never clears; fatal_ short-circuits handle()), so
+    # no event is ever staged or published again. The line is kept as defence in depth.
     ("server: slow-consumer notice reports stale watermark", "src/server.cpp",
      "s->last_event_queued = seq;", "(void)seq;", 0, "Server.*:FeedMirror*"),
 ]

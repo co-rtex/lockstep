@@ -946,5 +946,41 @@ TEST(Server, JournalFailureFailStopsOverTheNetwork) {
     server.stop();
 }
 
+// A command whose journal flush failed was never made durable, so subscribers must never see
+// its book_update: after a restart the exchange would not contain it.
+TEST(Server, JournalFailureNeverPublishesTheUndurableEvent) {
+    test::TempDir dir;
+    ServerOptions o;
+    o.host = "127.0.0.1";
+    o.port = 0;
+    DurableOptions d;
+    d.journal_path = dir.file("fail.exj");
+    d.faults = journal::FaultPlan::parse("fail_sync=2");
+    o.journal = d;
+    Server server(o);
+    server.start();
+    Client sub = Client::connect("127.0.0.1", server.port(), kTimeout);
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}, {"request_id", "sub"}}));
+    auto snap = sub.receive(kTimeout);
+    ASSERT_TRUE(snap);
+    ASSERT_TRUE((*snap)["subscribed"].get<bool>());
+    Client c = Client::connect("127.0.0.1", server.port(), kTimeout);
+    auto ok = c.request(order("a", "BUY", 100, 1), kTimeout);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ((*ok)["type"], "ack");
+    auto ev = sub.receive(kTimeout);  // the durable command is published
+    ASSERT_TRUE(ev);
+    ASSERT_EQ((*ev)["type"], "book_update");
+    EXPECT_EQ((*ev)["event_sequence"], 1);
+    auto failed = c.request(order("b", "SELL", 101, 1), kTimeout);
+    ASSERT_TRUE(failed);
+    ASSERT_EQ((*failed)["code"], "JOURNAL_IO_ERROR");
+    // Anything the subscriber still receives (it may be disconnected) is not an event.
+    while (auto m = sub.receive(std::chrono::milliseconds(300))) {
+        EXPECT_NE((*m)["type"], "book_update") << m->dump();
+    }
+    server.stop();
+}
+
 }  // namespace
 }  // namespace enginex::net
