@@ -56,8 +56,9 @@ are in-process and single-threaded; none is a wire latency.
 * **Two server bugs, reproduced before fixing.** A subscriber whose snapshot was too large
   was registered with no baseline. A snapshot after an internal fail-stop could expose
   never-durable state.
-* **Six independent adversarial reviews**. Five led to fixes with regression tests; the
-  sixth, of the request-id index, found no defect. Findings included:
+* **Seven independent adversarial reviews**. Five led to fixes with regression tests. The
+  last two, of the request-id index and the bounded price levels, found no defect. Findings
+  included:
   * strict-replay counters drifting after a stop;
   * mirror exceptions escaping a session, and partial application of a malformed update;
   * unclamped directory growth in the paged index;
