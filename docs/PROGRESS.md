@@ -222,7 +222,10 @@ Commands and results (latest):
 * `scripts/real_data_check.sh` (opt-in; network): strict replay of 21 255 695 real messages
   with 0 decode errors and 0 anomalies; reference-model differential OK.
 * `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
-  on the ITCH tests (UBSan build): passed.
+  on the ITCH tests (UBSan build): passed. Re-run at `9ab4162` on the whole gtest binary
+  (hardened build, all but the opt-in real-data test): 502 passed. `leaks --atExit` at
+  `9ab4162`: 498 tests (fork crash tests and real-data test excluded), 0 leaks; CLI replay with
+  `--level-vector-limit 2 --checkpoint-every`, a failing `--strict` replay and `mold-sim`: 0 leaks.
 * `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
 * Hardened libc++ (`cmake --preset hardened`, `_LIBCPP_HARDENING_MODE_DEBUG`; a deliberate
   out-of-range `span` index in a scratch program aborts with exit 134 under the same flag):
