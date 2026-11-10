@@ -78,7 +78,8 @@ struct ParsedPacket {
 // * A packet ahead of the next expected sequence is a gap. Its messages are held in a bounded
 //   reorder buffer; missing ranges are reported for re-request. When the hole is filled
 //   (reordered packet or retransmission), buffered messages are released in order.
-// * If the buffer limit would be exceeded, the gap is declared unrecoverable: the sequencer
+// * If a buffer limit (messages or bytes) would be exceeded, or a packet starts more than
+//   `max_ahead` beyond the next expected sequence, the gap is declared unrecoverable: the sequencer
 //   stops releasing anything (Failed) instead of skipping messages. Consumers that maintain
 //   state (an order book) must then rebuild from a snapshot or the start of the session.
 // * Packets from a different session are rejected (counted); a session is fixed by the first
@@ -88,8 +89,12 @@ public:
     enum class State : std::uint8_t { Running, Gap, Ended, Failed };
 
     struct Options {
-        std::uint64_t first_sequence = 1;          // sequence numbers start at 1
-        std::size_t max_buffered_messages = 65536; // reorder buffer bound
+        std::uint64_t first_sequence = 1;               // sequence numbers start at 1
+        std::size_t max_buffered_messages = 65536;      // reorder buffer bound (messages)
+        std::size_t max_buffered_bytes = 64U << 20U;    // reorder buffer bound (payload bytes)
+        // A packet whose messages would start more than this far beyond the next expected
+        // sequence is treated as unrecoverable (a huge loss and a corrupt header look alike).
+        std::uint64_t max_ahead = 1'000'000;
     };
 
     struct Stats {
@@ -102,6 +107,7 @@ public:
         std::uint64_t buffered_peak = 0;
         std::uint64_t malformed_packets = 0;
         std::uint64_t foreign_session_packets = 0;
+        std::uint64_t buffered_bytes_peak = 0;
     };
 
     explicit Sequencer(Options options);
@@ -143,6 +149,7 @@ private:
     // Messages ahead of next_, keyed by sequence (copies; the packet buffer is transient).
     std::map<std::uint64_t, std::vector<std::uint8_t>> pending_;
     std::size_t buffered_count_ = 0;
+    std::size_t buffered_bytes_ = 0;
     Stats stats_;
 };
 
@@ -159,6 +166,10 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
     }
     ++stats_.packets;
     const PacketHeader& h = p.header;
+    if (h.sequence > next_ && h.sequence - next_ > o_.max_ahead) {
+        state_ = State::Failed;  // too far ahead to ever be filled by buffering
+        return;
+    }
     if (h.count == kHeartbeat || h.count == kEndOfSession) {
         // Control packets carry the next expected sequence number.
         if (h.count == kHeartbeat) {
@@ -183,14 +194,18 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
                 ++next_;
                 continue;
             }
-            if (buffered_count_ >= o_.max_buffered_messages) {
+            if (buffered_count_ >= o_.max_buffered_messages ||
+                p.messages[i].size() > o_.max_buffered_bytes - buffered_bytes_) {
                 state_ = State::Failed;  // unrecoverable: never skip messages
                 return;
             }
             pending_.emplace(seq, std::vector<std::uint8_t>(p.messages[i].begin(),
                                                             p.messages[i].end()));
             ++buffered_count_;
+            buffered_bytes_ += p.messages[i].size();
             stats_.buffered_peak = std::max<std::uint64_t>(stats_.buffered_peak, buffered_count_);
+            stats_.buffered_bytes_peak =
+                std::max<std::uint64_t>(stats_.buffered_bytes_peak, buffered_bytes_);
         }
     }
     // Release buffered messages that are now contiguous.
@@ -198,6 +213,7 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
         deliver(it->first, std::span<const std::uint8_t>(it->second));
         ++stats_.delivered;
         ++next_;
+        buffered_bytes_ -= it->second.size();
         it = pending_.erase(it);
         --buffered_count_;
     }

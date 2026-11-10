@@ -73,8 +73,10 @@ of the specification and the Wireshark dissector, which agree.
   the already-delivered part of overlapping packets. It holds packets that arrive ahead of a
   hole in a bounded reorder buffer and reports `missing()` ranges for re-request (heartbeats
   can reveal a hole with no data packet following). When the hole is filled, it drains in
-  order. If the buffer bound would be exceeded, it goes `Failed` and **stops** rather than
-  skipping. A book built on top of it is then correct up to the hole and never silently
+  order. If a buffer bound would be exceeded (default 65 536 messages or 64 MiB of payload),
+  or a packet starts more than `max_ahead` (default 10⁶) beyond the next expected sequence, it
+  goes `Failed` and **stops** rather than skipping. A corrupt header and a huge loss look the
+  same, and neither may grow memory without bound. A book built on top of it is then correct up to the hole and never silently
   wrong after it. Packets from another session are rejected.
 * Tests (`itch_moldudp64_test.cpp`): golden packet bytes; every truncation, trailing bytes,
   control with payload and sequence wrap; 100 000 random packets; each sequencer rule. An

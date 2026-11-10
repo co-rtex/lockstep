@@ -183,6 +183,29 @@ TEST(MoldSequencer, BufferLimitFailsInsteadOfSkipping) {
     EXPECT_TRUE(out.seqs.empty());
 }
 
+TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
+    Sequencer::Options o;
+    o.max_buffered_bytes = 10;
+    Sequencer q(o);
+    Sink out;
+    q.on_packet(build_packet(kS, 2, {msg(2, 6)}), out);  // 6 bytes buffered behind a hole
+    EXPECT_EQ(q.state(), Sequencer::State::Gap);
+    EXPECT_EQ(q.stats().buffered_bytes_peak, 6U);
+    q.on_packet(build_packet(kS, 3, {msg(3, 5)}), out);  // 11 > 10
+    EXPECT_EQ(q.state(), Sequencer::State::Failed);
+
+    Sequencer::Options far;
+    far.max_ahead = 100;
+    Sequencer r(far);
+    Sink o2;
+    r.on_packet(build_packet(kS, 1, {msg(1)}), o2);
+    r.on_packet(build_packet(kS, 102, {msg(9)}), o2);  // 100 ahead of next (2): still allowed
+    EXPECT_EQ(r.state(), Sequencer::State::Gap);
+    r.on_packet(build_control(kS, 1'000'000'000, kHeartbeat), o2);  // corrupt or huge loss
+    EXPECT_EQ(r.state(), Sequencer::State::Failed);
+    EXPECT_EQ(o2.seqs, (std::vector<std::uint64_t>{1}));
+}
+
 TEST(MoldSequencer, ForeignSessionAndMalformedPacketsAreIgnored) {
     Sequencer q;
     Sink out;
