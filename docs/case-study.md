@@ -74,7 +74,7 @@ The tests are designed so that the code and the tests cannot share one mistake:
   as a target. It showed the CLI `generate`/`dump` paths, the stream read-error path and the
   capacity hint were never executed. All are tested now. A run at commit `9c98867`
   measured 94.2 % lines and 86.4 % branches over the new code. After the UDP transport
-  (`85d38f4`) it was 94.5 % lines and 85.5 % branches.
+  (`85d38f4`) it was 94.5 % lines and 85.5 % branches, and at `2881634` 94.8 % and 85.6 %.
 * **Fault injection** over real sockets: a TCP relay that silently drops one `book_update`
   (the mirror reports exactly one gap, applies nothing after it, resubscribes and verifies);
   a consumer stalled until the server cuts it off; a baseline larger than the frame limit;
