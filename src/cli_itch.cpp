@@ -263,7 +263,8 @@ void print_text(const Json& j) {
 }
 
 int cmd_replay_itch(const std::vector<std::string>& argv) {
-    const Args a(argv, {"input", "depth", "symbol", "metrics-out", "expected-orders"},
+    const Args a(argv,
+                 {"input", "depth", "symbol", "metrics-out", "expected-orders", "level-vector-limit"},
                  {"strict", "json"});
     const std::string input = a.require("input");
     const std::size_t depth = a.get_u64("depth", 5);
@@ -272,7 +273,13 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
     opts.strict = a.flag("strict");
     // Capacity hint: size it near the expected peak of live orders (docs/benchmarks.md shows
     // both too small (rehash spikes) and far too large (cache misses) cost time).
-    BookBuilder book(a.get_u64("expected-orders", 0));
+    // --level-vector-limit (testing aid): a small value forces the deep-level path (D32); the
+    // books and the state hash must not change.
+    const std::uint64_t limit = a.get_u64("level-vector-limit", BookBuilder::kDefaultLevelVectorLimit);
+    if (limit < 2 || limit > (std::uint64_t{1} << 30U)) {
+        throw UsageError("--level-vector-limit must be in [2, 2^30]");
+    }
+    BookBuilder book(a.get_u64("expected-orders", 0), static_cast<std::size_t>(limit));
     auto in = open_input(input);
     const auto t0 = std::chrono::steady_clock::now();
     const ReplayResult r = replay(*in, book, opts);

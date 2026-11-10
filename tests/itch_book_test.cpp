@@ -380,6 +380,72 @@ TEST_P(ItchDifferential, MatchesReferenceModelMessageByMessage) {
 
 INSTANTIATE_TEST_SUITE_P(Seeds, ItchDifferential, ::testing::Range(0U, 12U));
 
+// The bounded level vector (D32) with tiny limits: synthetic books are deeper than 2–8 levels,
+// so levels spill into the deep map and are refilled from it all the time. Every check of the
+// differential test must still hold, and the state hash must equal the default builder's.
+class ItchLevelBound : public ::testing::TestWithParam<std::size_t> {};
+
+TEST_P(ItchLevelBound, SpillAndRefillMatchTheReferenceModel) {
+    std::size_t deep_seen = 0;
+    for (std::uint32_t seed = 0; seed < 6; ++seed) {
+        SyntheticOptions o;
+        o.seed = 5000 + seed;
+        o.messages = 20'000;
+        o.symbols = static_cast<std::uint16_t>(1 + seed % 3);
+        o.anomalies_per_million = seed % 2 == 0 ? 0 : 20'000;
+        const std::vector<Message> stream = generate(o);
+        BookBuilder b(0, GetParam());
+        BookBuilder plain;
+        test::ReferenceBook ref;
+        for (std::size_t i = 0; i < stream.size(); ++i) {
+            const ApplyOutcome out = b.apply(stream[i]);
+            ASSERT_EQ(out.anomaly, ref.apply(stream[i])) << "message " << i;
+            ASSERT_EQ(out.anomaly, plain.apply(stream[i]).anomaly);
+            if (i % 499 == 0) {
+                compare_books(b, ref, o.symbols, i);
+                const auto bad = b.check_invariants();
+                ASSERT_FALSE(bad) << *bad;
+                for (std::uint16_t l = 1; l <= o.symbols; ++l) {
+                    deep_seen += b.level_count(l, Side::Buy) > GetParam() ? 1 : 0;
+                }
+            }
+        }
+        compare_books(b, ref, o.symbols, stream.size());
+        EXPECT_EQ(b.state_hash(), plain.state_hash()) << "seed " << seed;
+    }
+    EXPECT_GT(deep_seen, 0U) << "books never exceeded the limit: spill/refill not exercised";
+}
+
+INSTANTIATE_TEST_SUITE_P(Limits, ItchLevelBound, ::testing::Values(2U, 3U, 8U));
+
+// The hostile pattern the bound exists for: every add opens a level worse than all others,
+// then the best levels are deleted one by one (forcing refills), with a few executions mixed in.
+TEST(ItchLevelBound, HostileDeepBookStaysCorrectWithTheBound) {
+    BookBuilder bounded(0, 64);
+    BookBuilder plain;
+    test::ReferenceBook ref;
+    auto apply_all = [&](const Message& m) {
+        const Anomaly expected = ref.apply(m);
+        ASSERT_EQ(bounded.apply(m).anomaly, expected);
+        ASSERT_EQ(plain.apply(m).anomaly, expected);
+    };
+    constexpr std::uint64_t kLevels = 3000;
+    for (std::uint64_t i = 1; i <= kLevels; ++i) {  // bids, each one tick worse
+        apply_all(Message{add(i, Side::Buy, static_cast<Price4>(2'000'000 - i), 100)});
+    }
+    EXPECT_EQ(bounded.level_count(kL, Side::Buy), kLevels);
+    compare_books(bounded, ref, 1, 0);
+    for (std::uint64_t i = 1; i <= kLevels; i += 2) {  // delete from the top: refills
+        apply_all(Message{del(i)});
+        if (i % 7 == 0) {
+            apply_all(Message{exec(i + 1, 40)});
+        }
+    }
+    compare_books(bounded, ref, 1, 1);
+    EXPECT_FALSE(bounded.check_invariants());
+    EXPECT_EQ(bounded.state_hash(), plain.state_hash());
+}
+
 // ---- determinism and replay policy ----------------------------------------------------------
 
 TEST(ItchBook, CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty) {

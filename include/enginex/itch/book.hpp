@@ -124,7 +124,12 @@ public:
     // `expected_orders` (optional) pre-sizes the order index and pool so that growth (a full
     // rehash and a pool reallocation, visible as a one-off latency spike) does not happen
     // while the book holds fewer live orders than that.
-    explicit BookBuilder(std::size_t expected_orders = 0);
+    // `level_vector_limit` bounds the contiguous part of each side's price levels (the best
+    // levels); deeper levels go to an ordered map, so no level operation moves more than that
+    // many entries (D32). The default is far above real book depths; tests use small values.
+    static constexpr std::size_t kDefaultLevelVectorLimit = 8192;
+    explicit BookBuilder(std::size_t expected_orders = 0,
+                         std::size_t level_vector_limit = kDefaultLevelVectorLimit);
     ~BookBuilder();
     BookBuilder(const BookBuilder&) = delete;
     BookBuilder& operator=(const BookBuilder&) = delete;

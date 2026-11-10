@@ -133,6 +133,7 @@ class SideLevels {
 public:
     struct Storage {
         NodeArena arena;
+        std::size_t vector_limit = 0;  // unused by the map variant
     };
 #ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
     SideLevels(Side side, Storage*) : side_(side) {}
@@ -172,49 +173,78 @@ private:
 // Lookups are binary searches over contiguous memory; inserting or removing a level near the
 // top of the book moves only the few entries behind it. Level objects live in a deque-based
 // pool (stable addresses) with a free list. Chosen from real-data measurements (D27).
+//
+// The vector holds at most `vector_limit` levels: the best ones. Levels worse than all of them
+// live in `deep_`, an ordered map (every deep rank < every vector rank). Without the bound a
+// feed that keeps opening levels worse than all others moved the whole vector on each insert:
+// 25 µs/msg at 200 k levels against 117 ns for a map (D32). With it, any operation costs
+// O(vector_limit + log n), amortized. Real books stay far below the limit (deepest side seen
+// in the real samples: 3 831 levels), so in practice `deep_` is empty and costs one branch.
 class SideLevels {
 public:
     struct Storage {
         std::deque<Level> levels;
         std::vector<Level*> free;
+        std::size_t vector_limit = 8192;
     };
     SideLevels(Side side, Storage* storage) : side_(side), storage_(storage) {}
 
     Level& get_or_create(Price4 price, bool& created) {
         const std::uint32_t r = rank(price);
+        if (!deep_.empty() && r <= deep_.rbegin()->first) {
+            const auto [dit, inserted] = deep_.try_emplace(r, nullptr);
+            created = inserted;
+            if (inserted) {
+                dit->second = new_level();
+            }
+            return *dit->second;
+        }
         auto it = position(r);
         if (it != v_.end() && it->rank == r) {
             created = false;
             return *it->level;
         }
-        Level* level = nullptr;
-        if (!storage_->free.empty()) {
-            level = storage_->free.back();
-            storage_->free.pop_back();
-            *level = Level{};
-        } else {
-            level = &storage_->levels.emplace_back();
-        }
+        Level* level = new_level();
         v_.insert(it, Entry{r, level});
         created = true;
+        if (v_.size() > storage_->vector_limit) {
+            spill();
+        }
         return *level;
     }
     void erase(Price4 price) {
         const std::uint32_t r = rank(price);
+        if (!deep_.empty() && r <= deep_.rbegin()->first) {
+            const auto dit = deep_.find(r);
+            if (dit == deep_.end()) {
+                throw std::logic_error("ITCH book: erasing a missing price level");
+            }
+            storage_->free.push_back(dit->second);
+            deep_.erase(dit);
+            return;
+        }
         auto it = position(r);
         if (it == v_.end() || it->rank != r) {
             throw std::logic_error("ITCH book: erasing a missing price level");
         }
         storage_->free.push_back(it->level);
         v_.erase(it);
+        if (v_.empty() && !deep_.empty()) {
+            refill();
+        }
     }
-    [[nodiscard]] std::size_t size() const noexcept { return v_.size(); }
+    [[nodiscard]] std::size_t size() const noexcept { return v_.size() + deep_.size(); }
+    [[nodiscard]] std::size_t deep_size() const noexcept { return deep_.size(); }
     template <typename F>
     void for_each_best_first(std::size_t max_levels, F&& f) const {
         std::size_t n = 0;
         for (auto it = v_.rbegin(); it != v_.rend() && (max_levels == 0 || n < max_levels);
              ++it, ++n) {
             f(price_of(it->rank), *it->level);
+        }
+        for (auto it = deep_.rbegin(); it != deep_.rend() && (max_levels == 0 || n < max_levels);
+             ++it, ++n) {
+            f(price_of(it->first), *it->second);
         }
     }
 
@@ -223,6 +253,32 @@ private:
         std::uint32_t rank;
         Level* level;
     };
+    Level* new_level() {
+        if (!storage_->free.empty()) {
+            Level* level = storage_->free.back();
+            storage_->free.pop_back();
+            *level = Level{};
+            return level;
+        }
+        return &storage_->levels.emplace_back();
+    }
+    // Moves the worst half of the vector into the deep map (all of them rank below what stays).
+    void spill() {
+        const std::size_t move = v_.size() / 2;
+        for (std::size_t i = 0; i < move; ++i) {
+            deep_.emplace_hint(deep_.end(), v_[i].rank, v_[i].level);
+        }
+        v_.erase(v_.begin(), v_.begin() + static_cast<std::ptrdiff_t>(move));
+    }
+    // The vector emptied: bring back the best half of the deep map (at least one level).
+    void refill() {
+        const std::size_t move = std::max<std::size_t>(1, std::min(deep_.size(), storage_->vector_limit / 2));
+        auto first = std::prev(deep_.end(), static_cast<std::ptrdiff_t>(move));
+        for (auto it = first; it != deep_.end(); ++it) {
+            v_.push_back(Entry{it->first, it->second});  // ascending rank: stays sorted
+        }
+        deep_.erase(first, deep_.end());
+    }
     // First entry with rank >= r (std::lower_bound semantics). On real data ~80 % of lookups
     // land within 8 entries of the best price (the back), so scan those linearly first and
     // binary-search the rest only when needed.
@@ -247,6 +303,7 @@ private:
     Side side_;
     Storage* storage_;
     std::vector<Entry> v_;
+    std::map<std::uint32_t, Level*> deep_;  // levels worse than every vector entry
 };
 #endif
 
@@ -500,7 +557,12 @@ std::uint64_t BookStats::anomaly_count() const noexcept {
     return n;
 }
 
-BookBuilder::BookBuilder(std::size_t expected_orders) : impl_(std::make_unique<Impl>()) {
+BookBuilder::BookBuilder(std::size_t expected_orders, std::size_t level_vector_limit)
+    : impl_(std::make_unique<Impl>()) {
+    if (level_vector_limit < 2) {
+        throw std::invalid_argument("ITCH book: level_vector_limit must be at least 2");
+    }
+    impl_->level_storage.vector_limit = level_vector_limit;
     if (expected_orders != 0) {
         impl_->index.reserve(expected_orders);
         impl_->pool.reserve(expected_orders);
