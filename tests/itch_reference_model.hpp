@@ -94,6 +94,30 @@ public:
     }
 
     std::size_t live() const { return orders_.size(); }
+
+    // Every live order grouped by (locate, side) in priority order, built in one pass (for
+    // comparing large books without one full scan per query).
+    std::map<std::pair<std::uint16_t, char>, std::vector<OrderView>> grouped() const {
+        std::map<std::pair<std::uint16_t, char>,
+                 std::vector<std::tuple<std::int64_t, std::uint64_t, OrderView>>>
+            tmp;
+        for (const auto& [ref, o] : orders_) {
+            const std::int64_t key = o.side == Side::Buy ? -static_cast<std::int64_t>(o.price)
+                                                         : static_cast<std::int64_t>(o.price);
+            tmp[{o.locate, static_cast<char>(o.side)}].emplace_back(
+                key, o.arrival, OrderView{ref, o.side, o.price, o.shares});
+        }
+        std::map<std::pair<std::uint16_t, char>, std::vector<OrderView>> out;
+        for (auto& [k, v] : tmp) {
+            std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) {
+                return std::tie(std::get<0>(a), std::get<1>(a)) <
+                       std::tie(std::get<0>(b), std::get<1>(b));
+            });
+            auto& dst = out[k];
+            for (const auto& t : v) dst.push_back(std::get<2>(t));
+        }
+        return out;
+    }
     std::uint64_t executed_shares() const { return executed_; }
     std::uint64_t canceled_shares() const { return canceled_; }
 

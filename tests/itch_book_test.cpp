@@ -2,6 +2,9 @@
 // test against the naive reference model, determinism and replay error policy.
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 #include <streambuf>
 
@@ -574,6 +577,42 @@ TEST(ItchReplay, CorruptedFilesNeverBreakInvariants) {
         (void)replay(f, b2);
         ASSERT_EQ(b.state_hash(), b2.state_hash());
     }
+}
+
+// Opt-in: set ENGINEX_ITCH_REAL_FILE to a length-prefixed ITCH 5.0 file (for example a prefix of
+// one of Nasdaq's publicly posted sample files). Never required; skipped otherwise. Replays it
+// strictly through BookBuilder and through the naive reference model, then compares every
+// order of every book.
+TEST(ItchRealData, MatchesReferenceModelIfAvailable) {
+    const char* path = std::getenv("ENGINEX_ITCH_REAL_FILE");
+    if (path == nullptr || *path == '\0') {
+        GTEST_SKIP() << "ENGINEX_ITCH_REAL_FILE not set";
+    }
+    std::ifstream in(path, std::ios::binary);
+    ASSERT_TRUE(in) << path;
+    BookBuilder book(2'000'000);
+    test::ReferenceBook ref;
+    std::uint64_t mismatched_anomalies = 0;
+    ReplayOptions o;
+    o.on_message = [&](const Message& m, const ApplyOutcome& out) {
+        mismatched_anomalies += ref.apply(m) != out.anomaly ? 1 : 0;
+    };
+    const ReplayResult r = replay(in, book, o);
+    EXPECT_EQ(r.decode_error_count(), 0U);
+    EXPECT_TRUE(r.ok() || r.frame_error == FrameError::TruncatedTail) << *r.stopped;
+    EXPECT_EQ(mismatched_anomalies, 0U);
+    EXPECT_EQ(book.stats().anomaly_count(), 0U);
+    const auto groups = ref.grouped();
+    std::size_t compared = 0;
+    for (const auto& [key, orders] : groups) {
+        ASSERT_EQ(book.orders(key.first, static_cast<Side>(key.second)), orders)
+            << "locate " << key.first << " side " << key.second;
+        compared += orders.size();
+    }
+    EXPECT_EQ(compared, book.stats().live_orders);
+    EXPECT_FALSE(book.check_invariants());
+    std::printf("real-data differential: %llu frames, %zu live orders in %zu books compared\n",
+                static_cast<unsigned long long>(r.frames), compared, groups.size());
 }
 
 }  // namespace

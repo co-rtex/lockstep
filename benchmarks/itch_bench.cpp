@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <new>
 #include <string>
 #include <vector>
@@ -69,6 +70,9 @@ struct Options {
     // Cold-book probe: build the book from all but the last N messages (untimed), then time
     // the last N one by one, once warm and once right after a cache flush (0 = off).
     std::size_t cold_probe = 0;
+    // Measure a length-prefixed ITCH file instead of the synthetic stream. It must replay
+    // without anomalies; a truncated final message (e.g. a cut-off sample) is ignored.
+    std::string input;
     std::size_t reserve = 0;  // BookBuilder expected_orders hint (0 = none)
 };
 
@@ -91,7 +95,9 @@ struct Trial {
 
 struct Workload {
     std::vector<std::uint8_t> file;
-    std::vector<Message> messages;
+    std::vector<Message> messages;  // decoded (empty for --input unless book_apply runs)
+    std::size_t count = 0;          // messages in the file
+    std::string source;             // "synthetic" or the input path
 };
 
 std::string utc_now() {
@@ -217,7 +223,7 @@ std::string csv_header() {
            "file_bytes,trial,elapsed_ns,msgs_per_s,ns_per_msg,mib_per_s,allocs,alloc_bytes,"
            "lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,"
            "timer_tick_ns,peak_rss_kib,live_orders,peak_live_orders,state_hash_prefix,order_index,"
-           "reserve,level_alloc,flush_cache_mib";
+           "reserve,level_alloc,flush_cache_mib,source";
 }
 
 void write_row(std::ostream& out, const std::string& started, const std::string& m,
@@ -227,9 +233,9 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
     const int len = std::snprintf(
         buf, sizeof buf,
         "%s,%s,%s %s,%s,%s,%s,%llu,%zu,%u,%zu,%s,%llu,%.0f,%.2f,%.1f,%llu,%llu,%.1f,%llu,%llu,%llu,"
-        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s,%zu\n",
+        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s,%zu,%s\n",
         started.c_str(), bi::kGitSha, bi::kCompilerId, bi::kCompilerVersion, bi::kBuildType,
-        bi::kSystem, m.c_str(), static_cast<unsigned long long>(o.seed), w.messages.size(),
+        bi::kSystem, m.c_str(), static_cast<unsigned long long>(o.seed), w.count,
         static_cast<unsigned>(o.symbols), w.file.size(), t.trial.c_str(),
         static_cast<unsigned long long>(t.elapsed_ns), t.msgs_per_s, 1e9 / t.msgs_per_s,
         t.mib_per_s, static_cast<unsigned long long>(t.allocs),
@@ -242,7 +248,8 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
         static_cast<unsigned long long>(timer.min_nonzero_tick_ns),
         static_cast<unsigned long long>(rss), static_cast<unsigned long long>(t.live_orders),
         static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str(),
-        enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName, o.flush_mib);
+        enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName, o.flush_mib,
+        w.source.c_str());
     if (len < 0 || static_cast<std::size_t>(len) >= sizeof buf) {
         throw std::runtime_error("CSV row does not fit the buffer");
     }
@@ -302,9 +309,36 @@ int run(const Options& o) {
     so.messages = o.messages;
     so.symbols = o.symbols;
     Workload w;
-    w.messages = generate(so);
-    for (const Message& m : w.messages) {
-        append_framed(w.file, m);
+    if (o.input.empty()) {
+        w.source = "synthetic";
+        w.messages = generate(so);
+        for (const Message& m : w.messages) {
+            append_framed(w.file, m);
+        }
+        w.count = w.messages.size();
+    } else {
+        w.source = o.input;
+        std::ifstream f(o.input, std::ios::binary);
+        if (!f) throw std::runtime_error("cannot open " + o.input);
+        w.file.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        // Cut a truncated final message so every pass sees whole messages only.
+        StreamFramer framer;
+        std::size_t whole = 0;
+        const bool want_messages = o.only.empty() || o.only == "itch_book_apply";
+        (void)framer.feed(w.file, [&](std::span<const std::uint8_t> p) {
+            whole += 2 + p.size();
+            ++w.count;
+            if (want_messages) {
+                const DecodeResult d = decode(p);
+                if (const auto* m = std::get_if<Message>(&d)) w.messages.push_back(*m);
+            }
+        });
+        w.file.resize(whole);
+        BookBuilder check(o.reserve);
+        const ReplayResult r = replay(w.file, check);
+        if (!r.ok() || r.decode_error_count() != 0 || check.stats().anomaly_count() != 0) {
+            throw std::runtime_error("input does not replay cleanly; refusing to benchmark it");
+        }
     }
     const metrics::TimerCharacteristics timer = metrics::measure_timer();
     const std::string started = utc_now();
@@ -327,10 +361,16 @@ int run(const Options& o) {
     }
     std::printf("enginex_itch_bench: git %s, %s %s %s, %s\n", bi::kGitSha, bi::kCompilerId,
                 bi::kCompilerVersion, bi::kBuildType, bi::kSystem);
-    std::printf("workload: synthetic ITCH 5.0, seed %llu, %zu messages (%zu lifecycle), %u "
-                "symbols, %zu bytes; %zu trials + 1 warm-up\n",
-                static_cast<unsigned long long>(o.seed), w.messages.size(), o.messages,
-                static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
+    if (o.input.empty()) {
+        std::printf("workload: synthetic ITCH 5.0, seed %llu, %zu messages (%zu lifecycle), %u "
+                    "symbols, %zu bytes; %zu trials + 1 warm-up\n",
+                    static_cast<unsigned long long>(o.seed), w.count, o.messages,
+                    static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
+    } else {
+        std::printf("workload: FILE %s, %zu messages, %zu bytes (in memory); %zu trials + 1 "
+                    "warm-up\n",
+                    o.input.c_str(), w.count, w.file.size(), o.trials);
+    }
     std::printf("book reserve hint: %zu orders; order index: %s; level nodes: %s; cache flush "
                 "before each pass: %zu MiB\n",
                 o.reserve, enginex::itch::kOrderIndexName, enginex::itch::kLevelAllocName,
@@ -407,7 +447,7 @@ int run(const Options& o) {
         std::printf("\n  heap allocations in timed region: median %llu (%.3f per message), "
                     "first pass %llu\n",
                     static_cast<unsigned long long>(med.allocs),
-                    static_cast<double>(med.allocs) / static_cast<double>(w.messages.size()),
+                    static_cast<double>(med.allocs) / static_cast<double>(w.count),
                     static_cast<unsigned long long>(first.allocs));
         if (m == "itch_book_apply" && o.latency) {
             std::printf("  per-message latency (ns, median of trials, includes one now() call): "
@@ -428,7 +468,7 @@ int run(const Options& o) {
                                 static_cast<double>(trials.front().type_ns[u]) /
                                     static_cast<double>(trials.front().type_count[u]),
                                 100.0 * static_cast<double>(trials.front().type_count[u]) /
-                                    static_cast<double>(w.messages.size()));
+                                    static_cast<double>(w.count));
                 }
             }
             std::printf("\n");
@@ -478,6 +518,7 @@ int main(int argc, char** argv) {
             else if (a == "--out") o.out = value();
             else if (a == "--only") o.only = value();
             else if (a == "--cold-probe") o.cold_probe = parse_u64(value());
+            else if (a == "--input") o.input = value();
             else if (a == "--no-latency") o.latency = false;
             else if (a == "--reserve") o.reserve = parse_u64(value());
             else if (a == "--flush-cache-mib") o.flush_mib = parse_u64(value());
