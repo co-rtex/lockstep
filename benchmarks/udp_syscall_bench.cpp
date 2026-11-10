@@ -10,10 +10,12 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "enginex/build_info.hpp"
@@ -28,15 +30,38 @@ double per_op_us(Clock::time_point a, Clock::time_point b, int n) {
 
 }  // namespace
 
+// A positive int in [1, max], or -1.
+int positive_arg(const char* text, int max) {
+    int v = 0;
+    const char* end = text + std::strlen(text);
+    const auto [ptr, ec] = std::from_chars(text, end, v);
+    return ec == std::errc{} && ptr == end && v >= 1 && v <= max ? v : -1;
+}
+
 int main(int argc, char** argv) {
     int n = 4000;  // fits an 8 MiB receive buffer at 1400 bytes
     int trials = 5;
-    for (int i = 1; i + 1 < argc; i += 2) {
-        if (std::strcmp(argv[i], "--datagrams") == 0) n = std::stoi(argv[i + 1]);
-        else if (std::strcmp(argv[i], "--trials") == 0) trials = std::stoi(argv[i + 1]);
+    for (int i = 1; i < argc; i += 2) {
+        const bool known = std::strcmp(argv[i], "--datagrams") == 0 ||
+                           std::strcmp(argv[i], "--trials") == 0;
+        if (!known || i + 1 >= argc) {
+            std::fprintf(stderr, "usage: enginex_udp_syscall_bench [--datagrams N] [--trials T]\n");
+            return 2;
+        }
+        int& target = std::strcmp(argv[i], "--datagrams") == 0 ? n : trials;
+        target = positive_arg(argv[i + 1], 1'000'000);
+        if (target < 0) {
+            std::fprintf(stderr, "enginex_udp_syscall_bench: %s must be in [1, 1000000]\n", argv[i]);
+            return 2;
+        }
     }
+    // Every call below is checked: a failing socket would otherwise "send" at the cost of an
+    // EBADF return and produce a meaningless, flattering number.
     const int rx = ::socket(AF_INET, SOCK_DGRAM, 0);
-    const int tx = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (rx < 0) {
+        std::perror("socket");
+        return 1;
+    }
     const int big = 8 << 20;
     (void)::setsockopt(rx, SOL_SOCKET, SO_RCVBUF, &big, sizeof big);
     sockaddr_in a{};
@@ -70,20 +95,36 @@ int main(int argc, char** argv) {
     int lost = 0;
     for (int t = 0; t < trials; ++t) {
         const int s = ::socket(AF_INET, SOCK_DGRAM, 0);
+        if (s < 0) {
+            std::perror("socket");
+            return 1;
+        }
+        int failed = 0;
         auto t0 = Clock::now();
         for (int i = 0; i < n; ++i) {
-            (void)::sendto(s, payload.data(), payload.size(), 0, reinterpret_cast<sockaddr*>(&a), sizeof a);
+            failed += ::sendto(s, payload.data(), payload.size(), 0,
+                               reinterpret_cast<sockaddr*>(&a), sizeof a) < 0 ? 1 : 0;
         }
         auto t1 = Clock::now();
         const int g1 = drain(false);
         auto t2 = Clock::now();
-        (void)::connect(s, reinterpret_cast<sockaddr*>(&a), sizeof a);
+        if (::connect(s, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0) {
+            std::perror("connect");
+            return 1;
+        }
         auto t3 = Clock::now();
-        for (int i = 0; i < n; ++i) (void)::send(s, payload.data(), payload.size(), 0);
+        for (int i = 0; i < n; ++i) {
+            failed += ::send(s, payload.data(), payload.size(), 0) < 0 ? 1 : 0;
+        }
         auto t4 = Clock::now();
         const int g2 = drain(true);
         auto t5 = Clock::now();
         ::close(s);
+        if (failed != 0) {
+            std::fprintf(stderr, "enginex_udp_syscall_bench: %d sends failed in trial %d; no result\n",
+                         failed, t + 1);
+            return 1;
+        }
         lost += (n - g1) + (n - g2);
         sendto_us.push_back(per_op_us(t0, t1, n));
         recv_us.push_back(per_op_us(t1, t2, g1));
@@ -100,6 +141,5 @@ int main(int argc, char** argv) {
     std::printf("  recvfrom              median %6.2f us/datagram\n", median(recvfrom_us));
     std::printf("  datagrams not received (buffer overflow): %d\n", lost);
     ::close(rx);
-    ::close(tx);
     return 0;
 }
