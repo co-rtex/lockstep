@@ -93,6 +93,16 @@ are in-process and single-threaded; none is a wire latency.
    level's last order leaves.
 7. *"Durability?"* Acknowledge only after sync. Retries are idempotent across restarts. Torn
    tails are repaired while corruption refuses startup. Fail-stop on I/O errors.
+8. *"What broke when you put it on a real socket?"* Three things, each found by measuring.
+   * The receiver re-requested every hole every round, so answers in flight were requested
+     again. The result was a retransmission storm: 305 s and 1.8 M requests for a lossless
+     run. A per-hole retry timer fixed it.
+   * An unconnected `sendto()` cost ≈ 69 µs against 1.7 µs for a connected `send()`, so the
+     hot paths moved to connected sockets.
+   * The reorder buffer cost 121–147 ns/msg behind a hole against 4 ns in order. A receiver
+     under steady loss is always behind a hole, so it fell off a cliff. A window over packet
+     copies brought that to 20 ns. The differential test proved the semantics unchanged,
+     and the remaining ceiling (≈ 50 k packets/s) matches the measured ≈ 12.8 µs per `recv()`.
 
 ## Honest limits
 
