@@ -5,10 +5,14 @@
 // Same workloads as enginex_bench (seeded, prefill untimed). Counts calls to global operator
 // new inside the measured loop only, split by command outcome. One run per scenario; counts
 // are deterministic (no timing involved).
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <new>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 #include "enginex/state.hpp"
 #include "scenarios.hpp"
@@ -32,21 +36,36 @@ void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
+int run_probe(std::size_t orders);
+
 int main(int argc, char** argv) {
-    using namespace enginex;
+    // Same bound as the benchmark workloads (benchmarks/scenarios.cpp), checked here so a bad
+    // argument is a usage error rather than an uncaught exception.
+    constexpr std::size_t kMaxOrders = 20'000'000;
     std::size_t orders = 100'000;
-    if (argc > 2 || (argc == 2 && (argv[1][0] < '1' || argv[1][0] > '9'))) {
-        std::fprintf(stderr, "usage: enginex_core_alloc_probe [COMMANDS]   (default 100000)\n");
+    if (argc > 2) {
+        std::fprintf(stderr, "usage: enginex_core_alloc_probe [COMMANDS]   (1..20000000, default 100000)\n");
         return 2;
     }
     if (argc == 2) {
-        char* end = nullptr;
-        orders = std::strtoull(argv[1], &end, 10);
-        if (*end != '\0') {
-            std::fprintf(stderr, "enginex_core_alloc_probe: COMMANDS must be a positive integer\n");
+        const std::string_view text(argv[1]);
+        const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), orders);
+        if (ec != std::errc{} || ptr != text.data() + text.size() || orders == 0 ||
+            orders > kMaxOrders) {
+            std::fprintf(stderr, "enginex_core_alloc_probe: COMMANDS must be an integer in [1, 20000000]\n");
             return 2;
         }
     }
+    try {
+        return run_probe(orders);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "enginex_core_alloc_probe: %s\n", e.what());
+        return 1;
+    }
+}
+
+int run_probe(std::size_t orders) {
+    using namespace enginex;
     std::printf("%-18s %10s %12s %12s %12s %12s %12s\n", "scenario", "commands", "allocs/cmd",
                 "bytes/cmd", "rest/new", "fill/new", "cancel");
     for (const std::string& name : bench::scenario_names()) {
