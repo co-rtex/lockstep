@@ -324,7 +324,7 @@ book. Cost per message grows with the number of books because each message touch
 tree, level and order. With few symbols, `std::map` nodes for new price levels are rare.
 With 5000 sparse books, levels appear and vanish constantly, and `std::allocator` makes 0.30
 heap calls per message. A per-builder free-list arena for those nodes removes the calls and
-cuts 13–21 % at 1000–5000 symbols, with no change at 8. The remaining growth (28.8 → 56.1 ns)
+cuts book-apply cost by 11 % at 1000 and 21 % at 5000 symbols, with no change at 8. The remaining growth (28.8 → 56.1 ns)
 is cache-miss cost, which the allocator does not address. A flatter level structure would be
 the next experiment, and would need measurements on real symbol distributions to justify it.
 
