@@ -215,6 +215,11 @@ Commands and results (latest):
 
 Outstanding (needs the owner):
 
+* **Residual process.** A demo `enginex serve --port 0` started during the sprint is still
+  running: in-memory, bound to 127.0.0.1:53158, PID 62482 (confirmed by a snapshot request on
+  2026-11-10 ~05:40 EST). The sandbox denies signals to it, and the protocol has no remote
+  shutdown. Stop it with `kill 62482` (check with `lsof -i :53158`).
+
 * **clang-format.** CI's format job runs clang-format 19.1.7 with `--dry-run --Werror` over all
   tracked C++ files. clang-format is not installed here, and running the downloaded binary was
   refused by the sandbox ("Code from External"), so the sprint's new files have **not** been
