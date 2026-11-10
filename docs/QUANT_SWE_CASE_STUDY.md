@@ -46,6 +46,7 @@ are in-process and single-threaded; none is a wire latency.
 | Book apply per message, real data | p50 41–42 ns, p99 292–333 ns, p99.9 458–541 ns (3 days, timer included) | `itch-real-latency-macos-m3.csv` |
 | Structural worst cases on real data | ≈ 10 ms vector-growth copy removed. A ≈ 95 µs chunk value-initialization on the day's first add was cut to ≈ 30–38 µs. Both found by locating the max sample | benchmarks.md, `itch-node-chunk-ab-macos-m3.txt` |
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
+| Exchange core vs history size | idempotency index rebuilt as a keyed flat table: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196, p99 ≈ halved, identical state hashes | `core-request-index-ab-macos-m3.csv` |
 | Durable ack | ≈ 3 ms p50 with `F_FULLFSYNC`; group commit 3.7× throughput with 8 clients | R2/R3 tables |
 | Loopback TCP round trip | ≈ 33 µs p50 (1 client, in-memory) | R3 table |
 | MoldUDP64 over loopback UDP, real data | all 3 sample days exact at 50 k packets/s with 5 % live / 10 % retransmission loss; reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv` |
@@ -112,6 +113,13 @@ are in-process and single-threaded; none is a wire latency.
      under steady loss is always behind a hole, so it fell off a cliff. A window over packet
      copies brought that to 20 ns. The differential test proved the semantics unchanged,
      and the remaining ceiling (≈ 50 k packets/s) matches the measured ≈ 12.8 µs per `recv()`.
+9. *"Your matching engine gets slower the longer it runs. Why?"* The engine keeps every
+   request id so retries are idempotent. In a node-based hash map, each new id missed DRAM
+   twice. Benchmarking at four history sizes exposed it (108 → 296 ns/cmd from 100 k to 3 M
+   commands). Reserving capacity was ruled out as a fix (no change). An isolated probe priced
+   the miss (≈ 75 vs 23 ns). The replacement is a flat fingerprint table over a record deque,
+   keyed with SipHash because the ids come from clients. The rewrite only counts if the state
+   hashes are identical, and they are.
 
 ## Honest limits
 

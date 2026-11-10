@@ -278,6 +278,12 @@ command, measured +14–28 % in the five scenarios that recycle nodes. Examples:
 ends in the same state hash
 ([docs/benchmarks.md § R4](docs/benchmarks.md#r4-optional-result-pooled-book-nodes-in-the-matching-core)).
 
+The per-command cost also grew with history: 108 ns at 100 k commands, 296 ns at 3 M, with a
+tiny book. The idempotency map, a node-based `unordered_map` holding every request id, was
+missing DRAM twice per new id. It is now a keyed (SipHash) flat index over a record deque
+(D31): 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196, p99 roughly halved, identical state
+hashes ([docs/benchmarks.md](docs/benchmarks.md#core-the-request-id-index-idempotency-history-measured-by-history-size)).
+
 These are not order-entry or end-to-end latencies. Durable acknowledgment latency is measured
 separately and is dominated by the flush. Same machine, `mixed`, seed 42, one sync per
 command, medians of 5 trials:
