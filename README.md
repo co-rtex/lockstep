@@ -51,7 +51,8 @@ runs).
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
 | MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels (no socket receiver) |
 | Validation on real Nasdaq data: three public sample days (2019-01-30, 2019-03-27, 2020-01-30), ≈ 21 M messages each through the 09:30 open; zero decode errors, zero book anomalies, every live order matching the reference model; crossed books only in halted/paused symbols | ITCH | **Verified locally** (data not redistributed; `scripts/real_data_check.sh`; docs/itch.md) |
-| UDP multicast receiver, live retransmission, SoupBinTCP, full-day or multi-day real data | — | **Not implemented / not tested** (no such claim is made) |
+| MoldUDP64 over real UDP (`itch mold-send` / `mold-recv`): paced feed, re-request answers, receiver gap recovery, exact book on a real sample day at 50 k packets/s with 5 % loss | ITCH | **Implemented, tested on loopback only** (`scripts/mold_udp_demo.sh`) |
+| UDP multicast, a separate re-request server, SoupBinTCP, full-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
 The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
 *ITCH* and *Sprint* have been verified locally only: macOS, Apple clang 17, release suite,
@@ -147,6 +148,7 @@ lossy channel, and a short benchmark. `scripts/real_data_check.sh` (opt-in; it d
 ./build/release/enginex itch replay --input data/demo.itch --depth 5 --json
 ./build/release/enginex itch dump --input tests/testdata/itch/lifecycle.itch --limit 5
 ./build/release/enginex itch mold-sim --input data/demo.itch --loss-percent 3   # simulated channel
+scripts/mold_udp_demo.sh                        # MoldUDP64 over real UDP (loopback), two processes
 ./build/release/enginex_itch_bench --seed 42 --messages 1000000 --trials 7
 ```
 

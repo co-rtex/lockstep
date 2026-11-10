@@ -187,8 +187,8 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
 * Real data: the first 256 MiB of three public sample days (2019-01-30, 2019-03-27,
   2020-01-30), through ≈ 09:33–09:37 ET. Full days, closing crosses and halts in volume
   remain untested.
-* There is no UDP receiver, wire re-request protocol or SoupBinTCP. The MoldUDP64 sequencer
-  is exercised on simulated channels only.
+* MoldUDP64 over UDP has run on loopback only (unicast, sender and re-request server in one
+  process), up to ≈ 50 k packets/s here. There is no multicast and no SoupBinTCP.
 * The synthetic book grows over a run (≈ 89 k live orders after 1 M messages). Compare
   per-message costs only at equal message counts.
 * Next, with real data in hand: profile a full-day replay with a sampling profiler on Linux

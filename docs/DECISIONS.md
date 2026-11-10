@@ -221,7 +221,8 @@ handler might. A reconstructed order book after a skipped message is silently wr
 worse than stopping. When the buffer bound is exceeded the sequencer stops (`Failed`), and the
 consumer must rebuild from a snapshot or the start of the session. Packet validation is
 all-or-nothing, so a malformed packet cannot partially advance the sequence. There is no
-socket receiver or wire re-request protocol; channels are simulated in tests.
+socket receiver or wire re-request protocol; channels are simulated in tests. (Superseded in
+part by D29: a loopback UDP transport now exists.)
 
 ## D26. Matching core: std::pmr pool for book nodes (optional R4, measured)
 An allocation probe showed 2.0–3.5 heap calls per command, mostly list, index and level nodes
@@ -271,3 +272,45 @@ replay −8 % on both days tested, synthetic 5000 symbols −6 %, 8 symbols unch
 galloping search from the top (more branches for the same coverage), and a separate hot-top
 array (a second structure to keep consistent). A mutation of the scan's comparison fails
 many book tests.
+
+## D29. MoldUDP64 over UDP: one sender that also answers re-requests; loopback by default
+`itch mold-send` / `itch mold-recv` carry MoldUDP64 over real UDP sockets. The sender packs a
+file's frames (byte for byte, no re-encoding) into MTU-bounded packets (`PacketStore`, shared
+with the simulator), paces the live feed, repeats end-of-session, and answers 20-byte
+requests from the same store. The receiver feeds the real `Sequencer`, re-requests
+`missing()` ranges and rebuilds the books. Decisions, each driven by a measurement or a
+failure:
+* **Per-hole retry timer.** The first receiver re-requested every hole every round. Answers
+  in flight were requested again, the answers snowballed, and a lossless 300 k packets/s
+  run took 305 s and failed with 1.8 M requests and 90 M duplicate messages. A hole is now
+  asked again only after `retry_after` (50 ms).
+* **Connected sockets on hot paths.** Here an unconnected `sendto()` costs ≈ 69 µs and a
+  connected `send()` ≈ 1.7 µs (`enginex_udp_syscall_bench`). The live feed and the
+  receiver's requests use connected sockets. Answers go out on per-peer connected sockets
+  bound to the request port (`SO_REUSEPORT`), so the receiver sees them come from the
+  address it asked.
+* **No reflection, filtered sources** (from a security review). Answers go only to the
+  receiver's IP, within a token-bucket budget, and capped per request. The receiver accepts
+  feed datagrams only from the feed's IP. `--allow-remote` requires an explicit `--session`.
+  MoldUDP64 has no authentication, and neither does this.
+* **Configured session.** Without it, the first datagram fixes the session, so a stray
+  packet that arrives first would lock out the real feed (a test shows this).
+*Rejected / not done:* multicast and a separate re-request server (the realistic topology, but
+loopback unicast exercises the same sequencing and recovery logic), SoupBinTCP, and kernel
+bypass (out of scope; see the mandate).
+
+## D30. Reorder buffer: sequence-indexed window over packet copies, holes kept explicitly
+The sequencer used to buffer each out-of-order message as its own `std::map` node with a
+`std::vector` copy. `enginex_mold_bench` measured 121–147 ns/msg behind a hole against 4 ns
+in order. A UDP receiver under steady loss is almost always behind a hole, so it fell behind
+the feed and failed (5 % loss: exact at 20 k packets/s, failure at 50 k). Now a `std::deque`
+of 12-byte slots, indexed by `sequence − next`, points into one copy per packet. Copies are
+recycled with their capacity, and the capacity a copy retains counts against the byte bound
+(a security review found the first version could exceed it). Missing ranges live in a map of
+holes that changes only when a hole opens or a retransmission fills one, so `missing()` is
+O(holes). Interleaved A/B (`mold-sequencer-macos-m3.csv`): 20–21 ns/msg behind holes, in order
+unchanged. The semantics are unchanged: all MoldUDP64 tests pass as before, and the set-model
+differential test reports identical counts. *Rejected:* storing whole packets keyed by first
+sequence, because overlapping retransmissions with different packet boundaries would need
+interval logic in the duplicate check.
+

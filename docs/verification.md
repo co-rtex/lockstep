@@ -114,6 +114,11 @@ naive reference book, corrupted-file fuzzing, and `OrderIndex` against `std::uno
 The P0 server regressions (`Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber`,
 `Server.SnapshotRefusedAfterInternalFailStop`) are in `networking_test.cpp`.
 
+MoldUDP64 over real UDP (loopback) is covered by `itch_mold_udp_test.cpp`. The tests cover
+lossy delivery to the exact book, stopping at the hole without recovery, hostile datagrams
+and requests, kernel drops from an unread socket buffer, and source filtering. The envelope
+on real data is in [itch.md § MoldUDP64 over UDP](itch.md#moldudp64-over-udp-loopback).
+
 Three adversarial property tests were also added in the sprint:
 
 * `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` (`protocol_fuzz_test.cpp`): 100 k

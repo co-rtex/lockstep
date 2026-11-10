@@ -15,7 +15,7 @@ Two deliberately separate C++20 systems in one repository:
 | Direction | order **entry** → matching → acks and a feed | Nasdaq **TotalView-ITCH 5.0** outbound market data → book reconstruction |
 | Core | deterministic price-time matching, single sequencer | decoder for all 23 ITCH 5.0 message types; order-level books |
 | Durability / transport | EXJ1 write-ahead journal, ack after `F_FULLFSYNC`/`fdatasync`, crash recovery | 2-byte length-prefixed files; MoldUDP64 packet sequencing with gap detection |
-| Network | TCP order entry + sequenced `book_update` feed, snapshot handoff, read-only mirror | none (MoldUDP64 is exercised on a *simulated* channel) |
+| Network | TCP order entry + sequenced `book_update` feed, snapshot handoff, read-only mirror | MoldUDP64 over UDP on loopback (sender + re-request answers, receiver with gap recovery), plus simulated channels |
 | Data | synthetic commands | committed tests use synthetic fixtures only; validated locally on three real public Nasdaq sample days (not redistributed) |
 
 ITCH data never become orders in the exchange. They have different types (`itch::Side` vs
@@ -96,8 +96,9 @@ are in-process and single-threaded; none is a wire latency.
 
 ## Honest limits
 
-* No UDP receiver, live retransmission or SoupBinTCP. MoldUDP64 is tested on simulated
-  channels.
+* MoldUDP64 over UDP has only run on loopback (unicast, the sender doubles as the re-request
+  server). There is no multicast and no SoupBinTCP. Here it is exact up to ≈ 50 k packets/s,
+  a limit set by a measured ≈ 12.8 µs per `recv()`.
 * Real data covers the first ≈ 6.5 h of three days, not full sessions or closing crosses.
 * GCC, ASan, TSan and clang-format have not run on the sprint's code. The sandbox blocked
   them locally, and the branch has not been pushed to CI. UBSan, coverage, fuzzing and leak

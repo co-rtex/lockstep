@@ -103,8 +103,62 @@ of the specification and the Wireshark dissector, which agree.
   of the Nasdaq sample): 61 107 packets, 1 852 lost, 1 072 gaps opened and closed, and the
   same book as the direct replay. Exit 0 only if the book equals the delivered prefix (never
   silently wrong) and, with recovery, delivery is complete.
-* Not implemented: a UDP socket receiver, multicast group handling, a re-request client and
-  server on the wire (retransmission is simulated in-process), and SoupBinTCP.
+* The reorder buffer is a `std::deque` of 12-byte slots indexed by `sequence − next`. The
+  slots point into one copy per packet, and the missing ranges are kept as an explicit map of
+  holes (D30). Behind a hole the sequencer costs 20–21 ns/msg, down from 121–147 ns/msg with
+  one `std::map` node per message; in order it costs 4 ns/msg either way
+  (`enginex_mold_bench`, [`mold-sequencer-macos-m3.csv`](../benchmarks/results/mold-sequencer-macos-m3.csv)).
+  The copies count against the byte bound by the capacity they actually hold.
+
+### MoldUDP64 over UDP (loopback)
+
+`itch mold-send` and `itch mold-recv` (`mold_udp.hpp`, D29) carry the same packets over real
+UDP sockets as two processes. The sender copies a file's frames into MTU-bounded packets
+byte for byte, paces the live feed on a connected socket and can drop packets deliberately,
+both live and when answering. It repeats end-of-session and answers 20-byte re-requests
+from its packet store. The receiver runs the `Sequencer`, decodes, applies to a
+`BookBuilder` and re-requests `missing()` ranges, retrying a hole only after 50 ms.
+`scripts/mold_udp_demo.sh [BUILD] [FILE]` runs both and compares the receiver's book hash with
+a direct replay. A sweep run (output abbreviated, counts rounded):
+
+```text
+$ RATE_PPS=50000 scripts/mold_udp_demo.sh build/release build/realdata/03272019.prefix256.itch
+  sender:   473 k of 498 172 packets sent (≈ 25 k dropped), ≈ 28 k re-requests answered
+  receiver: ended, 21375302 messages in order=True
+  book hash 8cbb4baa… == direct replay
+```
+
+Loopback envelope on the real 2019-03-27 prefix (21.4 M messages, 498 172 packets), from
+`tools/mold_udp_sweep.py`
+([`mold-udp-loopback-macos-m3.csv`](../benchmarks/results/mold-udp-loopback-macos-m3.csv)):
+
+| live / retransmit loss | 20 k packets/s | 50 k packets/s | 70 k packets/s | 100 k packets/s |
+|---|---|---|---|---|
+| 0 % / 0 % | exact, 26.7 s | exact, 11.7 s (kernel drops recovered: 53 gaps) | fail-stop | fail-stop |
+| 5 % / 10 % | exact, 26.7 s | exact, 11.9 s | fail-stop | fail-stop |
+
+50 k packets/s is ≈ 2.1 M messages/s. The ceiling is the environment, not the sequencer:
+`enginex_udp_syscall_bench` measures `recv()` at ≈ 12.8 µs per datagram here (unconnected
+`sendto()` ≈ 69 µs, connected `send()` ≈ 1.7 µs;
+[`udp-syscall-floor-macos-m3.txt`](../benchmarks/results/udp-syscall-floor-macos-m3.txt)). At
+that cost one receiver thread cannot take much more than ≈ 75 k datagrams/s before doing any
+work. These costs are far above typical figures for these calls, so this sandboxed
+environment probably inflates them; that is a guess, not a measurement. Past the ceiling the
+receiver falls behind, its socket overflows, and the reorder bound eventually trips. It then
+fail-stops (`failed`, in-order delivery up to the hole) and never skips.
+
+Tests (`itch_mold_udp_test.cpp`, threads on loopback):
+* 30 000 messages with 5 % live and 10 % retransmission loss arrive as the exact book.
+* Without recovery, the book stops exactly at the hole.
+* Garbage, a foreign-session data packet and bad requests queued before the feed are counted
+  and ignored. Without a configured session, a stray packet would claim the sequencer
+  (`MoldSequencer.ConfiguredSessionCannotBeClaimedByAStrayPacket`).
+* An unpaced burst into an unread 32 KiB socket buffer makes the kernel drop about half the
+  datagrams; recovery restores the exact book.
+* Feed datagrams from an unexpected source IP are rejected.
+
+Not implemented: multicast group handling, a separate re-request server (the sender plays
+both roles), feed failover, and SoupBinTCP. Only loopback has been exercised.
 
 ### Payload decoding
 
@@ -377,8 +431,8 @@ single thread. These are not wire-to-wire latencies.
 ## Limitations
 
 * Files: only the 2-byte length-prefixed framing (no gap detection possible). Transport:
-  MoldUDP64 packet parsing and sequencing are implemented and tested on simulated channels.
-  There is no socket receiver, no live retransmission and no SoupBinTCP.
+  MoldUDP64 runs on simulated channels and over real UDP on loopback, up to ≈ 50 k packets/s
+  in this environment. There is no multicast, no separate re-request server and no SoupBinTCP.
 * Real data: only the first ≈ 6.5 hours (pre-market through ≈ 09:37) of each of three
   sample days were used, never a full session. The synthetic workload is *not* a model of Nasdaq
   traffic. It creates new levels 30× less often than the real sample, and its books are
