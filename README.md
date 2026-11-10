@@ -310,7 +310,8 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 | book apply, open addressing + capacity hint (max latency 613 µs → 1.6 µs) | 26.8 | 37.4 M | 0.008 |
 | full replay (framing + decoding + book), open addressing + hint | 37.8 | 26.4 M | 0.008 |
 | book apply, 5000 symbols / 2 M msgs, `std::allocator` level nodes → free-list arena | 70.6 → 56.1 | 14.2 M → 17.8 M | 0.304 → 0.003 |
-| **real Nasdaq sample** (21.26 M msgs, 8 713 symbols): replay, map + hash → sorted-vector levels + paged direct index | 99.3 → **62.1** | 10.1 M → **16.1 M** | ≈ 0 |
+| **real Nasdaq sample** (21.26 M msgs, 8 713 symbols): replay, map + hash → sorted-vector levels + paged direct index | 99.3 → 62.1 | 10.1 M → 16.1 M | ≈ 0 |
+| same, + near-top level scan (current; 3 sample days: 56.0 / 58.1 / 54.8) | **56.0** | **17.9 M** | ≈ 0 |
 | book apply, 1 M msgs / 8 symbols, same change (no capacity hint) | 31.7 → 22.4 | 31.5 M → 44.6 M | ≈ 0 |
 
 ## Testing strategy

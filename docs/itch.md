@@ -217,8 +217,9 @@ synthetic streams do.
   `-DENGINEX_ITCH_HASH_INDEX=ON` rebuild the earlier variants.
 * Each side of each book is a **contiguous vector of (rank, Level\*) sorted so that the best
   price is at the back**. Rank is the price for bids and `UINT32_MAX − price` for asks.
-  Lookups are binary searches over contiguous memory. Inserting or removing a level near the
-  top moves only the few entries behind it, which matters because 43 % of real adds open a
+  Lookups first scan the 8 entries nearest the best price (≈ 80 % of real lookups land
+  there; measured on two sample days), then binary-search the rest over contiguous memory.
+  Inserting or removing a level near the top moves only the few entries behind it, which matters because 43 % of real adds open a
   new level. `Level` objects live in a deque pool (stable addresses, free list), so
   `Node::level` stays valid until the level's last order is unlinked. The earlier
   `std::map` levels (with a node arena) stay available as `-DENGINEX_ITCH_MAP_LEVELS=ON`.
@@ -330,9 +331,9 @@ listing have only `.md5sum` files left (HTTP 404 for the data), so no 2018 day w
 
 | day | messages (to) | decode errors | anomalies (`--strict`) | live orders = reference model | crossed books (trading state) | decode ns/msg | replay ns/msg |
 |---|---:|---:|---:|---:|---|---:|---:|
-| 2019-01-30 | 21 255 695 (09:37:05) | 0 | 0 | 1 539 130 ✓ | none | 13.0 | 62–67 |
-| 2020-01-30 | 21 051 558 (09:33:12) | 0 | 0 | 1 649 825 ✓ | 4 (all `H`, halted) | 13.0 | 65 |
-| 2019-03-27 | 21 375 302 (09:37:04) | 0 | 0 | 1 578 860 ✓ | 5 (3 `H`, 2 `P` LULD-paused) | 12.9 | 59–60 |
+| 2019-01-30 | 21 255 695 (09:37:05) | 0 | 0 | 1 539 130 ✓ | none | 13.0 | 56.0 |
+| 2020-01-30 | 21 051 558 (09:33:12) | 0 | 0 | 1 649 825 ✓ | 4 (all `H`, halted) | 13.0 | 58.1 |
+| 2019-03-27 | 21 375 302 (09:37:04) | 0 | 0 | 1 578 860 ✓ | 5 (3 `H`, 2 `P` LULD-paused) | 12.9 | 54.8 |
 
 The later days also contain `K` (IPO quoting period) and `J` (LULD auction collar)
 messages, which decode without error. **Every crossed book on every day belongs to a halted
@@ -347,7 +348,8 @@ Not covered: the rest of each trading day (≈ 95 % of each file), closing cross
 ## Performance
 
 On the real sample: decode 13.0 ns/msg (≈ 2.3 GiB/s), full replay 99.3 → 62.1 ns/msg after the
-layout changes driven by that data. Synthetic results follow.
+layout changes driven by that data, then 56.0 ns/msg with the near-top level scan (54.8–58.1
+across the three sample days, commit `0ad62a6`). Synthetic results follow.
 
 See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). The
 synthetic history, 1 M messages over 8 symbols, in the order the changes were made:

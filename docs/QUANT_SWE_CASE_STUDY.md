@@ -40,7 +40,7 @@ are in-process and single-threaded; none is a wire latency.
 | What | Result | Evidence |
 |---|---|---|
 | ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
-| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 60–65 ns/msg after data-driven layout changes | `itch-real-sample-macos-m3.csv` |
+| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–58 ns/msg after data-driven layout changes (3 days) | `itch-real-sample-macos-m3.csv` |
 | Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model | `scripts/real_data_check.sh` |
 | Worst single message on real data | ≈ 10 ms → ≈ 0.1–0.17 ms (vector growth removed) | benchmarks.md |
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |

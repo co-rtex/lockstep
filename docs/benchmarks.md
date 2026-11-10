@@ -427,9 +427,16 @@ Raw rows (timings only, no market data):
 |---|---|---|---:|---:|---:|
 | `-DENGINEX_ITCH_MAP_LEVELS=ON -DENGINEX_ITCH_HASH_INDEX=ON` | `std::map` + arena | hash | 99.3 | 10.1 M | 1.0 GiB |
 | `-DENGINEX_ITCH_HASH_INDEX=ON` | sorted vector | hash | 91.4 | 10.9 M | 1.2 GiB |
-| default | sorted vector | paged direct | **62.1** | **16.1 M** | 1.2 GiB |
+| default at `bbd4ff6` | sorted vector | paged direct | **62.1** | **16.1 M** | 1.2 GiB |
+| default at `0ad62a6` | sorted vector + near-top scan | paged direct | **56.0** | **17.9 M** | |
 
 A later row for commit `8a40818` (chunked node pool, see below) is in the same CSV.
+The `0ad62a6` row adds one more data-driven change. A temporary histogram on two sample days
+showed that ≈ 70 % of level lookups land within 4 entries of the best price and ≈ 80 % within
+8. Lookups therefore scan those 8 linearly before binary searching. An interleaved A/B against
+the previous commit measured 59.1 → 54.2 ns/msg (2019-03-27) and 63.3 → 57.9 (2020-01-30).
+Current replay on the three days: 56.0, 58.1 and 54.8 ns/msg.
+
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 
