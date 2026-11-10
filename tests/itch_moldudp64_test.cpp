@@ -184,6 +184,30 @@ TEST(MoldSequencer, BufferLimitFailsInsteadOfSkipping) {
     EXPECT_TRUE(out.seqs.empty());
 }
 
+TEST(MoldSequencer, DuplicatesOfBufferedMessagesUseNoCapacity) {
+    // Retransmissions of a message already held behind a hole are duplicates. They must not be
+    // counted against the buffer bound (a lossy channel would otherwise fail spuriously) or
+    // leave the accounting behind once the hole fills.
+    Sequencer::Options o;
+    o.max_buffered_messages = 2;
+    o.max_buffered_bytes = 8;
+    Sequencer q(o);
+    Sink out;
+    for (int i = 0; i < 5; ++i) q.on_packet(build_packet(kS, 2, {msg(2)}), out);  // 1 is missing
+    EXPECT_EQ(q.state(), Sequencer::State::Gap);
+    EXPECT_EQ(q.buffered(), 1U);
+    EXPECT_EQ(q.stats().duplicates, 4U);
+    EXPECT_EQ(q.stats().buffered_bytes_peak, 3U);
+    q.on_packet(build_packet(kS, 1, {msg(1)}), out);
+    EXPECT_EQ(out.seqs, (std::vector<std::uint64_t>{1, 2}));
+    EXPECT_EQ(q.buffered(), 0U);
+    q.on_packet(build_packet(kS, 4, {msg(4), msg(5)}), out);  // the full bound is still usable
+    EXPECT_EQ(q.state(), Sequencer::State::Gap);
+    q.on_packet(build_packet(kS, 3, {msg(3)}), out);
+    EXPECT_EQ(out.seqs, (std::vector<std::uint64_t>{1, 2, 3, 4, 5}));
+    EXPECT_EQ(q.state(), Sequencer::State::Running);
+}
+
 TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
     Sequencer::Options o;
     o.max_buffered_bytes = 10;

@@ -79,6 +79,22 @@ Deliberate mutations, each reverted after the check:
 * (Sprint, ITCH) Letting a same-price replace keep queue priority failed 2 scenario tests and
   all 12 `ItchDifferential` seeds.
 
+**Scripted mutation check.** `tools/mutation_check.py` applies 22 hand-chosen bugs one at a
+time across the ITCH decoder, book builder, framer, MoldUDP64 sequencer, mirror, matching
+engine, idempotency, journal and server. For each one it rebuilds and runs the relevant tests,
+then restores the file. The script refuses to start when those files have uncommitted changes
+and checks afterwards that all of them were restored. The first run killed 19 of 20 valid
+mutants (2 did not compile because of `-Werror` unused-variable warnings and were rewritten).
+The survivor was real: if a retransmitted copy of a message *already buffered* behind a hole
+was not recognised as a duplicate, `std::map::emplace` quietly ignored it, but the buffer
+accounting still counted it. A lossy channel would then use up the buffer bound and fail
+for no reason. `MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity` now kills it. The
+current score is **22/22**. Run it with `python3 tools/mutation_check.py [build/release]
+[--only NAME]`. Each mutant costs one incremental rebuild plus a filtered test run, and the
+results go to `mutation_results.json` in the build directory.
+These mutants are chosen by hand to probe the specific rules, so the score is not a measure
+of coverage. They complement `scripts/coverage.sh`.
+
 ## Test matrix (ITCH 5.0 market data)
 
 Full table in [itch.md § Verification](itch.md#verification): golden bytes for all 23 types,
