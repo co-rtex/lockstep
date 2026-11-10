@@ -34,7 +34,19 @@ void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 int main(int argc, char** argv) {
     using namespace enginex;
-    const std::size_t orders = argc > 1 ? std::stoull(argv[1]) : 100'000;
+    std::size_t orders = 100'000;
+    if (argc > 2 || (argc == 2 && (argv[1][0] < '1' || argv[1][0] > '9'))) {
+        std::fprintf(stderr, "usage: enginex_core_alloc_probe [COMMANDS]   (default 100000)\n");
+        return 2;
+    }
+    if (argc == 2) {
+        char* end = nullptr;
+        orders = std::strtoull(argv[1], &end, 10);
+        if (*end != '\0') {
+            std::fprintf(stderr, "enginex_core_alloc_probe: COMMANDS must be a positive integer\n");
+            return 2;
+        }
+    }
     std::printf("%-18s %10s %12s %12s %12s %12s %12s\n", "scenario", "commands", "allocs/cmd",
                 "bytes/cmd", "rest/new", "fill/new", "cancel");
     for (const std::string& name : bench::scenario_names()) {
