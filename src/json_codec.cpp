@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "enginex/canonical.hpp"
 
@@ -134,10 +137,43 @@ Parsed<Command> parse_command(const Json& object,
     return make_error(ErrorCode::InvalidRequest, "unknown command type \"" + *type + "\"", object);
 }
 
+Json parse_json(std::string_view text, bool& repeated_key) {
+    repeated_key = false;
+    std::vector<std::set<std::string>> open;  // keys seen in each object being parsed
+    const Json::parser_callback_t track = [&](int /*depth*/, Json::parse_event_t event,
+                                              Json& parsed) {
+        switch (event) {
+            case Json::parse_event_t::object_start:
+                open.emplace_back();
+                break;
+            case Json::parse_event_t::object_end:
+                if (!open.empty()) {
+                    open.pop_back();
+                }
+                break;
+            case Json::parse_event_t::key:
+                if (!open.empty() && parsed.is_string() &&
+                    !open.back().insert(parsed.get_ref<const std::string&>()).second) {
+                    repeated_key = true;
+                }
+                break;
+            default:
+                break;
+        }
+        return true;  // keep every value: only detection happens here
+    };
+    return Json::parse(text.begin(), text.end(), track, /*allow_exceptions=*/false);
+}
+
 Parsed<Input> parse_input(std::string_view text) {
-    Json object = Json::parse(text.begin(), text.end(), nullptr, /*allow_exceptions=*/false);
+    bool repeated = false;
+    Json object = parse_json(text, repeated);
     if (object.is_discarded()) {
         return ParseError{ErrorCode::InvalidRequest, "malformed JSON", {}, {}};
+    }
+    if (repeated) {
+        // No request_id echo: which of the repeated values is meant is exactly what is unclear.
+        return ParseError{ErrorCode::InvalidRequest, "repeated field", {}, {}};
     }
     if (!object.is_object()) {
         return ParseError{ErrorCode::InvalidRequest, "input must be a JSON object", {}, {}};

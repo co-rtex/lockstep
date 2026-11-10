@@ -98,6 +98,21 @@ TEST(JsonCodec, NegativeAndHugeIntegersReachStateValidation) {
     EXPECT_EQ(s.process(Command{order}).error, ErrorCode::InvalidPrice);
 }
 
+// A repeated key makes a command ambiguous: a reader that keeps the first value and one that
+// keeps the last would disagree, e.g. about the idempotency key. The parser used to keep the
+// last value silently and accept the command.
+TEST(JsonCodec, RepeatedKeysAreRejected) {
+    for (const char* text :
+         {R"({"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":1})",
+          R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"price":6,"quantity":1})",
+          R"({"type":"cancel","request_id":"c","order_id":"ord-1","type":"cancel"})"}) {
+        EXPECT_EQ(parse_error_code_of(text), ErrorCode::InvalidRequest) << text;
+    }
+    // The same key in different objects is not a repeat.
+    EXPECT_TRUE(std::holds_alternative<codec::Input>(codec::parse_input(
+        R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"quantity":1})")));
+}
+
 TEST(JsonCodec, ErrorEchoesRequestIdAndType) {
     auto parsed = codec::parse_input(
         R"({"type":"new_limit","request_id":"abc","symbol":"AAPL","side":"BUY","price":1})");

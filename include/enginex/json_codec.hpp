@@ -45,6 +45,12 @@ struct ParseError {
 template <typename T>
 using Parsed = std::variant<T, ParseError>;
 
+// Parses one JSON text for a command input. Returns a discarded value if the text is malformed;
+// sets `repeated_key` if any object in it repeats a key. Such a message is ambiguous (a reader
+// keeping the first value and one keeping the last would disagree, e.g. about the idempotency
+// key), and the plain parser would silently keep the last value.
+[[nodiscard]] Json parse_json(std::string_view text, bool& repeated_key);
+
 // Parses one JSON text into a command or query. Field type problems map to specific codes:
 // symbol -> INVALID_SYMBOL, side -> INVALID_SIDE, price -> INVALID_PRICE (also non-integers),
 // quantity -> INVALID_QUANTITY; everything else -> INVALID_REQUEST. Range checks are left to

@@ -107,7 +107,10 @@ TEST(Protocol, RejectsBadMessages) {
           R"({"protocol_version":"1","type":"subscribe"})", R"({"protocol_version":1})",
           R"({"protocol_version":1,"type":"teleport"})",
           R"({"protocol_version":1,"type":"subscribe","extra":true})",
-          R"({"protocol_version":1,"type":"snapshot_request","depth":-1})"}) {
+          R"({"protocol_version":1,"type":"snapshot_request","depth":-1})",
+          // A repeated key is ambiguous (first or last value?), so it is malformed.
+          R"({"protocol_version":1,"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":2})",
+          R"({"protocol_version":1,"protocol_version":1,"type":"subscribe"})"}) {
         auto m = parse_client_message(text);
         ASSERT_TRUE(std::holds_alternative<codec::ParseError>(m)) << text;
         EXPECT_EQ(std::get<codec::ParseError>(m).code, ErrorCode::InvalidRequest) << text;

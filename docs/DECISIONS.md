@@ -361,3 +361,23 @@ allocation failure in the middle of a spill or insert, which falls under the exi
 8 % faster, D27 and benchmarks.md); a balanced tree or B-tree for all levels (more code for no real-data gain);
 switching a whole side to a map once it gets deep (the top of a deep book would lose the
 contiguous fast path).
+
+## D33. Repeated JSON keys are malformed input
+
+**Problem.** A hostile-input pass sent a command that named `request_id` twice. The parser
+(`nlohmann::ordered_json`) kept the last value without comment, and the command was accepted.
+Readers of such a message can legitimately disagree: a proxy, a logger or another
+implementation may keep the first value while EngineX keeps the last. For the idempotency
+key, that means two parties attribute the same bytes to different requests.
+
+**Decision.** `codec::parse_json` uses the parser's callback to track the keys of each open
+object. Any repeat makes the message `INVALID_REQUEST` ("repeated field"), both on the wire
+and in `simulate`/`run` input. The error echoes no `request_id`, because which one is meant is
+the ambiguity. Tests: `JsonCodec.RepeatedKeysAreRejected` and `Protocol.RejectsBadMessages`;
+both failed before the change.
+
+**Cost.** `simulate` on 200 k commands took a median of 1.510 s against 1.451 s for the same
+commit without the check (5 runs each, interleaved, same state hash). That is about 4 %, or
+≈ 0.3 µs per command, small next to a TCP round trip. *Rejected:* first-value-wins (still
+ambiguous to anyone who keeps the last); a custom SAX parser (more code than the callback
+for the same result).

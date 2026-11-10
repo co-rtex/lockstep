@@ -32,8 +32,12 @@ feed and makes no low-latency claims. Implementation: `include/enginex/protocol.
 ## 2. Common fields
 
 Every JSON message has `"protocol_version": 1` and a `"type"`. A missing or different
-`protocol_version`, an unknown `type`, an unknown field, or malformed JSON produces an
-`error` with `INVALID_REQUEST`; the connection stays open. Field validation follows the
+`protocol_version`, an unknown `type`, an unknown field, a field repeated in one object, or
+malformed JSON produces an `error` with `INVALID_REQUEST`; the connection stays open. A
+repeated field is refused because it is ambiguous: a reader keeping the first value and one
+keeping the last would disagree, for example about the `request_id` idempotency key. Its
+error does not echo a `request_id`. The same rule applies to `simulate`/`run` input lines.
+Field validation follows the
 same rules and error codes as the CLI ([architecture.md](architecture.md)). Prices are
 integer cents (1..100 000 000) and quantities are integers (1..1 000 000); numbers must be
 exact JSON integers.
