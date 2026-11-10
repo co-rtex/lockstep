@@ -18,8 +18,9 @@ A second, independent system decodes **Nasdaq TotalView-ITCH 5.0** binary market
 rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md); the engineering story,
 with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md)). ITCH is an outbound
 market-data feed, not an order-entry protocol. That path never sends anything to the
-synthetic exchange, and its test data are synthetic fixtures built from the public
-specification, not Nasdaq data.
+synthetic exchange. Its committed test data are synthetic fixtures built from the public
+specification. It was also validated locally on 21.26 M real messages from a public Nasdaq
+sample file, which is not redistributed (`scripts/real_data_check.sh` reproduces the run).
 
 ## Status
 
@@ -71,9 +72,20 @@ UBSan, coverage and fuzz runs. GCC, ASan and TSan have not run on them yet
  │                 prepare() pure validation → commit() sequence + apply               │
  │                     │                                     │                         │
  │   MatchingEngine: per-symbol OrderBook             DurableExchange (R2)             │
- │    bids/asks: std::map<price, PriceLevel{FIFO       group commit → EXJ1 journal     │
- │    std::list}>, order index unordered_map           write + fdatasync/F_FULLFSYNC   │
+ │    bids/asks: pmr::map<price, PriceLevel{FIFO       group commit → EXJ1 journal     │
+ │    pmr::list}>, index pmr::unordered_map (pool)     write + fdatasync/F_FULLFSYNC   │
  └─────────────────────────────────────────────────────────────────────────────────────┘
+
+ Separate market-data path (no connection to the exchange above):
+
+ ITCH 5.0 bytes ─┬─ file: StreamFramer (2-byte length prefix) ─┐
+                 └─ MoldUDP64 packets: parse → Sequencer ──────┤  (dedup, reorder, gaps,
+                                                               │   re-request, fail-stop)
+                                                               ▼
+                         decode(): 23 message types, bounds-checked big-endian fields
+                                                               ▼
+       BookBuilder: paged direct order index → chunked node pool → per-locate books,
+       sorted-vector price levels with FIFO queues → depth / top / SHA-256 state hash
 ```
 
 There is no runtime connection to TradeGrid. Details are in
