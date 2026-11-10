@@ -182,6 +182,103 @@ TEST(FeedMirror, ResyncDisconnectAndMismatchAllGoStale) {
     EXPECT_EQ(d.on_message(snapshot(3, false, Json::array(), Json::array())), V::Mismatch);
 }
 
+// Property test over random server messages: valid, missing and mistyped fields, sequence
+// numbers near the expected one. The mirror must never throw, must apply an update only when
+// Live and contiguous, and must be Stale after every failure verdict.
+TEST(FeedMirror, RandomMessagesNeverBreakTheRules) {
+    Rng rng(4242);
+    auto maybe = [&](Json& j, const char* key, Json value) {
+        const auto r = rng.below(40);
+        if (r == 0) return;                              // field missing (2.5 %)
+        if (r == 1) { j[key] = "wrong-type"; return; }   // mistyped (2.5 %)
+        j[key] = std::move(value);
+    };
+    auto random_levels = [&](bool update) {
+        Json a = Json::array();
+        const auto n = rng.below(4);
+        for (std::uint64_t i = 0; i < n; ++i) {
+            Json l;
+            if (update) maybe(l, "side", rng.chance(50) ? "BUY" : "SELL");
+            maybe(l, "price", static_cast<std::int64_t>(rng.between(9990, 10010)));
+            maybe(l, "quantity", static_cast<std::int64_t>(rng.below(5)));
+            maybe(l, "order_count", static_cast<std::int64_t>(rng.below(3)));
+            a.push_back(l);
+        }
+        return a;
+    };
+    std::uint64_t baselines = 0, applied_total = 0, gaps = 0, malformed = 0, verified = 0;
+    for (int round = 0; round < 200; ++round) {
+        FeedMirror m;
+        for (int i = 0; i < 1000; ++i) {
+            Json msg;
+            const auto kind = rng.below(7);
+            // Mostly the next sequence; sometimes old, duplicate or ahead (gaps).
+            const std::int64_t delta = rng.chance(85) ? 1 : rng.between(-1, 3);
+            const auto seq = static_cast<std::uint64_t>(
+                std::max<std::int64_t>(0, static_cast<std::int64_t>(m.last_event()) + delta));
+            if (kind <= 2) {
+                maybe(msg, "type", "book_update");
+                maybe(msg, "event_sequence", seq);
+                maybe(msg, "symbol", rng.chance(90) ? "AAPL" : "MSFT");
+                maybe(msg, "levels", random_levels(true));
+            } else if (kind == 3) {
+                maybe(msg, "type", "snapshot_response");
+                maybe(msg, "subscribed", rng.chance(50));
+                maybe(msg, "event_watermark", seq);
+                maybe(msg, "depth", static_cast<std::int64_t>(rng.below(2)));
+                Json book{{"symbol", "AAPL"}};
+                maybe(book, "bids", random_levels(false));
+                maybe(book, "asks", random_levels(false));
+                maybe(msg, "books", Json::array({book}));
+            } else if (kind == 4) {
+                maybe(msg, "type", "resync_required");
+            } else if (kind == 5) {
+                maybe(msg, "type", "error");
+                maybe(msg, "command_type", "subscribe");
+            } else {
+                maybe(msg, "type", "ack");
+            }
+            const S before = m.state();
+            const std::uint64_t last = m.last_event();
+            const std::uint64_t applied = m.stats().applied;
+            V v = V::Ignored;
+            ASSERT_NO_THROW(v = m.on_message(msg)) << msg.dump();
+            if (v == V::Applied) {
+                ASSERT_EQ(before, S::Live) << msg.dump();
+                ASSERT_EQ(m.last_event(), last + 1) << msg.dump();
+            } else {
+                ASSERT_EQ(m.stats().applied, applied) << msg.dump();
+            }
+            if (before != S::Live && v != V::Baseline) {
+                ASSERT_NE(m.state(), S::Live) << msg.dump();
+            }
+            if (v == V::Gap || v == V::Mismatch || v == V::Malformed || v == V::ResyncRequired) {
+                ASSERT_EQ(m.state(), S::Stale) << msg.dump();
+            }
+            ASSERT_NO_THROW((void)m.canonical());
+            if (m.state() == S::Stale && rng.chance(5)) {
+                m.reset_for_resubscribe();
+            }
+        }
+        baselines += m.stats().baselines;
+        applied_total += m.stats().applied;
+        gaps += m.stats().gaps;
+        malformed += m.stats().malformed;
+        verified += m.stats().verified;
+    }
+    // The generator must actually reach the interesting states.
+    EXPECT_GT(baselines, 100U);
+    EXPECT_GT(applied_total, 100U);
+    EXPECT_GT(gaps, 100U);
+    EXPECT_GT(malformed, 100U);
+    std::printf("mirror property test: %llu baselines, %llu applied, %llu gaps, %llu malformed, "
+                "%llu verified\n",
+                static_cast<unsigned long long>(baselines),
+                static_cast<unsigned long long>(applied_total),
+                static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(malformed),
+                static_cast<unsigned long long>(verified));
+}
+
 // ---- end to end ------------------------------------------------------------------------------
 
 struct Running {
