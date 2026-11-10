@@ -194,7 +194,9 @@ Interleaved A/B, control `564a427` vs `6f655cd`
 | 3 M | 296 → 196 | 834 → 292 ns | 3.3 → 1.1 µs | 903 → 767 MiB |
 
 The other five R1 scenarios at 100 k commands gain 12–25 % throughput with lower p99
-(same CSV). The cost still grows with history, as DRAM misses on the index and records
+(same CSV). Journal recovery replays through the same state machine. Replaying 1 M records
+went from 2.09 to 4.06 M records/s, so a restart takes 465 → 239 ms. At 100 k records it went
+from 4.35 to 4.50 M/s (same CSV, `recovery_replay` rows). The cost still grows with history, as DRAM misses on the index and records
 must. History is now capped at 2³² − 2 commands, which are rejected as `LIMIT_EXCEEDED` like
 sequence exhaustion. The p99.9 and maximum are noisy on this shared laptop (load average
 ≈ 4 during these runs), and only the medians above are claimed.
