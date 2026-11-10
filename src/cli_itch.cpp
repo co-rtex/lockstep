@@ -280,7 +280,11 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
     if (limit < 2 || limit > (std::uint64_t{1} << 30U)) {
         throw UsageError("--level-vector-limit must be in [2, 2^30]");
     }
-    BookBuilder book(a.get_u64("expected-orders", 0), static_cast<std::size_t>(limit));
+    const std::uint64_t expected = a.get_u64("expected-orders", 0);
+    if (expected > BookBuilder::kMaxOrders) {
+        throw UsageError("--expected-orders must be at most " + std::to_string(BookBuilder::kMaxOrders));
+    }
+    BookBuilder book(static_cast<std::size_t>(expected), static_cast<std::size_t>(limit));
     // --checkpoint-every N --checkpoint-out FILE: after every N decoded messages, one JSON line
     // with the live-order count and every non-empty book's top of book, so an independent
     // model can be compared mid-stream, not only at the end (tools/itch_pybook.py).

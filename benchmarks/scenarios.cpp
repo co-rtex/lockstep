@@ -280,8 +280,11 @@ Workload make_workload(const ScenarioParams& params) {
     if (!is_scenario(params.name)) {
         throw std::invalid_argument("unknown scenario: " + params.name);
     }
-    if (params.orders == 0) {
-        throw std::invalid_argument("--orders must be positive");
+    // The whole workload is generated in memory before timing (≈ 300 B per measured command
+    // at peak in the 3 M runs), so an absurd count would only be killed by the OS later.
+    constexpr std::size_t kMaxOrders = 20'000'000;
+    if (params.orders == 0 || params.orders > kMaxOrders) {
+        throw std::invalid_argument("--orders must be in [1, 20000000]");
     }
     if (params.symbols == 0 || params.symbols > 999) {
         throw std::invalid_argument("--symbols must be in [1, 999]");

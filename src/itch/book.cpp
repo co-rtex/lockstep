@@ -380,6 +380,8 @@ public:
     static constexpr unsigned kChunkBits = 16;
     static constexpr std::uint32_t kChunk = std::uint32_t{1} << kChunkBits;
     static_assert(std::is_trivially_destructible_v<Node>, "chunks are freed without destructors");
+    static_assert(BookBuilder::kMaxOrders == std::size_t{UINT32_MAX} - kChunk,
+                  "node indices stay below the index's empty marker");
 
     Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)]; }
     const Node& operator[](std::uint32_t i) const noexcept {
@@ -389,7 +391,7 @@ public:
     // Appends a default node and returns its index.
     std::uint32_t emplace_back() {
         if (size_ == chunks_.size() * std::size_t{kChunk}) {
-            if (size_ >= std::size_t{UINT32_MAX} - kChunk) {
+            if (size_ >= BookBuilder::kMaxOrders) {
                 throw std::length_error("ITCH book: too many live orders");
             }
             add_chunk();
@@ -560,6 +562,9 @@ BookBuilder::BookBuilder(std::size_t expected_orders, std::size_t level_vector_l
     : impl_(std::make_unique<Impl>()) {
     if (level_vector_limit < 2) {
         throw std::invalid_argument("ITCH book: level_vector_limit must be at least 2");
+    }
+    if (expected_orders > kMaxOrders) {
+        throw std::invalid_argument("ITCH book: expected_orders exceeds kMaxOrders");
     }
     impl_->level_storage.vector_limit = level_vector_limit;
     if (expected_orders != 0) {

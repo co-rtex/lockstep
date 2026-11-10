@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -422,6 +423,14 @@ TEST(ItchLevelBound, LimitBelowTwoIsRejected) {
     EXPECT_THROW(BookBuilder(0, 1), std::invalid_argument);
     EXPECT_THROW(BookBuilder(0, 0), std::invalid_argument);
     EXPECT_NO_THROW(BookBuilder(0, 2));
+}
+
+// A capacity hint beyond what the builder can ever hold is refused up front (it used to
+// allocate pool chunks until the OS killed the process).
+TEST(ItchBook, ExpectedOrdersAboveCapacityIsRejected) {
+    EXPECT_THROW(BookBuilder{BookBuilder::kMaxOrders + 1}, std::invalid_argument);
+    EXPECT_THROW(BookBuilder{std::numeric_limits<std::size_t>::max()}, std::invalid_argument);
+    EXPECT_NO_THROW(BookBuilder{1'000'000});
 }
 
 // The hostile pattern the bound exists for: every add opens a level worse than all others,
