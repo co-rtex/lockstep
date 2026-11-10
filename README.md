@@ -16,7 +16,8 @@ not a replacement for it and not real trading software.
 
 A second, independent system decodes **Nasdaq TotalView-ITCH 5.0** binary market data and
 rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md); the engineering story,
-with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md)). ITCH is an outbound
+with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md), and a
+one-page summary for reviewers is [docs/QUANT_SWE_CASE_STUDY.md](docs/QUANT_SWE_CASE_STUDY.md)). ITCH is an outbound
 market-data feed, not an order-entry protocol. That path never sends anything to the
 synthetic exchange. Its committed test data are synthetic fixtures built from the public
 specification. It was also validated locally on three public Nasdaq sample days (≈ 64 M real
