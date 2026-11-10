@@ -190,9 +190,9 @@ Interleaved A/B, control `564a427` vs `6f655cd`
 
 | commands (`mixed`) | ns/cmd before → after | p99 before → after | p99.9 before → after | peak RSS |
 |---:|---:|---:|---:|---:|
-| 100 k | 108 → 94 | 292 → 208 ns | 375 → 250 ns | 34 → 32 MiB |
-| 300 k | 153 → 105 | 458 → 250 ns | 584 → 333 ns | 95 → 82 MiB |
-| 1 M | 198 → 119 | 584 → 250 ns | 750 → 333 ns | 304 → 261 MiB |
+| 100 k | 108 → 94 | 292 → 208 ns | 375 → 250 ns | 34 → 33 MiB |
+| 300 k | 153 → 105 | 458 → 250 ns | 584 → 333 ns | 96 → 83 MiB |
+| 1 M | 198 → 119 | 584 → 250 ns | 750 → 333 ns | 305 → 261 MiB |
 | 3 M | 296 → 196 | 834 → 292 ns | 3.3 → 1.1 µs | 903 → 767 MiB |
 
 The other five R1 scenarios at 100 k commands gain 12–25 % throughput with lower p99
