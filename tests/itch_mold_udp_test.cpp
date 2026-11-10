@@ -246,12 +246,21 @@ TEST(MoldUdp, UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook) {
     udp::ReceiverOptions ro;
     ro.receive_buffer_bytes = 32 << 10;
     ro.idle_timeout = 5000ms;
+    // The CLI's reorder bound (`mold-recv`, 2^20 messages), not the library default (65 536).
+    // With the default, a starved receiver in a loaded -j8 run buffered 65 536 messages behind
+    // the first hole before its answer arrived and fail-stopped by design (buffered peak 65 536,
+    // state failed): correct behaviour, but not what this test is about.
+    ro.sequencer.max_buffered_messages = std::size_t{1} << 20;
     const Outcome o = transfer(f, so, ro, {}, 100ms);
-    std::printf("unpaced burst: %llu packets sent, %llu gaps, %llu requests, %llu retransmitted\n",
+    std::printf("unpaced burst: %llu packets sent, %llu gaps, %llu requests, %llu retransmitted, "
+                "buffered peak %llu, delivered %llu, state %s\n",
                 static_cast<unsigned long long>(o.sent.sent),
                 static_cast<unsigned long long>(o.received.gaps_opened),
                 static_cast<unsigned long long>(o.received.requests_sent),
-                static_cast<unsigned long long>(o.sent.retransmitted));
+                static_cast<unsigned long long>(o.sent.retransmitted),
+                static_cast<unsigned long long>(o.received.buffered_peak),
+                static_cast<unsigned long long>(o.received.delivered),
+                o.received.final_state.c_str());
     EXPECT_GT(o.received.gaps_opened, 0U);  // the kernel did drop datagrams
     EXPECT_EQ(o.received.final_state, "ended");
     EXPECT_EQ(o.received.delivered, f.stream.size());
