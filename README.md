@@ -15,7 +15,8 @@ inspired by the club's [TradeGrid](https://github.com/co-rtex/tradegrid) Go exch
 not a replacement for it and not real trading software.
 
 A second, independent system decodes **Nasdaq TotalView-ITCH 5.0** binary market data and
-rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md)). ITCH is an outbound
+rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md); the engineering story,
+with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md)). ITCH is an outbound
 market-data feed, not an order-entry protocol. That path never sends anything to the
 synthetic exchange, and its test data are synthetic fixtures built from the public
 specification, not Nasdaq data.
