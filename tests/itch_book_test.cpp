@@ -418,6 +418,12 @@ TEST_P(ItchLevelBound, SpillAndRefillMatchTheReferenceModel) {
 
 INSTANTIATE_TEST_SUITE_P(Limits, ItchLevelBound, ::testing::Values(2U, 3U, 8U));
 
+TEST(ItchLevelBound, LimitBelowTwoIsRejected) {
+    EXPECT_THROW(BookBuilder(0, 1), std::invalid_argument);
+    EXPECT_THROW(BookBuilder(0, 0), std::invalid_argument);
+    EXPECT_NO_THROW(BookBuilder(0, 2));
+}
+
 // The hostile pattern the bound exists for: every add opens a level worse than all others,
 // then the best levels are deleted one by one (forcing refills), with a few executions mixed in.
 TEST(ItchLevelBound, HostileDeepBookStaysCorrectWithTheBound) {

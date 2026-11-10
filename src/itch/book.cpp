@@ -234,7 +234,6 @@ public:
         }
     }
     [[nodiscard]] std::size_t size() const noexcept { return v_.size() + deep_.size(); }
-    [[nodiscard]] std::size_t deep_size() const noexcept { return deep_.size(); }
     template <typename F>
     void for_each_best_first(std::size_t max_levels, F&& f) const {
         std::size_t n = 0;
