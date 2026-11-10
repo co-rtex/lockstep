@@ -277,6 +277,38 @@ TEST(ItchBook, ExtremePricesKeepBestFirstOrderOnBothSides) {
     EXPECT_EQ(b.top(kL).ask->price, 7U);
 }
 
+// Deep books: levels inserted and removed at every depth, so the level lookup's linear scan
+// near the best price and its binary-search fallback are both exercised; depth must stay
+// sorted and equal to the reference model.
+TEST(ItchBook, DeepBooksStaySortedAtEveryInsertDepth) {
+    BookBuilder b;
+    test::ReferenceBook ref;
+    Rng rng(77);
+    OrderRef next = 1;
+    std::vector<OrderRef> live;
+    for (int i = 0; i < 20'000; ++i) {
+        Message m;
+        if (live.empty() || rng.chance(60)) {
+            const Side side = rng.chance(50) ? Side::Buy : Side::Sell;
+            m = add(next, side, static_cast<Price4>(1 + rng.below(300)),
+                    static_cast<std::uint32_t>(1 + rng.below(9)));
+            live.push_back(next++);
+        } else {
+            const std::size_t k = rng.below(live.size());
+            m = del(live[k]);
+            live[k] = live.back();
+            live.pop_back();
+        }
+        ASSERT_EQ(b.apply(m).anomaly, ref.apply(m));
+    }
+    for (const Side s : {Side::Buy, Side::Sell}) {
+        EXPECT_EQ(b.depth(kL, s, 0), ref.levels(kL, s));
+        EXPECT_EQ(b.orders(kL, s), ref.orders(kL, s));
+        EXPECT_GT(b.level_count(kL, s), 100U);
+    }
+    EXPECT_FALSE(b.check_invariants());
+}
+
 TEST(ItchBook, CrossedAndLockedBooksAreReportedNotRejected) {
     BookBuilder b;
     apply(b, add(1, Side::Buy, 100, 1));

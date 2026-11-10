@@ -175,8 +175,7 @@ public:
 
     Level& get_or_create(Price4 price, bool& created) {
         const std::uint32_t r = rank(price);
-        auto it = std::lower_bound(v_.begin(), v_.end(), r,
-                                   [](const Entry& e, std::uint32_t key) { return e.rank < key; });
+        auto it = position(r);
         if (it != v_.end() && it->rank == r) {
             created = false;
             return *it->level;
@@ -195,8 +194,7 @@ public:
     }
     void erase(Price4 price) {
         const std::uint32_t r = rank(price);
-        auto it = std::lower_bound(v_.begin(), v_.end(), r,
-                                   [](const Entry& e, std::uint32_t key) { return e.rank < key; });
+        auto it = position(r);
         if (it == v_.end() || it->rank != r) {
             throw std::logic_error("ITCH book: erasing a missing price level");
         }
@@ -218,6 +216,21 @@ private:
         std::uint32_t rank;
         Level* level;
     };
+    // First entry with rank >= r (std::lower_bound semantics). On real data ~80 % of lookups
+    // land within 8 entries of the best price (the back), so scan those linearly first and
+    // binary-search the rest only when needed.
+    std::vector<Entry>::iterator position(std::uint32_t r) {
+        constexpr std::size_t kScan = 8;
+        auto it = v_.end();
+        for (std::size_t i = 0; i < kScan && it != v_.begin(); ++i) {
+            if ((it - 1)->rank < r) {
+                return it;  // everything before is smaller: `it` is the lower bound
+            }
+            --it;
+        }
+        return std::lower_bound(v_.begin(), it, r,
+                                [](const Entry& e, std::uint32_t key) { return e.rank < key; });
+    }
     [[nodiscard]] std::uint32_t rank(Price4 p) const noexcept {
         return side_ == Side::Buy ? p : UINT32_MAX - p;
     }
