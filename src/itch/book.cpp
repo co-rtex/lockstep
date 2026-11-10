@@ -38,6 +38,7 @@ struct Level {
     std::uint32_t head = kNil;
     std::uint32_t tail = kNil;
 };
+#ifdef ENGINEX_ITCH_MAP_LEVELS  // the arena only backs the std::map level variant
 // Fixed-size block arena for std::map nodes: freed nodes go on a free list and are reused, so
 // creating and removing price levels does not call malloc/free in steady state. The block
 // size is fixed by the first allocation (the map's node type); any other size falls back to
@@ -108,6 +109,8 @@ struct ArenaAllocator {
         return arena == o.arena;
     }
 };
+
+#endif  // ENGINEX_ITCH_MAP_LEVELS
 
 // ---- price levels of one side ---------------------------------------------------------------
 // Both implementations offer the same interface; Level objects never move while they exist
