@@ -17,7 +17,8 @@ add_executable(enginex_tests
     itch_fixture_test.cpp
     itch_order_index_test.cpp
     mirror_test.cpp
-    itch_moldudp64_test.cpp)
+    itch_moldudp64_test.cpp
+    protocol_fuzz_test.cpp)
 target_link_libraries(enginex_tests PRIVATE enginex_net enginex_bench_lib enginex_itch
     GTest::gtest_main)
 target_include_directories(enginex_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
