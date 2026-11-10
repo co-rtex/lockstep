@@ -176,16 +176,20 @@ pushed, so GitHub CI has not run on them.
 | ITCH book reconstruction + replay policy | done | `ItchBook.*`, `ItchDifferential.*` (12 seeds), `ItchReplay.*`, `ItchSynthetic.*` |
 | Independent review of the ITCH code (separate agent, read-only) | done | 1 confirmed defect (strict replay counters after stop), fixed with regression tests in `ffec5ac`; test-coverage and comment findings addressed |
 | Order index optimization, measured | done | docs/benchmarks.md § ITCH; `benchmarks/results/itch-macos-m3.csv` |
+| Read-only feed mirror with gap refusal, resubscribe, in-band verification | done | `tests/mirror_test.cpp` (incl. a lossy TCP relay that drops one event, a stalled consumer, an oversized baseline, an unreachable server) |
+| MoldUDP64 packet parsing + sequencing (duplicates, reordering, gaps, re-request ranges, fail-stop) | done | `tests/itch_moldudp64_test.cpp` (lossy-channel end-to-end book hash equality; mutation check) |
+| Second independent review (mirror, order index, arena, server P0, bench) | done | fixed in `799e7c4`; server ordering guarantee and index/arena correctness confirmed by the reviewer |
+| Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
+| Source-based coverage | done | `scripts/coverage.sh`: 94.7 % lines over ITCH/mirror/server/CLI-ITCH |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
 
 Commands and results (latest):
 
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
-  438/438 passed.
+  471/471 passed (commit `799e7c4`).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
-  `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 438/438
-  (33.9 s) on the tree of the docs commit; ITCH tests were also re-run under UBSan after every
-  ITCH change.
+  `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
+  at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.
 * `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
   on the ITCH tests (UBSan build): passed.
 * `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
@@ -199,6 +203,8 @@ Blocked in this environment (exact symptoms), so they are not claimed for the sp
 * Sampling profilers: `sample <pid>` reports the target as not running, and `pgrep` is denied.
   The ITCH optimization used allocation counts and per-type timing instead (docs/benchmarks.md).
 * Linux/Docker and GitHub CI: no Docker here, and pushing is not permitted in this sprint.
+  In particular, **GCC 13 has not compiled the sprint code**. The CI workflow builds with
+  `-Werror` on GCC, and only Apple clang 17 was available locally.
 
 ## Blocked / external
 
