@@ -353,7 +353,10 @@ is below every vector rank, so best-first iteration is the vector, then the map.
 moves the vector's worst half to the map in one batch; an emptied vector takes back the map's
 best half. Any operation is O(limit + log n), amortized. Hostile pattern 25 130 → 96 ns/msg; a
 200 k-level monotone-improving book 17 → 54 ns/msg (it keeps spilling); real data unchanged
-within noise. Correctness: the reference-model differential at limits 2, 3 and 8 (constant
+within noise. The bound's own worst case was found and measured later. 8 191 levels with an
+empty map, then alternating add and delete just below the worst level, moves the whole
+vector on every message: 1 583 ns/msg (`itch_adversarial.py N churn`). That is O(limit) per
+message, as designed. Correctness: the reference-model differential at limits 2, 3 and 8 (constant
 spill/refill), a hostile deep-book test, and identical state hashes on a full real day at
 limits 2, 16 and 8 192. An independent review found no defect. Its remaining notes concern
 allocation failure in the middle of a spill or insert, which falls under the existing

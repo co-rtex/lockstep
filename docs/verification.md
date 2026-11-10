@@ -224,6 +224,21 @@ leaks; those are covered on Linux by ASan/LSan (and locally by `leaks` and Mallo
 * No historical event replay: recovery is snapshot-based resynchronization only.
 * Subscribers receive all symbols; there are no symbol filters.
 * Network benchmarks are loopback on one laptop (client and server share CPUs).
+* **Work amplification, measured but not mitigated.** These come from a complexity audit and
+  are linear per request, not quadratic. Each lets a small request occupy the single
+  sequencer thread, which an unauthenticated server cannot prevent.
+  * *Duplicate replay of a large result.* A retry returns the original result, so resending a
+    sweep that executed K resting orders rebuilds and serializes all K executions every time.
+    The retry is never journaled and, past 16 MiB, its reply is truncated. Measured through
+    `run` at K = 100 000: ≈ 0.15 s per 114-byte duplicate. The cost is linear in K, and
+    quantities allow up to 10⁶.
+  * *Full-depth snapshots.* `depth: 0` means the whole book, and `subscribe` always sends
+    the whole book. Measured at 200 000 price levels: ≈ 0.14 s per snapshot.
+
+  Possible mitigations, not implemented: a byte-capped cache of encoded large results,
+  per-connection rate limits on duplicates and full-depth snapshots, and a cap on depth 0.
+  `simulate`/`run` input lines that alternate orders with `executions` queries are also
+  O(n²) overall, because each query lists every execution so far. They are local tools.
 
 ## Known limitations (R2)
 

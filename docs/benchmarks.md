@@ -631,6 +631,14 @@ vector's front); with `better`, the back. Book apply, 3 trials, medians
 | `std::map` levels (`-DENGINEX_ITCH_MAP_LEVELS=ON`) | 141 | 121 |
 | sorted vector bounded at 8 192 + deep map (`b7f750e`) | 96 | 54 |
 
+*The bound's real worst case.* The `worse` pattern now sends each new level to the map, so
+it no longer exercises the vector. The complexity audit pointed at the pattern that does:
+`itch_adversarial.py N churn` keeps 8 191 levels with the map empty, then alternates adding
+and deleting a level just below the worst one. Each message then moves the whole vector.
+200 000 such pairs (408 192 messages) averaged **1 583 ns/msg** (3 trials, `--no-latency`).
+The cost is linear in the limit and still bounded, about 16× the `worse` case. A smaller
+limit would lower it, but real books reach 3 831 levels, so 8 192 was kept.
+
 Real data stays in the vector (deepest side 3 831 levels). In interleaved runs on 2019-03-27
 under load (≈ 4), the best-trial throughput was 23.25–23.94 M msg/s before and 21.75–23.56
 after, so there is no measurable change (console). The control binary was built from the
