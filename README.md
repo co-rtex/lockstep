@@ -113,7 +113,9 @@ Networked service (R3), in three terminals:
 ./build/release/enginex client submit --port 9000 --input examples/demo_orders.jsonl      # C
 ```
 
-ITCH 5.0 market-data replay (independent of the exchange):
+ITCH 5.0 market-data replay (independent of the exchange). `scripts/itch_demo.sh` runs the
+whole walkthrough in one command: golden fixture, malformed input, deterministic replay
+twice, injected anomalies (lenient vs `--strict`) and a short benchmark. Individually:
 
 ```bash
 ./build/release/enginex itch replay --input tests/testdata/itch/lifecycle.itch --strict
