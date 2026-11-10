@@ -117,7 +117,9 @@ UDP sockets as two processes. The sender copies a file's frames into MTU-bounded
 byte for byte, paces the live feed on a connected socket and can drop packets deliberately,
 both live and when answering. It repeats end-of-session and answers 20-byte re-requests
 from its packet store. The receiver runs the `Sequencer`, decodes, applies to a
-`BookBuilder` and re-requests `missing()` ranges, retrying a hole only after 50 ms.
+`BookBuilder` and re-requests `missing()` ranges. `RequestPlanner` asks a requested range
+again only after 50 ms, even when part of its answer has arrived and the hole has shrunk or
+split.
 `scripts/mold_udp_demo.sh [BUILD] [FILE]` runs both and compares the receiver's book hash with
 a direct replay. A sweep run (output abbreviated, counts rounded):
 
@@ -128,8 +130,8 @@ $ RATE_PPS=50000 scripts/mold_udp_demo.sh build/release build/realdata/03272019.
   book hash 8cbb4baa… == direct replay
 ```
 
-Loopback envelope on the real 2019-03-27 prefix (21.4 M messages, 498 172 packets), from
-`tools/mold_udp_sweep.py`
+Loopback envelope on the real 2019-03-27 prefix (21.4 M messages, 498 172 packets), measured at
+`7c2ae17` with `tools/mold_udp_sweep.py`
 ([`mold-udp-loopback-macos-m3.csv`](../benchmarks/results/mold-udp-loopback-macos-m3.csv)):
 
 | live / retransmit loss | 20 k packets/s | 50 k packets/s | 70 k packets/s | 100 k packets/s |

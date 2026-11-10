@@ -282,8 +282,10 @@ requests from the same store. The receiver feeds the real `Sequencer`, re-reques
 failure:
 * **Per-hole retry timer.** The first receiver re-requested every hole every round. Answers
   in flight were requested again, the answers snowballed, and a lossless 300 k packets/s
-  run took 305 s and failed with 1.8 M requests and 90 M duplicate messages. A hole is now
-  asked again only after `retry_after` (50 ms).
+  run took 305 s and failed with 1.8 M requests and 90 M duplicate messages. A requested range
+  is now asked again only after `retry_after` (50 ms). An independent review then found that
+  keying this by hole start let a partly answered hole look new. `RequestPlanner` keys it by
+  requested range: 58 k → 45 k retransmitted packets at 50 k packets/s with 5 % loss.
 * **Connected sockets on hot paths.** Here an unconnected `sendto()` costs ≈ 69 µs and a
   connected `send()` ≈ 1.7 µs (`enginex_udp_syscall_bench`). The live feed and the
   receiver's requests use connected sockets. Answers go out on per-peer connected sockets
