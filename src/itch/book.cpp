@@ -58,7 +58,7 @@ public:
             return p;
         }
         if (chunks_.empty() || used_ == kPerChunk) {
-            chunks_.push_back(std::make_unique<std::byte[]>(block_ * kPerChunk));
+            chunks_.push_back(std::make_unique_for_overwrite<std::byte[]>(block_ * kPerChunk));
             used_ = 0;
         }
         return chunks_.back().get() + block_ * used_++;

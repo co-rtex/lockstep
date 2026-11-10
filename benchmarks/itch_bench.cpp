@@ -95,13 +95,16 @@ std::string utc_now() {
     return buf;
 }
 
+// Median of each column independently (for an even count: mean of the two middle values).
 double median(std::vector<double> v) {
     std::sort(v.begin(), v.end());
-    return v[v.size() / 2];
+    const std::size_t n = v.size();
+    return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
 }
 std::uint64_t median_u(std::vector<std::uint64_t> v) {
     std::sort(v.begin(), v.end());
-    return v[v.size() / 2];
+    const std::size_t n = v.size();
+    return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
 }
 
 // One pass of a measurement. `with_latency` adds per-message timers (book_apply only).
@@ -196,8 +199,8 @@ std::string csv_header() {
 void write_row(std::ostream& out, const std::string& started, const std::string& m,
                const Options& o, const Workload& w, const Trial& t,
                const metrics::TimerCharacteristics& timer, std::uint64_t rss) {
-    char buf[1024];
-    std::snprintf(
+    char buf[4096];
+    const int len = std::snprintf(
         buf, sizeof buf,
         "%s,%s,%s %s,%s,%s,%s,%llu,%zu,%u,%zu,%s,%llu,%.0f,%.2f,%.1f,%llu,%llu,%.1f,%llu,%llu,%llu,"
         "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s\n",
@@ -216,6 +219,9 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
         static_cast<unsigned long long>(rss), static_cast<unsigned long long>(t.live_orders),
         static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str(),
         enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName);
+    if (len < 0 || static_cast<std::size_t>(len) >= sizeof buf) {
+        throw std::runtime_error("CSV row does not fit the buffer");
+    }
     out << buf;
 }
 
@@ -235,6 +241,14 @@ int run(const Options& o) {
     if (!o.out.empty()) {
         std::ifstream probe(o.out);
         const bool fresh = !probe || probe.peek() == std::ifstream::traits_type::eof();
+        if (!fresh) {
+            std::string header;
+            std::getline(probe, header);
+            if (header != csv_header()) {
+                throw std::runtime_error(o.out + ": existing CSV has a different header; "
+                                                 "write to a new file");
+            }
+        }
         csv.open(o.out, std::ios::app);
         if (fresh) {
             csv << csv_header() << "\n";
@@ -347,7 +361,7 @@ int run(const Options& o) {
                         static_cast<unsigned long long>(med.peak_live_orders),
                         med.state_hash.c_str());
         }
-        std::printf("  peak RSS %llu MiB (whole process, includes the workload)\n",
+        std::printf("  peak RSS %llu MiB (process high-water mark so far, includes the workload)\n",
                     static_cast<unsigned long long>(rss / 1024));
         if (csv.is_open()) {
             write_row(csv, started, m, o, w, first, timer, rss);

@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -109,6 +110,46 @@ TEST(FeedMirror, FailedSubscribeNeverGoesLive) {
     EXPECT_EQ(m.canonical(), "");
 }
 
+TEST(FeedMirror, MalformedUpdateIsNotAppliedPartially) {
+    FeedMirror m;
+    m.on_message(snapshot(1, true, Json::array({level(100, 5, 1)}), Json::array()));
+    Json u = update(2, "BUY", 101, 7, 1);
+    u["levels"].push_back(Json{{"side", "BUY"}, {"price", 102}});  // missing quantity
+    EXPECT_EQ(m.on_message(u), V::Malformed);
+    EXPECT_EQ(m.state(), S::Stale);
+    EXPECT_EQ(m.canonical(), "AAPL B 100 5 1\n");  // the valid first level was not applied
+    EXPECT_EQ(m.stats().malformed, 1U);
+    EXPECT_EQ(m.on_message(Json{{"type", "snapshot_response"}, {"subscribed", true}}),
+              V::Malformed);  // baseline without books
+}
+
+TEST(FeedMirror, SymbolSetMustMatchTheBaseline) {
+    FeedMirror a;  // update for a symbol the baseline does not have
+    a.on_message(snapshot(1, true, Json::array(), Json::array()));
+    Json u = update(2, "BUY", 100, 1, 1);
+    u["symbol"] = "MSFT";
+    EXPECT_EQ(a.on_message(u), V::Mismatch);
+    EXPECT_EQ(a.state(), S::Stale);
+    EXPECT_EQ(a.stats().mismatches, 1U);
+
+    FeedMirror b;  // mirror holds AAPL, verification snapshot lacks it
+    b.on_message(snapshot(1, true, Json::array({level(100, 5, 1)}), Json::array()));
+    const Json empty_snap{{"type", "snapshot_response"}, {"event_watermark", 1},
+                          {"subscribed", false},         {"depth", 0},
+                          {"books", Json::array()}};
+    EXPECT_EQ(b.on_message(empty_snap), V::Mismatch);
+    EXPECT_EQ(b.stats().mismatches, 1U);
+}
+
+TEST(FeedMirror, SubscribeErrorOnALiveFeedGoesStale) {
+    FeedMirror m;
+    m.on_message(snapshot(1, true, Json::array(), Json::array()));
+    EXPECT_EQ(m.on_message(Json{{"type", "error"}, {"command_type", "subscribe"},
+                                {"code", "INVALID_REQUEST"}, {"message", "already subscribed"}}),
+              V::SubscribeFailed);
+    EXPECT_EQ(m.state(), S::Stale);
+}
+
 TEST(FeedMirror, ResyncDisconnectAndMismatchAllGoStale) {
     FeedMirror a;
     a.on_message(snapshot(1, true, Json::array(), Json::array()));
@@ -131,6 +172,7 @@ TEST(FeedMirror, ResyncDisconnectAndMismatchAllGoStale) {
     e.on_message(snapshot(1, true, Json::array(), Json::array()));
     EXPECT_EQ(e.on_message(snapshot(1, true, Json::array(), Json::array())), V::Mismatch);
     EXPECT_EQ(e.state(), S::Stale);
+    EXPECT_EQ(e.stats().mismatches, 1U);  // counted, so a later ok() cannot hide it
     EXPECT_EQ(to_string(e.state()), "stale");
     EXPECT_EQ(to_string(V::Gap), "gap");
     EXPECT_EQ(e.on_message(Json{{"type", "ack"}}), V::Ignored);
@@ -197,7 +239,7 @@ TEST(FeedMirrorSession, FollowsLiveTrafficAndVerifiesInBand) {
     t1.join();
     t2.join();
     EXPECT_TRUE(r.ok()) << r.last_problem;
-    EXPECT_EQ(r.connections, 1U);
+    EXPECT_GE(r.connections, 1U);  // a slow-consumer cut under heavy load would be legitimate
     EXPECT_GE(r.stats.verified, 5U);
     EXPECT_GT(r.stats.applied, 50U);
     EXPECT_EQ(r.stats.gaps, 0U);
@@ -215,9 +257,11 @@ TEST(FeedMirrorSession, StalledMirrorIsCutOffThenResyncsToTheExactBook) {
     FeedMirror m;
     MirrorOptions o;
     o.port = rs.server->port();
-    o.duration = 2000ms;
+    // Long enough that two closed-loop traders produce far more event bytes than the outbound
+    // queue (8 frames) plus kernel socket buffers can hold, even with Linux autotuning.
+    o.duration = 3000ms;
     o.verify_every = 100ms;
-    o.stall_after_first_baseline = 600ms;
+    o.stall_after_first_baseline = 1500ms;
     const MirrorReport r = run_mirror(o, m);
     stop = true;
     t1.join();
@@ -266,7 +310,12 @@ private:
                 continue;
             }
             auto down = std::make_shared<Socket>(fd);
-            auto up = std::make_shared<Socket>(connect_tcp("127.0.0.1", upstream_, 2s));
+            std::shared_ptr<Socket> up;
+            try {
+                up = std::make_shared<Socket>(connect_tcp("127.0.0.1", upstream_, 2s));
+            } catch (const std::exception&) {
+                continue;  // upstream gone: drop this client (closing `down`)
+            }
             configure_stream(down->fd(), 100ms, 2000ms);
             configure_stream(up->fd(), 100ms, 2000ms);
             const bool lossy = conn_no++ == 0;
@@ -340,7 +389,9 @@ TEST(FeedMirrorSession, DroppedEventIsDetectedAsGapAndRecoveredBySnapshot) {
     MirrorOptions o;
     o.port = proxy.port();  // the mirror reads through the lossy relay
     o.duration = 1500ms;
-    o.verify_every = 100ms;
+    // No periodic verification: a verify served right after the dropped event would detect the
+    // loss as a watermark mismatch instead of a gap (also correct, but this test pins the gap).
+    o.verify_every = 60000ms;
     const MirrorReport r = run_mirror(o, m);
     stop = true;
     t1.join();
@@ -379,6 +430,32 @@ TEST(FeedMirrorSession, OversizedBaselineNeverGoesLive) {
     EXPECT_EQ(r.stats.applied, 0U);
     EXPECT_NE(r.state, "live");
     EXPECT_NE(r.last_problem.find("frame limit"), std::string::npos) << r.last_problem;
+    // Server side: nothing was registered. An accepted command afterwards reaches no one.
+    Client c = Client::connect("127.0.0.1", rs.server->port());
+    ASSERT_TRUE(c.request(Json{{"type", "new_limit"}, {"request_id", "late"}, {"symbol", "AAPL"},
+                               {"side", "BUY"}, {"price", 100}, {"quantity", 1}},
+                          2s));
+    std::this_thread::sleep_for(300ms);  // subscriber count is refreshed by the sequencer loop
+    EXPECT_EQ(rs.server->stats().subscribers, 0U);
+}
+
+TEST(FeedMirrorSession, UnreachableServerIsReportedNotThrown) {
+    std::uint16_t port = 0;
+    {
+        const Socket probe = listen_tcp("127.0.0.1", 0);  // find a free port, then free it
+        port = local_port(probe.fd());
+    }
+    FeedMirror m;
+    MirrorOptions o;
+    o.port = port;
+    o.duration = 200ms;
+    o.max_resubscribes = 3;
+    MirrorReport r;
+    ASSERT_NO_THROW(r = run_mirror(o, m));
+    EXPECT_FALSE(r.ok());
+    EXPECT_EQ(r.connections, 0U);
+    EXPECT_EQ(r.stats.connect_failures, 4U);  // first attempt + 3 retries, with back-off
+    EXPECT_FALSE(r.last_problem.empty());
 }
 
 }  // namespace

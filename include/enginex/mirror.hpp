@@ -15,7 +15,10 @@
 //   * A book_update whose event_sequence is not last + 1 is a gap: nothing is applied and the
 //     mirror goes Stale. The protocol promises no gaps, so a gap means loss or a bug; the only
 //     recovery is a fresh snapshot (snapshot-based resynchronization, protocol.md §5).
-//   * An error reply to `subscribe` (e.g. snapshot too large, fail-stop) leaves it not Live.
+//   * An error reply to `subscribe` (e.g. snapshot too large, fail-stop) leaves it not Live
+//     (a Live mirror that receives one goes Stale).
+//   * A book_update for a symbol absent from the baseline, or any malformed message, makes it
+//     Stale; updates are parsed completely before any level changes (no partial application).
 //   * Verification: a snapshot_response with "subscribed": false, received on the *same*
 //     connection while Live, was serialized at event_watermark W after every event ≤ W had
 //     been queued to this connection (one per-connection queue, sequencer order). So its W must
@@ -47,6 +50,7 @@ public:
         Verified,         // in-band snapshot equals the mirror
         Mismatch,         // in-band snapshot differs: now Stale
         Ignored,          // anything else (acks, unrelated errors, snapshots while not Live)
+        Malformed,        // a server message with missing/mistyped fields: nothing applied, Stale
     };
 
     struct Stats {
@@ -59,6 +63,8 @@ public:
         std::uint64_t verified = 0;
         std::uint64_t mismatches = 0;
         std::uint64_t disconnects = 0;
+        std::uint64_t malformed = 0;
+        std::uint64_t connect_failures = 0;
     };
 
     Verdict on_message(const codec::Json& m);
@@ -66,6 +72,8 @@ public:
     void on_disconnect();
     // Start over on a new connection: the next subscribe snapshot is the only way back to Live.
     void reset_for_resubscribe();
+    // A connection could not be made or broke with an error (counted only).
+    void note_connection_failure();
 
     [[nodiscard]] State state() const noexcept { return state_; }
     [[nodiscard]] std::uint64_t last_event() const noexcept { return last_event_; }
@@ -80,6 +88,7 @@ private:
     using Level = std::pair<std::int64_t, std::int64_t>;  // quantity, order count
     using Book = std::map<Key, Level>;
 
+    Verdict handle(const codec::Json& m);
     Verdict stale(Verdict v, std::string why);
     Verdict verify(const codec::Json& snapshot);
     static Book load_book(const codec::Json& b);
@@ -100,7 +109,7 @@ struct MirrorOptions {
     std::uint16_t port = 9000;
     std::chrono::milliseconds duration{5000};
     std::chrono::milliseconds verify_every{500};
-    std::size_t max_resubscribes = 10;
+    std::size_t max_resubscribes = 10;  // reconnect attempts after the first connection
     // Testing aid: stop reading for this long right after the first baseline (simulates a
     // stalled consumer so the server's slow-consumer path can be exercised).
     std::chrono::milliseconds stall_after_first_baseline{0};

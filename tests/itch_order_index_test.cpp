@@ -66,6 +66,30 @@ TEST(OrderIndex, MatchesUnorderedMapUnderRandomOperations) {
     }
 }
 
+TEST(OrderIndex, ExtremeKeysAndMixedHomeChains) {
+    OrderIndex idx(16);
+    EXPECT_TRUE(idx.insert(UINT64_MAX, 1));
+    EXPECT_TRUE(idx.insert(0, 2));
+    EXPECT_EQ(idx.find(UINT64_MAX), 1U);
+    // Keys whose home buckets are 14 and 15 interleave in one wrapped chain; deleting any of
+    // them must not move an entry before its own home.
+    std::vector<std::uint64_t> keys;
+    for (std::uint64_t k = 1; keys.size() < 6; ++k) {
+        const auto home = (k * 0x9E3779B97F4A7C15ULL) >> 60;
+        if (home == 14 || home == 15) keys.push_back(k);
+    }
+    for (std::size_t victim = 0; victim < keys.size(); ++victim) {
+        OrderIndex t(16);
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            ASSERT_TRUE(t.insert(keys[i], static_cast<std::uint32_t>(i)));
+        }
+        ASSERT_TRUE(t.erase(keys[victim]));
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            ASSERT_EQ(t.find(keys[i]), i == victim ? OrderIndex::kEmpty : i) << victim << " " << i;
+        }
+    }
+}
+
 TEST(OrderIndex, ReserveAndClear) {
     OrderIndex idx(16);
     idx.reserve(1000);
@@ -87,7 +111,6 @@ TEST(OrderIndex, ReserveAndClear) {
 // Keys that hash to the same bucket chain, deleted in every order: backward shift must keep
 // all remaining keys reachable.
 TEST(OrderIndex, DeletionInsideCollisionChains) {
-    OrderIndex probe(16);
     std::vector<std::uint64_t> same_bucket;
     // Find keys colliding in a 16-slot table by brute force (bucket = top 4 bits of k*phi).
     for (std::uint64_t k = 1; same_bucket.size() < 6; ++k) {

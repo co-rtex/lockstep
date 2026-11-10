@@ -59,6 +59,7 @@ std::string_view to_string(FeedMirror::Verdict v) noexcept {
         case FeedMirror::Verdict::Verified: return "verified";
         case FeedMirror::Verdict::Mismatch: return "mismatch";
         case FeedMirror::Verdict::Ignored: return "ignored";
+        case FeedMirror::Verdict::Malformed: return "malformed";
     }
     return "unknown";
 }
@@ -80,19 +81,32 @@ FeedMirror::Verdict FeedMirror::stale(Verdict v, std::string why) {
     return v;
 }
 
+// Malformed server messages (missing or mistyped fields) make the mirror Stale; nothing is
+// applied from them. Every update is parsed completely before any level is changed.
 FeedMirror::Verdict FeedMirror::on_message(const Json& m) {
+    try {
+        return handle(m);
+    } catch (const Json::exception& e) {
+        ++stats_.malformed;
+        return stale(Verdict::Malformed, std::string("malformed server message: ") + e.what());
+    }
+}
+
+FeedMirror::Verdict FeedMirror::handle(const Json& m) {
     const std::string type = type_of(m);
     if (type == "snapshot_response") {
         if (m.value("subscribed", false)) {
             if (state_ == State::Live) {
+                ++stats_.mismatches;
                 return stale(Verdict::Mismatch, "second subscribe snapshot on a live feed");
             }
             std::map<std::string, Book> books;
             for (const auto& b : m.at("books")) {
                 books[b.at("symbol").get<std::string>()] = load_book(b);
             }
+            const auto watermark = m.at("event_watermark").get<std::uint64_t>();
             books_ = std::move(books);
-            last_event_ = m.at("event_watermark").get<std::uint64_t>();
+            last_event_ = watermark;
             state_ = State::Live;
             ++stats_.baselines;
             return Verdict::Baseline;
@@ -110,15 +124,26 @@ FeedMirror::Verdict FeedMirror::on_message(const Json& m) {
             return stale(Verdict::Gap, "event " + std::to_string(seq) + " after " +
                                            std::to_string(last_event_));
         }
-        Book& book = books_[m.at("symbol").get<std::string>()];
+        const std::string symbol = m.at("symbol").get<std::string>();
+        const auto it = books_.find(symbol);
+        if (it == books_.end()) {
+            // The baseline lists every symbol the server trades; an unknown one is a violation.
+            ++stats_.mismatches;
+            return stale(Verdict::Mismatch, "book_update for symbol " + symbol +
+                                                " absent from the baseline");
+        }
+        std::vector<std::pair<Key, Level>> changes;  // parse everything first
         for (const auto& l : m.at("levels")) {
             const char side = l.at("side").get<std::string>() == "BUY" ? 'B' : 'S';
-            const Key key{side, l.at("price").get<std::int64_t>()};
-            const auto qty = l.at("quantity").get<std::int64_t>();
-            if (qty == 0) {
-                book.erase(key);
+            changes.emplace_back(Key{side, l.at("price").get<std::int64_t>()},
+                                 Level{l.at("quantity").get<std::int64_t>(),
+                                       l.at("order_count").get<std::int64_t>()});
+        }
+        for (const auto& [key, level] : changes) {
+            if (level.first == 0) {
+                it->second.erase(key);
             } else {
-                book[key] = {qty, l.at("order_count").get<std::int64_t>()};
+                it->second[key] = level;
             }
         }
         last_event_ = seq;
@@ -132,8 +157,13 @@ FeedMirror::Verdict FeedMirror::on_message(const Json& m) {
     }
     if (type == "error" && m.value("command_type", std::string()) == "subscribe") {
         ++stats_.subscribe_failures;
-        problem_ = "subscribe failed: " + m.value("code", std::string("?")) + " " +
-                   m.value("message", std::string());
+        std::string why = "subscribe failed: " + m.value("code", std::string("?")) + " " +
+                          m.value("message", std::string());
+        if (state_ == State::Live) {
+            (void)stale(Verdict::SubscribeFailed, std::move(why));  // the feed is not trusted
+        } else {
+            problem_ = std::move(why);
+        }
         return Verdict::SubscribeFailed;
     }
     return Verdict::Ignored;
@@ -147,7 +177,7 @@ FeedMirror::Verdict FeedMirror::verify(const Json& snap) {
                                             std::to_string(watermark) + " but mirror at " +
                                             std::to_string(last_event_));
     }
-    const auto depth = snap.value("depth", std::size_t{0});
+    const auto depth = snap.at("depth").get<std::size_t>();
     for (const auto& b : snap.at("books")) {
         const std::string symbol = b.at("symbol").get<std::string>();
         const Book expected = load_book(b);
@@ -163,6 +193,18 @@ FeedMirror::Verdict FeedMirror::verify(const Json& snap) {
             }
         }
     }
+    // Every symbol the mirror holds must be in the snapshot (run_mirror never filters by symbol;
+    // a filtered snapshot cannot verify the whole mirror and is reported as a mismatch).
+    for (const auto& [symbol, book] : books_) {
+        bool found = false;
+        for (const auto& b : snap.at("books")) {
+            found = found || b.at("symbol").get<std::string>() == symbol;
+        }
+        if (!found) {
+            ++stats_.mismatches;
+            return stale(Verdict::Mismatch, "snapshot lacks symbol " + symbol);
+        }
+    }
     ++stats_.verified;
     return Verdict::Verified;
 }
@@ -173,6 +215,8 @@ void FeedMirror::on_disconnect() {
         (void)stale(Verdict::Ignored, "disconnected");
     }
 }
+
+void FeedMirror::note_connection_failure() { ++stats_.connect_failures; }
 
 void FeedMirror::reset_for_resubscribe() {
     state_ = State::AwaitingBaseline;
@@ -196,75 +240,84 @@ MirrorReport run_mirror(const MirrorOptions& o, FeedMirror& mirror) {
     using std::chrono::milliseconds;
     MirrorReport report;
     const auto end = Clock::now() + o.duration;
+    // After `end`, keep trying (reconnect + final verification) for this long.
+    const auto give_up = end + milliseconds(2000);
     std::uint64_t verify_no = 0;
     bool stalled = false;
-    std::size_t resubscribes = 0;
+    std::size_t attempts = 0;  // connections or connection attempts after the first
     while (true) {
         mirror.reset_for_resubscribe();
-        Client c = Client::connect(o.host, o.port);
-        ++report.connections;
-        if (!c.send(Json{{"type", "subscribe"}, {"request_id", "mirror-subscribe"}})) {
-            mirror.on_disconnect();
-        }
-        auto next_verify = Clock::now() + o.verify_every;
-        bool final_sent = false;
-        std::string final_id;
-        // Read until the session ends or the mirror needs a new connection.
-        while (true) {
-            const auto now = Clock::now();
-            if (!final_sent && now >= end && mirror.state() == FeedMirror::State::Live) {
-                final_id = "mirror-final";
-                final_sent = c.send(Json{{"type", "snapshot_request"},
-                                         {"request_id", final_id},
-                                         {"depth", 0}});
-            } else if (!final_sent && now >= next_verify &&
-                       mirror.state() == FeedMirror::State::Live) {
-                (void)c.send(Json{{"type", "snapshot_request"},
-                                  {"request_id", "mirror-verify-" + std::to_string(++verify_no)},
-                                  {"depth", 0}});
-                next_verify = now + o.verify_every;
+        bool disconnected = false;
+        try {
+            Client c = Client::connect(o.host, o.port);
+            ++report.connections;
+            if (!c.send(Json{{"type", "subscribe"}, {"request_id", "mirror-subscribe"}})) {
+                throw std::runtime_error("cannot send subscribe");
             }
-            if (now >= end + milliseconds(2000)) {
-                break;  // final verification never arrived
-            }
-            const auto msg = c.receive(milliseconds(50));
-            if (!msg) {
-                if (c.closed()) {
-                    mirror.on_disconnect();
+            auto next_verify = Clock::now() + o.verify_every;
+            bool final_sent = false;
+            while (true) {
+                const auto now = Clock::now();
+                const bool live = mirror.state() == FeedMirror::State::Live;
+                if (!final_sent && now >= end && live) {
+                    final_sent = c.send(Json{{"type", "snapshot_request"},
+                                             {"request_id", "mirror-final"},
+                                             {"depth", 0}});
+                } else if (!final_sent && now >= next_verify && live) {
+                    (void)c.send(Json{{"type", "snapshot_request"},
+                                      {"request_id", "mirror-verify-" + std::to_string(++verify_no)},
+                                      {"depth", 0}});
+                    next_verify = now + o.verify_every;
+                }
+                if (now >= give_up) {
                     break;
                 }
-                if (mirror.state() == FeedMirror::State::AwaitingBaseline && now >= end) {
-                    break;  // never got a baseline
+                const auto msg = c.receive(milliseconds(50));  // throws on an invalid frame
+                if (!msg) {
+                    if (c.closed()) {
+                        disconnected = true;
+                        break;
+                    }
+                    continue;
                 }
-                continue;
+                const FeedMirror::Verdict v = mirror.on_message(*msg);
+                if (v == FeedMirror::Verdict::Baseline && !stalled &&
+                    o.stall_after_first_baseline.count() > 0) {
+                    stalled = true;
+                    std::this_thread::sleep_for(o.stall_after_first_baseline);
+                }
+                if (final_sent && msg->value("request_id", std::string()) == "mirror-final" &&
+                    msg->value("type", std::string()) == "snapshot_response") {
+                    report.final_verified = v == FeedMirror::Verdict::Verified;
+                    break;
+                }
+                if (mirror.state() == FeedMirror::State::Stale ||
+                    v == FeedMirror::Verdict::SubscribeFailed) {
+                    break;  // needs a fresh connection and snapshot
+                }
             }
-            const FeedMirror::Verdict v = mirror.on_message(*msg);
-            if (v == FeedMirror::Verdict::Baseline && !stalled &&
-                o.stall_after_first_baseline.count() > 0) {
-                stalled = true;
-                std::this_thread::sleep_for(o.stall_after_first_baseline);
-            }
-            if (final_sent && msg->value("request_id", std::string()) == final_id &&
-                msg->value("type", std::string()) == "snapshot_response") {
-                report.final_verified = v == FeedMirror::Verdict::Verified;
-                break;
-            }
-            if (mirror.state() == FeedMirror::State::Stale ||
-                v == FeedMirror::Verdict::SubscribeFailed) {
-                break;  // needs a fresh connection and snapshot
-            }
+        } catch (const std::exception& e) {
+            // Refused connection, reset, or an invalid frame: count it and retry.
+            mirror.note_connection_failure();
+            report.last_problem = e.what();
+            disconnected = true;
         }
-        c.close();
-        const bool done = final_sent || Clock::now() >= end;
-        if (done || resubscribes >= o.max_resubscribes) {
+        if (disconnected) {
+            mirror.on_disconnect();
+        }
+        if (report.final_verified || Clock::now() >= give_up || attempts >= o.max_resubscribes) {
             break;
         }
-        ++resubscribes;
+        ++attempts;
+        // Back off a little so a failing or restarting server is not hammered.
+        std::this_thread::sleep_for(milliseconds(std::min<std::size_t>(20 * attempts, 200)));
     }
     report.stats = mirror.stats();
     report.last_event = mirror.last_event();
     report.state = std::string(to_string(mirror.state()));
-    report.last_problem = mirror.last_problem();
+    if (!mirror.last_problem().empty()) {
+        report.last_problem = mirror.last_problem();
+    }
     return report;
 }
 

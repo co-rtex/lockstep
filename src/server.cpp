@@ -607,7 +607,7 @@ private:
 
     // Reads see exactly the durable, published state: flush and publish the batch first.
     void handle(const SessionPtr& s, SnapshotRequest& r) {
-        commit_pending();
+        safe_commit();  // an exception here fail-stops and is answered below, not leaked
         Frame f;
         if (backend_.failed()) {
             f = make_frame(error_message(
@@ -639,7 +639,7 @@ private:
     }
 
     void handle(const SessionPtr& s, SubscribeRequest& r) {
-        commit_pending();
+        safe_commit();
         Frame f;
         bool subscribe = false;
         if (backend_.failed()) {
@@ -662,8 +662,8 @@ private:
         // Snapshot and registration happen together on this thread: no event can fall between.
         s->last_event_queued = published_event_;
         if (s->enqueue(f, counters_) && subscribe) {
+            subscribers_.push_back(s);  // first: if this throws, the session is not marked
             s->subscribed = true;
-            subscribers_.push_back(s);
         }
         s->in_flight.fetch_sub(1);
     }

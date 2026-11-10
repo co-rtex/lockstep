@@ -304,6 +304,8 @@ int client_mirror(const Args& args) {
                       {"resync_required", s.resyncs},
                       {"disconnects", s.disconnects},
                       {"subscribe_failures", s.subscribe_failures},
+                      {"connect_failures", s.connect_failures},
+                      {"malformed_messages", s.malformed},
                       {"verifications", s.verified},
                       {"mismatches", s.mismatches},
                       {"last_problem", r.last_problem}}
