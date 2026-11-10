@@ -191,6 +191,7 @@ pushed, so GitHub CI has not run on them.
 | MoldUDP64 over UDP on loopback (D29): sender with re-request answers, receiver, `RequestPlanner`, source filter, answer budget | done | `MoldUdp.*`, `MoldRequestPlanner.*`, `tests/cli_itch_smoke.py`, `scripts/mold_udp_demo.sh`, `mold-udp-loopback-macos-m3.csv` (3 real days exact at 50 k packets/s with 5 %/10 % loss); macOS only |
 | Reorder buffer redesign (D30) | done | `mold-sequencer-macos-m3.csv`: 121–147 → 20–21 ns/msg behind holes; set-model differential unchanged |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
+| R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows |
 
 Commands and results (latest):
 

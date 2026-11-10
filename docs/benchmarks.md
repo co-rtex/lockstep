@@ -259,6 +259,12 @@ states.
 ./build/release/enginex benchmark --mode network --durability sync   --clients 8 --orders 4000  --trials 5 --out r3.csv
 ```
 
+*Reproduction after the sprint* (`94ee2d0`, which includes the P0 server fixes;
+[`r3-network-macos-m3-rerun-20261110.csv`](../benchmarks/results/r3-network-macos-m3-rerun-20261110.csv)):
+memory, 1 client 27.5 k cmd/s, p50 33.5 µs, p99 54.0 µs; memory, 8 clients 85.8 k cmd/s,
+p50 86.6 µs, p99 157 µs; sync, 8 clients 1 411 cmd/s, p50 5.99 ms. All are within 1.5 % of
+the R3 medians above (p99 of the sync row −3 %).
+
 Interpretation:
 
 * **The three latencies are different things.** The in-process core needs ~125 ns per command
