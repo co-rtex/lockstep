@@ -66,6 +66,24 @@ TEST(OrderIndex, MatchesUnorderedMapUnderRandomOperations) {
     }
 }
 
+TEST(OrderIndex, ReserveAndClear) {
+    OrderIndex idx(16);
+    idx.reserve(1000);
+    const std::size_t cap = idx.capacity();
+    EXPECT_GE(cap, 2000U);
+    for (std::uint32_t i = 0; i < 1000; ++i) {
+        ASSERT_TRUE(idx.insert(i * 7919ULL, i));
+    }
+    EXPECT_EQ(idx.capacity(), cap);  // no growth below the reserved count
+    idx.reserve(10);                 // never shrinks
+    EXPECT_EQ(idx.capacity(), cap);
+    EXPECT_EQ(idx.find(999 * 7919ULL), 999U);
+    idx.clear();
+    EXPECT_EQ(idx.size(), 0U);
+    EXPECT_EQ(idx.find(999 * 7919ULL), OrderIndex::kEmpty);
+    EXPECT_TRUE(idx.insert(5, 5));
+}
+
 // Keys that hash to the same bucket chain, deleted in every order: backward shift must keep
 // all remaining keys reachable.
 TEST(OrderIndex, DeletionInsideCollisionChains) {

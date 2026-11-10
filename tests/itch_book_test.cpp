@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <sstream>
+#include <streambuf>
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/replay.hpp"
@@ -321,6 +322,63 @@ TEST_P(ItchDifferential, MatchesReferenceModelMessageByMessage) {
 INSTANTIATE_TEST_SUITE_P(Seeds, ItchDifferential, ::testing::Range(0U, 12U));
 
 // ---- determinism and replay policy ----------------------------------------------------------
+
+TEST(ItchBook, CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty) {
+    SyntheticOptions o;
+    o.seed = 21;
+    o.messages = 20'000;
+    o.symbols = 3;
+    const auto stream = generate(o);
+    BookBuilder plain;
+    BookBuilder hinted(100'000);
+    for (const Message& m : stream) {
+        ASSERT_EQ(plain.apply(m).anomaly, hinted.apply(m).anomaly);
+    }
+    EXPECT_EQ(plain.state_hash(), hinted.state_hash());
+    EXPECT_FALSE(hinted.check_invariants());
+    // Queries on a locate that never appeared.
+    EXPECT_FALSE(plain.symbol(999));
+    EXPECT_FALSE(plain.trading_state(999));
+    EXPECT_FALSE(plain.top(999).bid);
+    EXPECT_TRUE(plain.depth(999, Side::Buy, 0).empty());
+    EXPECT_TRUE(plain.orders(999, Side::Sell).empty());
+    EXPECT_EQ(plain.level_count(999, Side::Buy), 0U);
+    EXPECT_FALSE(plain.find_locate("NOPE"));
+    EXPECT_FALSE(plain.attribution(123456789));
+}
+
+std::vector<std::uint8_t> framed(const std::vector<Message>& msgs);
+
+// A stream whose buffer throws after the first chunk: istream sets badbit, replay reports it.
+class FailingBuf : public std::streambuf {
+public:
+    explicit FailingBuf(std::string first) : first_(std::move(first)) {
+        setg(first_.data(), first_.data(), first_.data() + first_.size());
+    }
+
+protected:
+    int_type underflow() override { throw std::runtime_error("disk error"); }
+
+private:
+    std::string first_;
+};
+
+TEST(ItchReplay, ReadErrorStopsWithAReason) {
+    const auto file = framed({add(1, Side::Buy, 100, 10), add(2, Side::Buy, 100, 10)});
+    // 48 bytes = 3 whole 16-byte reads (message 1 complete + 10 bytes of message 2); the 4th
+    // read throws. (Bytes of a read() call that fails part-way are lost by the stream.)
+    FailingBuf buf(std::string(file.begin(), file.begin() + 48));
+    std::istream in(&buf);
+    BookBuilder b;
+    ReplayOptions o;
+    o.chunk_bytes = 16;
+    const ReplayResult r = replay(in, b, o);
+    ASSERT_FALSE(r.ok());
+    EXPECT_EQ(*r.stopped, "read error");
+    EXPECT_EQ(r.frames, 1U);
+    EXPECT_EQ(b.stats().live_orders, 1U);
+    EXPECT_EQ(r.frame_error, FrameError::None);  // not misreported as a truncated file
+}
 
 TEST(ItchReplay, DeterministicAcrossRunsAndChunkSizes) {
     SyntheticOptions o;

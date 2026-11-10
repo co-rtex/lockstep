@@ -54,3 +54,11 @@ add_test(NAME cli_itch_replay_malformed_fails
 set_tests_properties(cli_itch_replay_strict cli_itch_replay_malformed_fails
                      PROPERTIES LABELS "itch;cli")
 set_tests_properties(cli_itch_replay_malformed_fails PROPERTIES WILL_FAIL TRUE)
+
+# ITCH generate -> replay -> dump through the CLI (exit codes and a deterministic hash).
+if(Python3_Interpreter_FOUND)
+    add_test(NAME cli_itch_generate_replay_dump
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cli_itch_smoke.py
+                     $<TARGET_FILE:enginex>)
+    set_tests_properties(cli_itch_generate_replay_dump PROPERTIES LABELS "itch;cli" TIMEOUT 120)
+endif()

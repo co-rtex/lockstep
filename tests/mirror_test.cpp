@@ -127,6 +127,14 @@ TEST(FeedMirror, ResyncDisconnectAndMismatchAllGoStale) {
               V::Mismatch);
     EXPECT_EQ(c.state(), S::Stale);
 
+    FeedMirror e;  // a second subscribe snapshot on a live feed is a protocol violation
+    e.on_message(snapshot(1, true, Json::array(), Json::array()));
+    EXPECT_EQ(e.on_message(snapshot(1, true, Json::array(), Json::array())), V::Mismatch);
+    EXPECT_EQ(e.state(), S::Stale);
+    EXPECT_EQ(to_string(e.state()), "stale");
+    EXPECT_EQ(to_string(V::Gap), "gap");
+    EXPECT_EQ(e.on_message(Json{{"type", "ack"}}), V::Ignored);
+
     FeedMirror d;  // in-band snapshot at a different watermark is a protocol violation
     d.on_message(snapshot(1, true, Json::array(), Json::array()));
     EXPECT_EQ(d.on_message(snapshot(3, false, Json::array(), Json::array())), V::Mismatch);

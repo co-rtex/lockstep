@@ -195,6 +195,7 @@ bytes and the whole buffer) and across both index implementations (benchmark row
 | Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted) | recorded in the commit log |
 | Corrupted files | 300 randomly corrupted/truncated files: no crash, invariants hold, deterministic | `ItchReplay.CorruptedFilesNeverBreakInvariants` |
 | Order index | vs `std::unordered_map` under random operations; deletion inside wrapping collision chains | `OrderIndex.*` |
+| Coverage | `scripts/coverage.sh` (clang source-based, whole ctest suite incl. CLI subprocesses). 2026-11-10: lines 94.7 %, branches 86.5 %, regions 91.0 % over `src/itch`, `include/enginex/itch`, `mirror.cpp`, `cli_itch.cpp`, `server.cpp`; per file ≥ 90 % lines (decoder.hpp 90.5 %, mirror.cpp 90.8 %, server.cpp 90.1 %). Uncovered code is mostly `to_string` defaults, accessors and the `-DENGINEX_ITCH_STD_INDEX` A/B index | |
 | Sanitizers | UBSan: whole suite. MallocScribble/GuardEdges: ITCH tests. ASan and TSan cannot start in this sandboxed macOS environment (exact errors in `docs/PROGRESS.md`); they run in Linux CI | |
 
 The reference model is deliberately independent in its *data structures*. It does, however,
