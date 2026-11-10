@@ -173,6 +173,18 @@ TEST(MoldSequencer, EndOfSession) {
     EXPECT_EQ(r.state(), Sequencer::State::Ended);
 }
 
+TEST(MoldSequencer, EndOfSessionBelowSeenMessagesIsIgnored) {
+    Sequencer q;
+    Sink out;
+    q.on_packet(build_packet(kS, 1, {msg(1), msg(2), msg(3), msg(4), msg(5)}), out);
+    q.on_packet(build_control(kS, 3, kEndOfSession), out);  // stale: messages 3..5 exist
+    EXPECT_EQ(q.state(), Sequencer::State::Running);
+    q.on_packet(build_packet(kS, 6, {msg(6)}), out);
+    q.on_packet(build_control(kS, 7, kEndOfSession), out);
+    EXPECT_EQ(q.state(), Sequencer::State::Ended);
+    EXPECT_EQ(out.seqs.size(), 6U);
+}
+
 TEST(MoldSequencer, BufferLimitFailsInsteadOfSkipping) {
     Sequencer::Options o;
     o.max_buffered_messages = 3;

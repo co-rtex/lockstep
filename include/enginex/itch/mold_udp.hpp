@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <span>
 #include <string>
 #include <vector>
@@ -99,6 +100,33 @@ private:
     in_addr receiver_ip_{};
     double answer_tokens_ = 0;
     std::chrono::steady_clock::time_point tokens_at_;
+};
+
+// Decides which missing ranges to request in one round. A range already requested less
+// than `retry_after` ago is not asked again, even after part of its answer has arrived and
+// the hole has shrunk or split (the answer for the rest may still be in flight). Pure: no
+// sockets, so it is unit-tested directly.
+class RequestPlanner {
+public:
+    using Clock = std::chrono::steady_clock;
+    RequestPlanner(std::chrono::milliseconds retry_after, std::size_t max_ranges,
+                   std::uint32_t max_messages)
+        : retry_after_(retry_after), max_ranges_(max_ranges), max_messages_(max_messages) {}
+
+    // Returns (first, count) requests for `missing` (ranges at or after `next_expected`).
+    std::vector<std::pair<std::uint64_t, std::uint16_t>> plan(
+        const std::vector<std::pair<std::uint64_t, std::uint64_t>>& missing,
+        std::uint64_t next_expected, Clock::time_point now);
+
+private:
+    struct Asked {
+        std::uint64_t end;
+        Clock::time_point at;
+    };
+    std::chrono::milliseconds retry_after_;
+    std::size_t max_ranges_;
+    std::uint32_t max_messages_;
+    std::map<std::uint64_t, Asked> asked_;  // requested [first, end), keyed by first
 };
 
 struct ReceiverOptions {

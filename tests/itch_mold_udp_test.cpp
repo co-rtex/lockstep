@@ -38,6 +38,25 @@ TEST(MoldRequest, ParsesOnlyWellFormedRequests) {
     EXPECT_FALSE(parse_request(build_request(kSession, UINT64_MAX, 2)));  // would wrap
 }
 
+TEST(MoldRequestPlanner, RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills) {
+    using R = std::vector<std::pair<std::uint64_t, std::uint16_t>>;
+    udp::RequestPlanner p(50ms, 16, 4096);
+    const auto t0 = udp::RequestPlanner::Clock::now();
+    EXPECT_EQ(p.plan({{100, 500}}, 100, t0), (R{{100, 500}}));
+    // Part of the answer arrived: the hole is now [110, 600). Still covered: nothing to ask.
+    EXPECT_EQ(p.plan({{110, 490}}, 110, t0 + 5ms), R{});
+    // A fill in the middle split it: still covered.
+    EXPECT_EQ(p.plan({{110, 90}, {201, 399}}, 110, t0 + 10ms), R{});
+    // The hole grew past the request (e.g. a heartbeat): only the new tail is asked.
+    EXPECT_EQ(p.plan({{110, 90}, {201, 499}}, 110, t0 + 15ms), (R{{600, 100}}));
+    // After the retry timer, what is still missing is asked again.
+    EXPECT_EQ(p.plan({{110, 90}, {201, 499}}, 110, t0 + 60ms), (R{{110, 90}, {201, 399}}));
+    // Long holes are asked in pieces of at most max_messages; ranges per round are capped.
+    udp::RequestPlanner q(50ms, 2, 1000);
+    EXPECT_EQ(q.plan({{1, 2500}, {3000, 5}, {4000, 5}}, 1, t0), (R{{1, 1000}, {3000, 5}}));
+    EXPECT_EQ(q.plan({{1, 2500}, {3000, 5}, {4000, 5}}, 1, t0 + 1ms), (R{{1001, 1000}, {4000, 5}}));
+}
+
 TEST(MoldPacketStore, PacketsAreContiguousWithinTheMtuAndFindable) {
     PacketStore store(kSession, 100);
     for (std::uint8_t i = 1; i <= 50; ++i) {
@@ -229,6 +248,17 @@ TEST(MoldUdp, DatagramsFromAnUnexpectedSourceAreRejected) {
     EXPECT_GT(o.received.foreign_source, 0U);
     EXPECT_EQ(o.received.delivered, 0U);
     EXPECT_TRUE(o.received.timed_out);
+}
+
+// The request socket allows SO_REUSEPORT (answer sockets share its port), but a second
+// sender must not silently share an explicitly chosen port.
+TEST(MoldUdp, ASecondSenderCannotTakeAPortInUse) {
+    const Feed f = make_feed(100);
+    udp::SenderOptions so;
+    so.dest.port = 9;  // never used: run() is not called
+    udp::Sender first(f.store, so);
+    so.bind.port = first.port();
+    EXPECT_THROW(udp::Sender second(f.store, so), std::runtime_error);
 }
 
 TEST(MoldUdp, LoopbackCheck) {

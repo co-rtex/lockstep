@@ -508,6 +508,14 @@ std::string host_arg(const Args& a, const std::string& key) {
     return host;
 }
 
+std::string session_arg(const Args& a) {
+    std::string s = a.get_or("session", "ENGINEX");
+    if (s.empty() || s.size() > 10) {
+        throw UsageError("--session must be 1 to 10 characters (the MoldUDP64 session field)");
+    }
+    return s;
+}
+
 std::uint32_t percent_arg(const Args& a, const std::string& key) {
     return static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64(key, 0), 100));
 }
@@ -537,13 +545,13 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
     o.retransmit_drop_percent = percent_arg(a, "retransmit-drop-percent");
     o.seed = a.get_u64("seed", 1);
     o.packets_per_second = a.get_u64("rate-pps", 100'000);
-    o.linger = std::chrono::milliseconds(a.get_u64("linger-ms", 1000));
+    o.linger = std::chrono::milliseconds(std::min<std::uint64_t>(a.get_u64("linger-ms", 1000), 3'600'000));
     const std::size_t mtu = a.get_u64("mtu", 1400);
     if (mtu < 100 || mtu > 65507) {
         throw UsageError("--mtu must be in [100, 65507]");
     }
     // Frames are copied into packets as they are, without decoding (the sender is a transport).
-    mold::PacketStore store(mold::make_session(a.get_or("session", "ENGINEX")), mtu);
+    mold::PacketStore store(mold::make_session(session_arg(a)), mtu);
     StreamFramer framer;
     auto in = open_input(input);
     std::vector<char> buf(1 << 20);
@@ -561,6 +569,12 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
         throw std::runtime_error("input framing error: " + std::string(to_string(fe)));
     }
     store.finish();
+    for (std::size_t i = 0; i < store.size(); ++i) {
+        if (store.packet(i).size() > 65507) {  // the IPv4 UDP payload limit
+            throw std::runtime_error("message " + std::to_string(store.first(i)) +
+                                     " does not fit in one UDP datagram");
+        }
+    }
     mold::udp::Sender sender(store, o);
     std::cerr << "mold-send: " << store.size() << " packets, " << store.end_sequence() - 1
               << " messages, from port " << sender.port() << " to " << o.dest.host << ":"
@@ -608,11 +622,15 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
     if (o.recovery && o.request_to.port == 0) {
         throw UsageError("--request-port is required unless --no-recovery");
     }
-    o.idle_timeout = std::chrono::milliseconds(a.get_u64("idle-timeout-ms", 5000));
-    o.request_interval = std::chrono::milliseconds(std::max<std::uint64_t>(1, a.get_u64("request-interval-ms", 5)));
+    o.idle_timeout = std::chrono::milliseconds(std::min<std::uint64_t>(a.get_u64("idle-timeout-ms", 5000), 3'600'000));
+    const std::uint64_t interval = a.get_u64("request-interval-ms", 5);
+    if (interval < 1 || interval > 1000) {
+        throw UsageError("--request-interval-ms must be in [1, 1000]");
+    }
+    o.request_interval = std::chrono::milliseconds(interval);
     // Reorder buffer: bounded, but large enough to ride out a few request rounds at full rate.
     o.sequencer.max_buffered_messages = a.get_u64("max-buffered-messages", 1U << 20U);
-    o.sequencer.session = mold::make_session(a.get_or("session", "ENGINEX"));
+    o.sequencer.session = mold::make_session(session_arg(a));
     mold::udp::Receiver rx(o);
     std::cerr << "mold-recv: listening on " << o.bind.host << ":" << rx.port() << "\n";
     BookBuilder book;

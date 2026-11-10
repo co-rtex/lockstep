@@ -255,7 +255,9 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
         // Control packets carry the next expected sequence number.
         if (h.count == kHeartbeat) {
             ++stats_.heartbeats;
-        } else {
+        } else if (h.sequence >= horizon_) {
+            // An end of session below messages already seen contradicts them (stale or bogus):
+            // ignoring it keeps the sequencer from reporting Ended while the feed is live.
             ended_ = true;
             end_sequence_ = h.sequence;
         }

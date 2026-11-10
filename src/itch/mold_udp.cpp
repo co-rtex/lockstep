@@ -47,6 +47,22 @@ net::Socket open_udp(const Endpoint& bind_to, bool reuse_port = false) {
     return s;
 }
 
+void clear_error(int fd) {
+    int err = 0;
+    socklen_t len = sizeof err;
+    (void)::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);  // reading SO_ERROR clears it
+}
+
+// The request socket must allow SO_REUSEPORT (the per-peer answer sockets share its port),
+// which would also let a second sender bind the same port silently. A fixed port is therefore
+// first bound once without reuse: if that fails, the port is taken.
+net::Socket bind_request_port(const Endpoint& e) {
+    if (e.port != 0) {
+        (void)open_udp(e, false);  // throws "bind ...: Address already in use" if taken
+    }
+    return open_udp(e, true);
+}
+
 bool same_peer(const sockaddr_in& a, const sockaddr_in& b) {
     return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
 }
@@ -85,7 +101,7 @@ bool is_loopback(const std::string& host) {
 // --------------------------------------------------------------------------------- Sender
 
 Sender::Sender(const PacketStore& store, SenderOptions options)
-    : store_(store), o_(std::move(options)), sock_(open_udp(o_.bind, true)), rng_(o_.seed) {
+    : store_(store), o_(std::move(options)), sock_(bind_request_port(o_.bind)), rng_(o_.seed) {
     Endpoint any = o_.bind;
     any.port = 0;
     feed_ = open_udp(any);
@@ -150,7 +166,7 @@ void Sender::answer(std::span<const std::uint8_t> datagram, const sockaddr_in& f
     for (std::size_t i = *first; i < store_.size() && store_.first(i) < end; ++i) {
         const auto now = Clock::now();
         const double rate = static_cast<double>(o_.max_answer_packets_per_second);
-        answer_tokens_ = std::min(rate / 10, answer_tokens_ + rate * std::chrono::duration<double>(now - tokens_at_).count());
+        answer_tokens_ = std::min(std::max(1.0, rate / 10), answer_tokens_ + rate * std::chrono::duration<double>(now - tokens_at_).count());
         tokens_at_ = now;
         if (answer_tokens_ < 1) {
             r.answers_rate_limited += 1;  // the receiver will ask again after retry_after
@@ -185,6 +201,9 @@ void Sender::serve_requests(int timeout_ms, SenderReport& r) {
         timeout_ms = 0;  // wait only for the first datagram
         for (std::size_t k = 0; k < fds.size(); ++k) {
             if ((fds[k].revents & POLLIN) == 0) {
+                if ((fds[k].revents & POLLERR) != 0) {
+                    clear_error(fds[k].fd);  // e.g. the receiver exited: else poll() spins
+                }
                 continue;
             }
             sockaddr_in from{};
@@ -251,6 +270,43 @@ SenderReport Sender::run(const std::atomic<bool>* stop) {
 
 // ------------------------------------------------------------------------------- Receiver
 
+std::vector<std::pair<std::uint64_t, std::uint16_t>> RequestPlanner::plan(
+    const std::vector<std::pair<std::uint64_t, std::uint64_t>>& missing,
+    std::uint64_t next_expected, Clock::time_point now) {
+    for (auto it = asked_.begin(); it != asked_.end() && it->first < next_expected;) {
+        it = it->second.end <= next_expected ? asked_.erase(it) : std::next(it);  // answered
+    }
+    std::vector<std::pair<std::uint64_t, std::uint16_t>> out;
+    for (const auto& [hole, count] : missing) {
+        if (out.size() == max_ranges_) {
+            break;
+        }
+        std::uint64_t first = hole;
+        if (auto it = asked_.upper_bound(hole); it != asked_.begin()) {
+            --it;  // the latest request starting at or before the hole
+            if (it->second.end > hole && now - it->second.at < retry_after_) {
+                first = it->second.end;  // covered up to there; its answer may be in flight
+            }
+        }
+        std::uint64_t end = hole + count;
+        // Stop at a later request that is still active (it covers what follows).
+        for (auto it = asked_.upper_bound(first); it != asked_.end() && it->first < end; ++it) {
+            if (now - it->second.at < retry_after_) {
+                end = it->first;
+                break;
+            }
+        }
+        if (first >= end) {
+            continue;
+        }
+        const auto n = static_cast<std::uint16_t>(
+            std::min<std::uint64_t>({end - first, max_messages_, kEndOfSession - 1U}));
+        asked_[first] = Asked{first + n, now};
+        out.emplace_back(first, n);
+    }
+    return out;
+}
+
 Receiver::Receiver(ReceiverOptions options) : o_(std::move(options)), sock_(open_udp(o_.bind)) {
     const int size = o_.receive_buffer_bytes;
     (void)::setsockopt(sock_.fd(), SOL_SOCKET, SO_RCVBUF, &size, sizeof size);  // best effort
@@ -283,9 +339,7 @@ ReceiverReport Receiver::run(
         const int size = o_.receive_buffer_bytes;
         (void)::setsockopt(req.fd(), SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
     }
-    // When each hole (keyed by its first sequence) was last requested: a hole is asked again
-    // only after `retry_after`, so answers in flight are not requested twice (no storm).
-    std::map<std::uint64_t, Clock::time_point> asked;
+    RequestPlanner planner(o_.retry_after, o_.max_ranges_per_round, o_.max_request_messages);
     std::vector<std::uint8_t> buf(65536);
     const auto start = Clock::now();
     auto last_packet = start;
@@ -323,6 +377,11 @@ ReceiverReport Receiver::run(
             bool got = false;
             if ((fds[0].revents & POLLIN) != 0) got = drain(sock_.fd()) || got;
             if ((fds[1].revents & POLLIN) != 0) got = drain(req.fd()) || got;
+            for (const pollfd& f : fds) {
+                if ((f.revents & (POLLERR | POLLIN)) == POLLERR) {
+                    clear_error(f.fd);  // e.g. ICMP port unreachable: else poll() spins
+                }
+            }
             if (got) {
                 last_packet = Clock::now();
             }
@@ -341,20 +400,7 @@ ReceiverReport Receiver::run(
         }
         last_round = now;
         ++r.request_rounds;
-        asked.erase(asked.begin(), asked.lower_bound(q.next_expected()));  // filled holes
-        std::size_t ranges = 0;
-        for (const auto& [first, count] : q.missing()) {
-            if (ranges == o_.max_ranges_per_round) {
-                break;
-            }
-            auto [it, fresh] = asked.try_emplace(first, now);
-            if (!fresh && now - it->second < o_.retry_after) {
-                continue;  // asked recently: the answer may still be on its way
-            }
-            it->second = now;
-            ++ranges;
-            const auto n = static_cast<std::uint16_t>(
-                std::min<std::uint64_t>({count, o_.max_request_messages, kEndOfSession - 1U}));
+        for (const auto& [first, n] : planner.plan(q.missing(), q.next_expected(), now)) {
             const auto bytes = build_request(*q.session(), first, n);
             if (::send(req.fd(), bytes.data(), bytes.size(), 0) ==
                 static_cast<ssize_t>(bytes.size())) {

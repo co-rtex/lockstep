@@ -211,6 +211,9 @@ std::uint32_t Sequencer::copy_packet(const ParsedPacket& p) {
     const std::uint8_t* base = p.messages.front().data();
     const std::uint8_t* last = p.messages.back().data() + p.messages.back().size();
     const auto span = static_cast<std::size_t>(last - base);
+    if (span > UINT32_MAX) {
+        return kNoChunk;  // slot offsets are 32-bit (a UDP payload is < 64 KiB)
+    }
     const std::size_t room = o_.max_buffered_bytes - chunk_bytes_;
     std::uint32_t id = kNoChunk;
     if (!free_chunks_.empty()) {
