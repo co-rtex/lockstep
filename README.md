@@ -354,7 +354,7 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   duplicating and reordering channel, where the rebuilt book must hash-match a direct replay.
   A libFuzzer-compatible harness (`fuzz/`) also runs as a seeded standalone mutation fuzzer.
   See [docs/itch.md § Verification](docs/itch.md#verification).
-* `tools/mutation_check.py` injects 55 hand-chosen bugs one at a time (matching priority,
+* `tools/mutation_check.py` injects 56 hand-chosen bugs one at a time (matching priority,
   validation bounds, journal checks, sequencing, book rules, server fail-stop), and the tests
   kill all of them. It found two real test gaps, both now covered. See
   [docs/verification.md](docs/verification.md#do-the-tests-catch-bugs).
