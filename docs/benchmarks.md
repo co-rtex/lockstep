@@ -151,7 +151,10 @@ nothing to the OS until the engine is destroyed (+5–6 MiB at 100 k commands). 
 above still shows the original measurements. A spot check of the network round trip with the pooled core
 (1 client, in-memory, 20 000 requests, 5 trials, `c9b300a`) gave 27 632 req/s with p50
 33.4 µs, against the recorded 27 915 req/s and 33.1 µs. That is unchanged within noise, as
-expected for a socket- and JSON-dominated path.
+expected for a socket- and JSON-dominated path. Journal recovery replays through the same
+engine. On the same commit, `--mode recovery --scenario mixed --orders 100000 --trials 5` went
+from 3.93 M records/s (std build) to 4.27 M (pool build), +8.5 %, with the same state hash
+(console values; not added to a CSV).
 
 ## R2 results: durable acknowledgment latency (measurement 2)
 

@@ -80,6 +80,11 @@ class OrderBook {
 public:
     OrderBook() = default;
     explicit OrderBook(std::pmr::memory_resource* resource) : bids_(resource), asks_(resource) {}
+    // A copy would silently allocate from the default resource instead of the engine's pool.
+    OrderBook(const OrderBook&) = delete;
+    OrderBook& operator=(const OrderBook&) = delete;
+    OrderBook(OrderBook&&) noexcept = default;
+    OrderBook& operator=(OrderBook&&) = delete;
 
     [[nodiscard]] LevelMap& levels(Side side) noexcept { return side == Side::Buy ? bids_ : asks_; }
     [[nodiscard]] const LevelMap& levels(Side side) const noexcept {

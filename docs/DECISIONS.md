@@ -235,4 +235,11 @@ node size and propagates through nested containers without custom allocator plum
 move-assigned (the target's pool would die under its live containers). The compiler then
 deleted `ExchangeStateMachine`'s unused move assignment. Result: +14–28 % throughput where
 nodes are recycled, unchanged without recycling, identical state hashes, +5–6 MiB retained
-memory. `-DENGINEX_CORE_STD_ALLOC=ON` restores `new_delete_resource` for comparisons.
+memory. The pool never shrinks: freed blocks are kept for reuse until the engine is destroyed.
+`-DENGINEX_CORE_STD_ALLOC=ON` restores `new_delete_resource` for comparisons. `OrderBook`
+copies are deleted, because a copy would silently use the default resource. On macOS,
+`std::pmr` pool resources need a libc++ deployment target new enough to ship them. The
+default target here (the build host's SDK, macOS 26) is fine, but setting
+`CMAKE_OSX_DEPLOYMENT_TARGET` much lower would fail to link. An independent review of this
+change (lifetime, uses-allocator construction, iterator stability, determinism, exception
+safety) found no defects.
