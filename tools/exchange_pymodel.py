@@ -6,12 +6,14 @@ books must agree.
 
   python3 tools/exchange_pymodel.py [--seeds N] [--commands N] [--enginex build/release/enginex]
       [--price-band LO:HI] [--max-qty N]
-      [--network [--journal] | --restart | --clients K [--journal]]
+      [--network [--journal] | --restart | --clients K [--journal] [--chaos M]]
 
 --network sends the workload over TCP with a subscriber that checks every book_update;
 --restart also restarts the server on its journal and resends everything; --clients K splits
 the workload over K concurrent connections and checks that the server's interleaving is
-linearizable against the model (compare_concurrent).
+linearizable against the model (compare_concurrent); --chaos M adds M threads of hostile
+connections alongside (see chaos()); with --journal the journal must replay to the server's
+final state hash.
 
 Rules modelled (docs/ENGINEERING_SPEC.md, docs/protocol.md): symbols AAPL and MSFT; price-time
 priority (best price first, FIFO within a price); executions at the resting order's price;
@@ -394,7 +396,113 @@ def strip(reply):
     return {k: v for k, v in reply.items() if k != "seq_ref"}
 
 
-def compare_concurrent(exe, seed, n, clients, journal_dir):
+MALFORMED = [  # well-framed messages that must each be answered INVALID_REQUEST
+    b"{not json",
+    b"[1,2,3]",
+    b'{"protocol_version":1,"type":"teleport","request_id":"x"}',
+    b'{"protocol_version":2,"type":"subscribe"}',
+    b'{"protocol_version":1,"type":"new_limit","request_id":"x","request_id":"y",'
+    b'"symbol":"AAPL","side":"BUY","price":5,"quantity":1}',
+    b'{"protocol_version":1,"type":"new_limit","request_id":"x","symbol":"AAPL","side":"BUY",'
+    b'"price":5,"quantity":1,"extra":true}',
+    b'{"protocol_version":1,"type":"cancel","request_id":""}',
+    b"{" * 5000 + b"}" * 5000,
+]
+
+
+def chaos(port, stop, seed, counts, violations):
+    """Hostile connections until `stop` is set; never a valid mutating command, so the
+    honest traffic's linearizability check stays exact. Attacks: raw garbage, impossible frame
+    lengths, half-sent frames then a drop, malformed JSON (each must get INVALID_REQUEST and
+    leave the connection open), a subscriber that never reads, a snapshot then an abrupt close,
+    and connect-then-close."""
+    import socket
+    import struct
+    rng = random.Random(seed)
+
+    def frame(b):
+        return struct.pack(">I", len(b)) + b
+
+    def read_frame(s):
+        head = b""
+        while len(head) < 4:
+            chunk = s.recv(4 - len(head))
+            if not chunk:
+                return None
+            head += chunk
+        n = struct.unpack(">I", head)[0]
+        body = b""
+        while len(body) < n:
+            chunk = s.recv(min(65536, n - len(body)))
+            if not chunk:
+                return None
+            body += chunk
+        return json.loads(body)
+
+    def must_answer(s, data):
+        """Sends and reads one reply on a healthy connection: no reply (timeout, reset, EOF)
+        is reported as a string, so it becomes a violation rather than a 'connection error'.
+        A SERVER_OVERLOADED refusal at the connection limit is legitimate."""
+        try:
+            s.sendall(data)
+            reply = read_frame(s)
+        except OSError as e:
+            return f"no reply ({type(e).__name__})"
+        if reply is None:
+            return "no reply (connection closed)"
+        if reply.get("code") == "SERVER_OVERLOADED":
+            return "overloaded"
+        return reply
+
+    while not stop.is_set():
+        kind = rng.choice(["garbage", "bad_length", "half_frame", "malformed", "slow_subscriber",
+                           "snapshot_drop", "connect_close"])
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+                if kind == "garbage":
+                    s.sendall(rng.randbytes(rng.randint(1, 3000)))
+                elif kind == "bad_length":
+                    s.sendall(struct.pack(">I", rng.choice([0, 32769, 0xFFFFFFFF])) + b"{}")
+                    reply = read_frame(s)  # an error, then the server closes
+                    if reply is not None and reply.get("code") != "INVALID_REQUEST":
+                        violations.append(f"bad_length got {reply}")
+                elif kind == "half_frame":
+                    body = rng.choice(MALFORMED)
+                    s.sendall(struct.pack(">I", len(body) + 10) + body[:rng.randint(0, len(body))])
+                    time.sleep(rng.random() * 0.05)
+                elif kind == "malformed":
+                    for _ in range(rng.randint(1, 5)):  # several on one connection: it stays open
+                        body = rng.choice(MALFORMED)
+                        reply = must_answer(s, frame(body))
+                        if reply == "overloaded":
+                            break
+                        if not isinstance(reply, dict) or reply.get("type") != "error" or \
+                                reply.get("code") != "INVALID_REQUEST":
+                            violations.append(f"malformed {body[:60]!r} got {reply}")
+                            break
+                elif kind == "slow_subscriber":
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
+                    s.sendall(frame(b'{"protocol_version":1,"type":"subscribe","request_id":"s"}'))
+                    time.sleep(rng.random() * 0.5)  # never reads: may be cut off as slow
+                elif kind == "snapshot_drop":
+                    request = frame(b'{"protocol_version":1,"type":"snapshot_request",'
+                                    b'"symbol":"AAPL","request_id":"q"}')
+                    if rng.random() < 0.5:
+                        s.sendall(request)  # and drop the connection before the reply
+                    else:
+                        reply = must_answer(s, request)
+                        if reply != "overloaded" and (not isinstance(reply, dict) or
+                                                      reply.get("type") != "snapshot_response"):
+                            violations.append(f"snapshot got {reply}")
+            counts[kind] = counts.get(kind, 0) + 1
+        except (OSError, ValueError) as e:
+            # The server closing a hostile connection first is legitimate (reset, timeout).
+            counts["connection_errors"] = counts.get("connection_errors", 0) + 1
+            if isinstance(e, ValueError):
+                violations.append(f"{kind}: unparseable reply ({e})")
+
+
+def compare_concurrent(exe, seed, n, clients, journal_dir, chaos_threads=0):
     """The workload split round-robin over `clients` concurrent `client submit` processes,
     with a subscriber connected first. The interleaving is the server's, so the check is a
     linearizability check against the model:
@@ -409,10 +517,13 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
     cmds = workload(rng, n)
     parts = [cmds[j::clients] for j in range(clients)]
     serve = [exe, "serve", "--port", "0"]
-    if journal_dir:
-        serve += ["--journal", str(pathlib.Path(journal_dir) / f"conc{seed}.exj"), "--durability", "none"]
+    jpath = str(pathlib.Path(journal_dir) / f"conc{seed}.exj") if journal_dir else None
+    if jpath:
+        serve += ["--journal", jpath, "--durability", "none"]
     srv = subprocess.Popen(serve, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     sub, procs, paths, feed = None, [], [], []
+    attacks, violations = {}, []
+    import threading
     try:
         port = json.loads(srv.stdout.readline())["port"]
         sub = subprocess.Popen([exe, "client", "subscribe", "--port", str(port)],
@@ -421,7 +532,6 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
         if snap.get("type") != "snapshot_response" or not snap.get("subscribed") or \
                 snap["event_watermark"] != 0:
             sys.exit(f"concurrent seed {seed}: bad subscribe snapshot {json.dumps(snap)[:200]}")
-        import threading
 
         def read_feed():
             for line in sub.stdout:
@@ -434,11 +544,25 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
                 for c in part:
                     f.write(json.dumps(c) + "\n")
                 paths.append(f.name)
+        stop_chaos = threading.Event()
+        attackers = [threading.Thread(target=chaos, args=(port, stop_chaos, seed * 1000 + k,
+                                                          attacks, violations), daemon=True)
+                     for k in range(chaos_threads)]
+        for t in attackers:
+            t.start()
         for p in paths:  # appended one by one, so a failed start still cleans up the others
             procs.append(subprocess.Popen([exe, "client", "submit", "--port", str(port),
                                            "--input", p], stdout=subprocess.PIPE,
                                           stderr=subprocess.DEVNULL, text=True))
         outs = [p.communicate(timeout=300)[0] for p in procs]
+        stop_chaos.set()
+        for t in attackers:
+            t.join(timeout=30)
+        if violations:
+            sys.exit(f"concurrent seed {seed}: hostile connections saw {len(violations)} "
+                     f"protocol violations, e.g. {violations[0]}")
+        if srv.poll() is not None:
+            sys.exit(f"concurrent seed {seed}: the server exited ({srv.returncode}) under load")
         views = [[reply_view(r) for r in replies_of(out, f"concurrent seed {seed}, client {j}")]
                  for j, out in enumerate(outs)]
         accepted = {}  # command sequence -> (command, reply)
@@ -520,10 +644,21 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
                 sys.exit(f"concurrent seed {seed}: final {b['symbol']} {key} differ")
     if final["last_command_sequence"] != model.seq or final["last_execution_sequence"] != model.exe:
         sys.exit(f"concurrent seed {seed}: watermarks differ")
+    if jpath:  # what was made durable replays to exactly the state the server ended with
+        r = subprocess.run([exe, "replay", "--journal", jpath, "--verify"], capture_output=True,
+                           text=True, timeout=300)
+        if r.returncode != 0 or json.loads(r.stdout)["state_hash"] != final.get("state_hash"):
+            sys.exit(f"concurrent seed {seed}: journal replay (exit {r.returncode}) does not "
+                     f"reproduce the server's final state hash")
     # Evidence that the clients really interleaved: consecutive sequences from different clients.
     switches = sum(1 for s in range(2, total + 1) if owner[s] != owner[s - 1])
-    return {"accepted": total, "other_replies_linearized": checked, "executions": model.exe,
-            "feed_events_checked": len(updates), "client_switches": switches}
+    stats = {"accepted": total, "other_replies_linearized": checked, "executions": model.exe,
+             "feed_events_checked": len(updates), "client_switches": switches}
+    if chaos_threads:
+        stats["hostile_connections"] = sum(attacks.values())
+        for k, v in attacks.items():
+            stats[f"hostile_{k}"] = v
+    return stats
 
 
 def main():
@@ -533,7 +668,7 @@ def main():
     journal = "--journal" in args or restart
     args = [a for a in args if a not in ("--network", "--journal", "--restart")]
     opts = {"--seeds": "20", "--commands": "3000", "--enginex": str(ROOT / "build" / "release" / "enginex"),
-            "--price-band": "9950:10050", "--max-qty": "100", "--clients": "0"}
+            "--price-band": "9950:10050", "--max-qty": "100", "--clients": "0", "--chaos": "0"}
     for k in list(opts):
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
@@ -546,14 +681,17 @@ def main():
     if not 1 <= lo <= hi or MAX_QTY < 1:
         sys.exit("--price-band needs 1 <= LO <= HI and --max-qty >= 1")
     clients = int(opts["--clients"])
-    if clients < 0 or clients > 63 or (clients and restart):
-        sys.exit("--clients takes 1..63 concurrent clients (not combined with --restart)")
+    hostile = int(opts["--chaos"])
+    if clients < 0 or clients > 40 or (clients and restart):
+        sys.exit("--clients takes 1..40 concurrent clients (not combined with --restart)")
+    if hostile < 0 or hostile > 16 or (hostile and not clients):
+        sys.exit("--chaos takes 1..16 hostile connection threads and needs --clients")
     total = {}
     with tempfile.TemporaryDirectory() as jdir:
         for seed in range(1, int(opts["--seeds"]) + 1):
             if clients:
                 stats = compare_concurrent(opts["--enginex"], seed, int(opts["--commands"]),
-                                           clients, jdir if journal else None)
+                                           clients, jdir if journal else None, hostile)
             elif network:
                 stats = compare_network(opts["--enginex"], seed, int(opts["--commands"]),
                                         jdir if journal else None, restart)
@@ -561,7 +699,8 @@ def main():
                 stats = compare(opts["--enginex"], seed, int(opts["--commands"]))
             for k, v in stats.items():
                 total[k] = total.get(k, 0) + v
-    mode = (f"from {clients} concurrent TCP clients{' (journaled)' if journal else ''}, "
+    mode = (f"from {clients} concurrent TCP clients{' (journaled)' if journal else ''}"
+            f"{f' alongside {hostile} hostile connection threads' if hostile else ''}, "
             "linearized against the model" if clients else
             "over TCP, journaled, restarted and resent" if restart else
             "over TCP (journaled)" if network and journal else

@@ -56,6 +56,14 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
                      --clients 8 --journal --seeds 3 --commands 2000 --enginex $<TARGET_FILE:enginex>)
     set_tests_properties(exchange_pymodel_concurrent PROPERTIES TIMEOUT 180 LABELS "cli;net")
+    # The same with hostile connections alongside (garbage, bad lengths, half frames, malformed
+    # JSON, stalled subscribers, abrupt drops): server survives, every malformed message gets
+    # INVALID_REQUEST, the honest traffic stays linearizable, the journal replays to the same hash.
+    add_test(NAME exchange_pymodel_chaos
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
+                     --clients 8 --journal --chaos 4 --seeds 2 --commands 5000
+                     --enginex $<TARGET_FILE:enginex>)
+    set_tests_properties(exchange_pymodel_chaos PROPERTIES TIMEOUT 240 LABELS "cli;net")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict
