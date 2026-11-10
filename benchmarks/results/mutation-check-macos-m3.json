@@ -1,17 +1,17 @@
 {
-  "git_sha": "c7b0fc638c94",
-  "date_utc": "2026-11-10T16:48:27Z",
+  "git_sha": "990892299c36",
+  "date_utc": "2026-11-10T19:46:20Z",
   "machine": "Apple M3 MacBook Air, macOS 26.6, Apple clang 17, Release",
   "command": "python3 tools/mutation_check.py build/release",
   "killed": 56,
   "valid": 56,
-  "total_seconds": 346.1,
+  "total_seconds": 353.3,
   "mutants": [
     {
       "mutant": "itch: order at zero shares not removed",
       "file": "src/itch/book.cpp",
       "verdict": "KILLED",
-      "seconds": 7.6,
+      "seconds": 8.1,
       "failing_tests": [
         "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
         "ItchBook.ExecutionsAndPartialCancelKeepPriority",
@@ -44,7 +44,7 @@
       "mutant": "itch: non-printable C counted as printable",
       "file": "src/itch/book.cpp",
       "verdict": "KILLED",
-      "seconds": 6.9,
+      "seconds": 6.8,
       "failing_tests": [
         "ItchBook.ExecutionWithPriceDoesNotMoveTheOrderAndRespectsPrintable",
         "ItchFixture.LifecycleMatchesHandWrittenBook"
@@ -63,7 +63,7 @@
       "mutant": "itch: replace with zero shares accepted",
       "file": "src/itch/book.cpp",
       "verdict": "KILLED",
-      "seconds": 6.9,
+      "seconds": 7.0,
       "failing_tests": [
         "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
       ]
@@ -202,7 +202,7 @@
       "mutant": "framer: zero-length prefix accepted",
       "file": "include/enginex/itch/decoder.hpp",
       "verdict": "KILLED",
-      "seconds": 8.8,
+      "seconds": 8.9,
       "failing_tests": [
         "ItchReplay.CorruptedFilesNeverBreakInvariants",
         "ItchReplay.TruncatedAndZeroLengthStreamsAreFatal",
@@ -213,7 +213,7 @@
       "mutant": "mold: buffered duplicate not detected",
       "file": "include/enginex/itch/moldudp64.hpp",
       "verdict": "KILLED",
-      "seconds": 9.1,
+      "seconds": 9.2,
       "failing_tests": [
         "MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity",
         "MoldSequencer.MatchesASetModelUnderRandomTraffic",
@@ -224,7 +224,7 @@
       "mutant": "mold: adjacent holes not merged",
       "file": "src/itch/moldudp64.cpp",
       "verdict": "KILLED",
-      "seconds": 7.7,
+      "seconds": 7.8,
       "failing_tests": [
         "MoldSequencer.MatchesASetModelUnderRandomTraffic"
       ]
@@ -253,7 +253,7 @@
       "mutant": "mold: closed gap not counted",
       "file": "include/enginex/itch/moldudp64.hpp",
       "verdict": "KILLED",
-      "seconds": 7.8,
+      "seconds": 8.0,
       "failing_tests": [
         "MoldSequencer.MatchesASetModelUnderRandomTraffic",
         "MoldSequencer.ReorderedPacketsAreReleasedInOrder"
@@ -263,7 +263,7 @@
       "mutant": "mold: buffered chunk recycled while still referenced",
       "file": "include/enginex/itch/moldudp64.hpp",
       "verdict": "KILLED",
-      "seconds": 2.7,
+      "seconds": 3.1,
       "failing_tests": []
     },
     {
@@ -281,7 +281,7 @@
       "mutant": "mold: packet copies not counted against the byte bound",
       "file": "src/itch/moldudp64.cpp",
       "verdict": "KILLED",
-      "seconds": 8.0,
+      "seconds": 8.2,
       "failing_tests": [
         "MoldSequencer.PacketCopiesCountAgainstTheByteBound"
       ]
@@ -290,7 +290,7 @@
       "mutant": "mold: stale end of session accepted",
       "file": "include/enginex/itch/moldudp64.hpp",
       "verdict": "KILLED",
-      "seconds": 7.8,
+      "seconds": 7.9,
       "failing_tests": [
         "MoldSequencer.EndOfSessionBelowSeenMessagesIsIgnored"
       ]
@@ -299,7 +299,7 @@
       "mutant": "udp: partly answered request asked again before its retry timer",
       "file": "src/itch/mold_udp.cpp",
       "verdict": "KILLED",
-      "seconds": 7.6,
+      "seconds": 7.7,
       "failing_tests": [
         "MoldRequestPlanner.RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills"
       ]
@@ -327,7 +327,7 @@
       "mutant": "mirror: update applied when not live",
       "file": "src/mirror.cpp",
       "verdict": "KILLED",
-      "seconds": 1.9,
+      "seconds": 2.5,
       "failing_tests": [
         "FeedMirror.FailedSubscribeNeverGoesLive",
         "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
@@ -339,7 +339,7 @@
       "mutant": "mirror: forward gap accepted",
       "file": "src/mirror.cpp",
       "verdict": "KILLED",
-      "seconds": 1.8,
+      "seconds": 2.3,
       "failing_tests": [
         "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
         "FeedMirror.RandomMessagesNeverBreakTheRules"
@@ -349,7 +349,7 @@
       "mutant": "mirror: verification ignores watermark",
       "file": "src/mirror.cpp",
       "verdict": "KILLED",
-      "seconds": 2.1,
+      "seconds": 2.6,
       "failing_tests": [
         "FeedMirror.ResyncDisconnectAndMismatchAllGoStale"
       ]
@@ -358,7 +358,7 @@
       "mutant": "engine: cancel leaves level aggregate stale",
       "file": "src/engine.cpp",
       "verdict": "KILLED",
-      "seconds": 4.3,
+      "seconds": 4.8,
       "failing_tests": [
         "Cancel.CancelCommandSequenceIsNotAnOrder",
         "Cancel.RepeatedInsertCancelLeavesNoDanglingState",
@@ -370,7 +370,7 @@
       "mutant": "engine: an order at exactly the resting price does not trade",
       "file": "src/engine.cpp",
       "verdict": "KILLED",
-      "seconds": 3.7,
+      "seconds": 3.9,
       "failing_tests": [
         "Batch.GroupCommitWritesOnceAndReleasesAfterSync",
         "Cancel.CancelledOrderNeverTrades",
@@ -394,7 +394,7 @@
       "mutant": "journal: corrupted length near EOF passed off as a torn write",
       "file": "src/journal.cpp",
       "verdict": "KILLED",
-      "seconds": 3.9,
+      "seconds": 4.1,
       "failing_tests": [
         "JournalScan.CorruptedLengthNearEofIsCorruptNotATornTail"
       ]
@@ -403,7 +403,7 @@
       "mutant": "journal: zero-filled tail treated as corruption",
       "file": "src/journal.cpp",
       "verdict": "KILLED",
-      "seconds": 3.9,
+      "seconds": 4.0,
       "failing_tests": [
         "JournalScan.ZeroFilledTailIsIncompleteNotCorrupt",
         "Recovery.ZeroFilledTailIsRepaired"
@@ -413,7 +413,7 @@
       "mutant": "journal: torn tail not truncated",
       "file": "src/journal.cpp",
       "verdict": "KILLED",
-      "seconds": 3.8,
+      "seconds": 4.1,
       "failing_tests": [
         "Recovery.IncompleteFileHeaderIsRewritten",
         "Recovery.ZeroFilledTailIsRepaired"
@@ -423,7 +423,7 @@
       "mutant": "core index: fingerprint match taken without comparing the request_id",
       "file": "src/state.cpp",
       "verdict": "KILLED",
-      "seconds": 3.9,
+      "seconds": 4.0,
       "failing_tests": [
         "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord"
       ]
@@ -432,7 +432,7 @@
       "mutant": "core index: growth drops existing entries",
       "file": "src/state.cpp",
       "verdict": "KILLED",
-      "seconds": 4.3,
+      "seconds": 3.9,
       "failing_tests": [
         "Harness.DurableAndRecoveryModes",
         "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord",
@@ -464,7 +464,7 @@
       "mutant": "state: zero quantity accepted",
       "file": "src/state.cpp",
       "verdict": "KILLED",
-      "seconds": 3.8,
+      "seconds": 4.1,
       "failing_tests": [
         "Simulate.DemoMatchesCommittedExpectedOutput",
         "Validation.RejectionOrderPrefersRequestThenSymbolThenFields",
@@ -493,7 +493,7 @@
       "mutant": "state: cancel may target a cancel command",
       "file": "src/state.cpp",
       "verdict": "KILLED",
-      "seconds": 3.9,
+      "seconds": 4.1,
       "failing_tests": [
         "Cancel.CancelCommandSequenceIsNotAnOrder"
       ]
@@ -502,7 +502,7 @@
       "mutant": "journal: record CRC not checked",
       "file": "src/journal.cpp",
       "verdict": "KILLED",
-      "seconds": 3.5,
+      "seconds": 3.6,
       "failing_tests": [
         "JournalScan.ChecksumMismatchIsHardErrorAnywhere",
         "Recovery.CorruptedRecordRefusesStartupAndLeavesFileUntouched",
@@ -522,7 +522,7 @@
       "mutant": "server: snapshot served after internal fail-stop",
       "file": "src/server.cpp",
       "verdict": "KILLED",
-      "seconds": 7.8,
+      "seconds": 8.0,
       "failing_tests": [
         "Server.SnapshotRefusedAfterInternalFailStop"
       ]
@@ -531,7 +531,7 @@
       "mutant": "server: event published although the flush failed",
       "file": "src/server.cpp",
       "verdict": "KILLED",
-      "seconds": 7.8,
+      "seconds": 8.4,
       "failing_tests": [
         "Server.JournalFailureNeverPublishesTheUndurableEvent"
       ]
@@ -540,7 +540,7 @@
       "mutant": "server: reply after a failed flush claims success",
       "file": "src/server.cpp",
       "verdict": "KILLED",
-      "seconds": 7.5,
+      "seconds": 8.1,
       "failing_tests": [
         "Server.JournalFailureFailStopsOverTheNetwork",
         "Server.JournalFailureNeverPublishesTheUndurableEvent"
@@ -559,7 +559,7 @@
       "mutant": "protocol: book_update order_count off by one",
       "file": "src/protocol.cpp",
       "verdict": "KILLED",
-      "seconds": 17.2,
+      "seconds": 17.6,
       "failing_tests": [
         "FeedMirrorSession.DroppedEventIsDetectedAsGapAndRecoveredBySnapshot",
         "FeedMirrorSession.FollowsLiveTrafficAndVerifiesInBand",
@@ -571,7 +571,7 @@
       "mutant": "server: slow-consumer notice reports stale watermark",
       "file": "src/server.cpp",
       "verdict": "KILLED",
-      "seconds": 14.8,
+      "seconds": 15.2,
       "failing_tests": [
         "Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer"
       ]

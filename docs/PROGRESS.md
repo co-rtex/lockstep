@@ -207,7 +207,7 @@ Commands and results (latest):
   build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
   -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 516/516 at `383ca9e`. UBSan
   (below): 516/516 at `383ca9e`, no runtime errors.
-* `python3 tools/mutation_check.py`: 56/56 mutants killed (≈ 5.8 min, release build, commit `c7b0fc6`).
+* `python3 tools/mutation_check.py`: 56/56 mutants killed (≈ 5.8 min, release build, commit `c7b0fc6`); re-run at `9908922` (after the day's fixes to book, server and CLI): 56/56 again (5.9 min).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
   at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.
