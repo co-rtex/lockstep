@@ -150,6 +150,11 @@ target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
 add_executable(enginex_mold_bench benchmarks/mold_bench.cpp)
 target_link_libraries(enginex_mold_bench PRIVATE enginex_itch)
 enginex_set_warnings(enginex_mold_bench)
+
+# Per-datagram cost of the UDP system calls on loopback (the transport's environment floor).
+add_executable(enginex_udp_syscall_bench benchmarks/udp_syscall_bench.cpp)
+target_link_libraries(enginex_udp_syscall_bench PRIVATE enginex_core)
+enginex_set_warnings(enginex_udp_syscall_bench)
 enginex_set_warnings(enginex_itch_bench)
 
 # Cross-layout check: the ITCH book sources compiled a second time with the earlier layout
