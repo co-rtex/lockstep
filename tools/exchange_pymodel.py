@@ -352,8 +352,13 @@ def main():
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
     global PRICE_BAND, MAX_QTY
-    lo, hi = (int(x) for x in opts["--price-band"].split(":"))
-    PRICE_BAND, MAX_QTY = (lo, hi), int(opts["--max-qty"])
+    try:
+        lo, hi = (int(x) for x in opts["--price-band"].split(":"))
+        PRICE_BAND, MAX_QTY = (lo, hi), int(opts["--max-qty"])
+    except ValueError:
+        sys.exit("--price-band takes LO:HI (integer ticks) and --max-qty an integer")
+    if not 1 <= lo <= hi or MAX_QTY < 1:
+        sys.exit("--price-band needs 1 <= LO <= HI and --max-qty >= 1")
     total = {}
     with tempfile.TemporaryDirectory() as jdir:
         for seed in range(1, int(opts["--seeds"]) + 1):
