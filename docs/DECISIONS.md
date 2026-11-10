@@ -354,7 +354,9 @@ best half. Any operation is O(limit + log n), amortized. Hostile pattern 25 130 
 200 k-level monotone-improving book 17 → 54 ns/msg (it keeps spilling); real data unchanged
 within noise. Correctness: the reference-model differential at limits 2, 3 and 8 (constant
 spill/refill), a hostile deep-book test, and identical state hashes on a full real day at
-limits 2, 16 and 8 192. *Rejected:* switching the default to `std::map` (on real data the sorted vector measured
+limits 2, 16 and 8 192. An independent review found no defect. Its remaining notes concern
+allocation failure in the middle of a spill or insert, which falls under the existing
+`apply()` contract (after `bad_alloc` the builder must be discarded). *Rejected:* switching the default to `std::map` (on real data the sorted vector measured
 8 % faster, D27 and benchmarks.md); a balanced tree or B-tree for all levels (more code for no real-data gain);
 switching a whole side to a map once it gets deep (the top of a deep book would lose the
 contiguous fast path).

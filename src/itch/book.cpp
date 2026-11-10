@@ -185,7 +185,7 @@ public:
     struct Storage {
         std::deque<Level> levels;
         std::vector<Level*> free;
-        std::size_t vector_limit = 8192;
+        std::size_t vector_limit = BookBuilder::kDefaultLevelVectorLimit;
     };
     SideLevels(Side side, Storage* storage) : side_(side), storage_(storage) {}
 
