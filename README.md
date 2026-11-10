@@ -89,7 +89,8 @@ TSan have not run on them yet
                          decode(): 23 message types, bounds-checked big-endian fields
                                                                ▼
        BookBuilder: paged direct order index → chunked node pool → per-locate books,
-       sorted-vector price levels with FIFO queues → depth / top / SHA-256 state hash
+       sorted-vector price levels (best 8 192; deeper ones in an ordered map, D32)
+       with FIFO queues → depth / top / SHA-256 state hash
 ```
 
 There is no runtime connection to TradeGrid. Details are in
