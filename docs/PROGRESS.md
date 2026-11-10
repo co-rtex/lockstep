@@ -189,10 +189,12 @@ pushed, so GitHub CI has not run on them.
 Commands and results (latest):
 
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
-  471/471 passed (commit `799e7c4`).
+  476/476 passed (commit `83bb670`).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
   at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.
+* UBSan after the real-data layout change (`83bb670`): 476/476, and the opt-in real-data
+  differential under UBSan (21.26 M messages, 65 s): passed, no runtime errors.
 * `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
   on the ITCH tests (UBSan build): passed.
 * `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
