@@ -1,6 +1,7 @@
 #include "enginex/state.hpp"
 
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -42,6 +43,9 @@ ExchangeStateMachine::ExchangeStateMachine(StateConfig config)
     if (config_.symbols.size() > std::numeric_limits<SymbolId>::max()) {
         throw std::invalid_argument("too many symbols");
     }
+    std::random_device rd;  // secret index key: placement only, never results (see header)
+    auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
+    id_key_ = SipKey{word(), word()};
 }
 
 std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbol) const noexcept {
@@ -53,20 +57,20 @@ std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbo
     return std::nullopt;
 }
 
-std::uint32_t ExchangeStateMachine::fingerprint(std::string_view id) noexcept {
-    const std::uint64_t h = std::hash<std::string_view>{}(id);
-    // Fold and mix so both the probe position (low bits) and the compared bits are well
-    // distributed even if the library hash is weak in some bits.
-    std::uint64_t x = h ^ (h >> 32U);
-    x *= 0x9E3779B97F4A7C15ULL;
-    return static_cast<std::uint32_t>(x >> 32U);
+std::uint32_t ExchangeStateMachine::fingerprint(std::string_view id) const noexcept {
+    const std::uint64_t h = siphash24(id_key_, id);
+    return static_cast<std::uint32_t>(h ^ (h >> 32U));
 }
 
 const CommandRecord* ExchangeStateMachine::find_request(std::string_view request_id) const {
+    return find_request(request_id, fingerprint(request_id));
+}
+
+const CommandRecord* ExchangeStateMachine::find_request(std::string_view request_id,
+                                                        std::uint32_t fp) const noexcept {
     if (id_index_.empty()) {
         return nullptr;
     }
-    const std::uint32_t fp = fingerprint(request_id);
     const std::size_t mask = id_index_.size() - 1;
     for (std::size_t i = fp & mask;; i = (i + 1) & mask) {
         const IdSlot& slot = id_index_[i];
@@ -197,7 +201,8 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
     const CommandSeq seq = decision.sequence;
 
     const std::string& rid = request_id_of(cmd);
-    if (find_request(rid) != nullptr) {
+    const std::uint32_t fp = fingerprint(rid);  // hashed once for the check and the insert
+    if (find_request(rid, fp) != nullptr) {
         throw InvariantViolation("request id already recorded");
     }
     if (records_.size() >= kMaxRecords) {
@@ -207,7 +212,7 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
     // then index it, which cannot fail: no record is ever left unindexed or half built.
     grow_index(records_.size() + 1);
     CommandRecord& record = records_.emplace_back(CommandRecord{cmd, seq, decision.symbol});
-    place(fingerprint(rid), static_cast<std::uint32_t>(records_.size()));
+    place(fp, static_cast<std::uint32_t>(records_.size()));
     last_command_ = seq;
 
     if (const auto* order = std::get_if<NewLimitOrder>(&cmd)) {

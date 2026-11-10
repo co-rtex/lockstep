@@ -11,6 +11,7 @@
 
 #include "enginex/command.hpp"
 #include "enginex/engine.hpp"
+#include "enginex/siphash.hpp"
 #include "enginex/types.hpp"
 
 namespace enginex {
@@ -124,7 +125,12 @@ private:
         std::uint32_t index_plus_one = 0;
     };
     static constexpr std::size_t kMaxRecords = UINT32_MAX - 1;
-    [[nodiscard]] static std::uint32_t fingerprint(std::string_view id) noexcept;
+    // Keyed (SipHash-2-4, random key per instance) so clients cannot craft request ids that
+    // collide into one probe cluster. The key affects placement only, never lookup results.
+    [[nodiscard]] std::uint32_t fingerprint(std::string_view id) const noexcept;
+    [[nodiscard]] const CommandRecord* find_request(std::string_view request_id,
+                                                    std::uint32_t fp) const noexcept;
+    SipKey id_key_;
     void grow_index(std::size_t records);  // capacity for `records` entries (may throw)
     void place(std::uint32_t fp, std::uint32_t index_plus_one) noexcept;
     std::vector<IdSlot> id_index_;
