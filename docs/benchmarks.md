@@ -336,6 +336,30 @@ references across it. A hint should be close to the expected peak live orders, n
 "as large as possible". (Single runs of 5 trials each, `--only itch_book_apply --no-latency`,
 from the console; not in the CSV.)
 
+### Warm vs CPU-cache-cold passes
+
+Commit `fd24aeceb3e4`, `--reserve 262144`, 7 trials. `--flush-cache-mib 64` streams a 64 MiB
+buffer before every timed pass, so the workload and the book's memory start outside the CPU
+caches. The page cache stays warm, since dropping it needs root on macOS. Raw rows:
+[`itch-cache-macos-m3.csv`](../benchmarks/results/itch-cache-macos-m3.csv)
+([console](../benchmarks/results/itch-cache-macos-m3.txt)).
+
+| workload | flush | apply ns/msg (median) | apply max | replay ns/msg (median) | replay min–max M msg/s |
+|---|---|---:|---:|---:|---:|
+| 1 M msgs, 8 symbols | none | 27.1 | 2.2 µs | 38.2 | 26.1 – 26.2 |
+| 1 M msgs, 8 symbols | 64 MiB | 27.3 | 2.6 µs | 37.9 | 25.7 – 26.5 |
+| 2 M msgs, 5000 symbols | none | 56.7 | 3.3 µs | 74.9 | 13.2 – 13.4 |
+| 2 M msgs, 5000 symbols | 64 MiB | 57.6 | 7.2 µs | 80.4 | 10.9 – 13.3 |
+
+Whole-run medians are nearly insensitive to the starting cache state. Each trial builds its
+book from empty and processes 1–2 M messages, so the cold start is amortized over the run.
+The cold start does show up in the worst-case message (max) and in run-to-run spread. The
+cache effect that matters for these workloads is the *working-set size*: the symbol-count
+sweep above (29 → 71 ns/msg) and the oversized index (46.7 ns/msg). Measuring a book that is
+already large when it goes cold (for example, after an idle period mid-session) would need a
+pre-built book and per-message samples around the first messages after the flush. That has
+not been done.
+
 **Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
 1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
 
