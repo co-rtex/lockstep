@@ -207,7 +207,8 @@ A symbol-count sweep showed `std::map` level nodes costing 0.30 heap calls per m
 5000 symbols. A per-builder fixed-size free-list arena (block size fixed by the first
 allocation, i.e. the map's node type; other sizes fall back to `operator new`) removed them:
 70.6 → 56.1 ns/msg at 5000 symbols, no change at 8. Kept behind
-`-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON` for comparison. *Rejected for now:* replacing `std::map`
+`-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON` for comparison (now effective only with
+`-DENGINEX_ITCH_MAP_LEVELS=ON`, since levels default to sorted vectors). *Rejected for now:* replacing `std::map`
 with a flat or array-indexed level structure. The remaining cost is cache misses that only a
 real symbol and price distribution could justify optimizing for. The same sweep showed that
 over-sizing the open-addressing index (32 MiB) costs more than it saves. The capacity hint

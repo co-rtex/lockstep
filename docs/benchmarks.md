@@ -99,7 +99,7 @@ latency pass and carry the timer caveat above.
 | mixed | 100,000 | 8,193,531 | 7.64M – 8.34M | 125 | 208 | 333 | 417 | 5,250 |
 | mixed | 1,000,000 | 4,560,561 | 4.23M – 4.73M | 166 | 458 | 666 | 834 | 8,625 |
 
-Peak RSS was 53 MiB for the 100k runs and 305 MiB for the 1M run. The process holds the
+Peak RSS was 52–53 MiB for the 100k runs (45 MiB for `no-cross`) and 305 MiB for the 1M run. The process holds the
 workload, two trial states and the latency samples.
 
 **Reproducibility re-run (2026-11-10).** The same command
@@ -135,8 +135,10 @@ Evidence first. `enginex_core_alloc_probe` (counts `operator new` around `proces
 seeded workloads) showed **2.0–3.5 heap allocations per command**. Each resting order cost
 3.0–3.8: a `std::list` node, an order-index node and, sometimes, a new `std::map` level, all
 freed again on fill or cancel. The book containers now use `std::pmr` types backed by one
-`std::pmr::unsynchronized_pool_resource` per engine (DECISIONS.md D26). That leaves ≈1.0
-allocation per command, the permanent idempotency-map entry.
+`std::pmr::unsynchronized_pool_resource` per engine (DECISIONS.md D26). That left ≈1.0
+allocation per command, the permanent idempotency-map entry. D31 later replaced that map
+with a record deque and an open-addressing index. At `cb768b3` the probe reports 0.03
+allocations per command in all six scenarios (amortized deque blocks and index growth).
 
 Same machine, commit `c9b300aea8e2`, both builds from that commit. `std` is
 `-DENGINEX_CORE_STD_ALLOC=ON`: identical container types on `new_delete_resource`. 100 000
@@ -384,6 +386,11 @@ cmake --build build/rel-stdidx && cmake --build --preset release
 ./build/release/enginex_itch_bench    --seed 42 --messages 1000000 --symbols 8 --trials 7 --reserve 262144 --out itch.csv
 ```
 
+These commands are as run at `51ea715`. The default build now uses the paged order index
+and sorted-vector levels (the bench prints `order index: paged_direct; level nodes:
+sorted_vector`). Reproducing the open-addressing rows today needs
+`-DENGINEX_ITCH_HASH_INDEX=ON -DENGINEX_ITCH_MAP_LEVELS=ON` on the second build.
+
 **How the bottleneck was found.** No sampling profiler can attach in this environment:
 `sample` reports the target as not running, and `pgrep` is denied. Two substitutes were used
 instead: allocation counting and a per-message-type cost breakdown taken from the latency
@@ -410,7 +417,8 @@ Commit `a7492a0784f6`, same machine and compiler. 2 000 000 lifecycle messages, 
 at the end), so the rows differ mainly in how many independent books share that work. Raw
 rows: [`itch-scaling-macos-m3.csv`](../benchmarks/results/itch-scaling-macos-m3.csv)
 ([console](../benchmarks/results/itch-scaling-macos-m3.txt)). The `std_allocator` rows are
-the `-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON` build of the same commit.
+the `-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON` build of the same commit (today that option takes
+effect only together with `-DENGINEX_ITCH_MAP_LEVELS=ON`).
 
 | symbols | level nodes | book apply ns/msg | allocs/msg | apply p99.9 | replay ns/msg |
 |---:|---|---:|---:|---:|---:|
@@ -601,7 +609,7 @@ hint. State hashes are identical across builds for each workload.
 **Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
 1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
 
-**Adversarial level pattern (D32).** `tools/itch_adversarial.py 200000 worse|better` builds
+**Adversarial level pattern (D32).** `tools/itch_adversarial.py 200000 worse|better OUT.itch` builds
 one 200 k-level side. With `worse`, every add opens a level worse than all others (the sorted
 vector's front); with `better`, the back. Book apply, 3 trials, medians
 ([`itch-level-bound-macos-m3.csv`](../benchmarks/results/itch-level-bound-macos-m3.csv); the
