@@ -108,6 +108,8 @@ Usage:
   enginex client subscribe [--host H] [--port P] [--count N] [--duration-ms MS]
                            [--slow-ms MS] [--quiet]
   enginex client snapshot  [--host H] [--port P] [--symbol S] [--depth D]
+  enginex client mirror    [--host H] [--port P] [--duration-ms MS] [--verify-ms MS]
+                           [--max-resubscribes N]
   enginex itch generate --out FILE [--seed N] [--messages N] [--symbols N]
                         [--anomalies-per-million N]
   enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]

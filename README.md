@@ -41,6 +41,7 @@ specification, not Nasdaq data.
 | Sequenced `book_update` feed, atomic snapshot/subscribe handoff (event watermark), reconnect resync | R3 | **Implemented, tested** (handoff under load with book mirroring) |
 | Bounded ingress/outbound queues, slow-consumer disconnect, connection cap, graceful shutdown | R3 | **Implemented, tested** (TSan clean on Linux) |
 | `enginex serve` / `enginex client`, network round-trip benchmark | R3 | **Implemented, measured** |
+| Read-only feed mirror (`enginex client mirror`): refuses updates without a baseline or after a gap, resubscribes after cut-off, in-band snapshot verification | Sprint | **Implemented, tested** (slow-consumer cut-off and oversized-baseline scenarios over real sockets) |
 | ITCH 5.0 decoder: all 23 message types, bounds-checked big-endian fields, incremental length-prefixed file framing | ITCH | **Implemented, tested** (golden bytes, Python-packed fixtures, malformed/truncated input) |
 | ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |

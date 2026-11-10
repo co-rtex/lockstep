@@ -219,3 +219,39 @@ continues (`ShutdownDrainsQueuedWorkAndRestartRecovers`).
 `client submit` sends one request at a time and prints each reply. It accepts `simulate`-style
 `snapshot` lines. `client subscribe` prints the snapshot and events, checks that sequences are
 contiguous, and ends with a `subscriber_summary` line (`gaps` must be 0).
+
+## 11. Read-only feed mirror (`enginex client mirror`)
+
+`FeedMirror` (`include/enginex/mirror.hpp`) is a replica of the aggregated books that a
+subscriber can build from this feed. It is a pure state machine over received messages, so
+every failure path is unit-tested without sockets. `run_mirror()` drives it over TCP.
+
+| State | Entered on | `book_update` handling |
+|---|---|---|
+| `awaiting_baseline` | start, or every new connection | rejected (counted), never applied |
+| `live` | the subscribe snapshot (`"subscribed": true`) | applied only if `event_sequence == last + 1` |
+| `stale` | gap, duplicate/old event, `resync_required`, disconnect, verification mismatch | rejected; only a new connection and snapshot recover |
+
+A failed `subscribe` (an `error` with `command_type: "subscribe"`, for example a snapshot over
+the frame limit or a fail-stopped server) never makes the mirror live.
+
+**In-band verification.** While live, the mirror periodically sends
+`snapshot_request {depth: 0}` on its own connection. Replies and events for one connection
+leave through one queue in sequencer order, and the sequencer publishes every committed event
+before serializing a snapshot (§5). The reply's `event_watermark` W must therefore equal the
+mirror's last applied event, and its levels must equal the mirror's books exactly. Any
+difference is reported as a mismatch and the mirror goes stale. A session reports `ok` only if
+it ends live, with a successful final verification and no mismatches.
+
+```bash
+./build/release/enginex client mirror --port 9000 --duration-ms 5000 --verify-ms 500
+# {"type":"mirror_summary","ok":true,"state":"live","final_verified":true,"connections":1,
+#  "events_applied":7,"gaps_refused":0,"resync_required":0,"verifications":8,"mismatches":0,...}
+```
+
+Tests (`tests/mirror_test.cpp`): every state transition on crafted messages; a session that
+follows two concurrent traders with in-band verification every 100 ms; a mirror stalled for
+600 ms against a server with an 8-frame outbound queue, which is cut off, refuses the broken
+feed, reconnects and ends verified; and a subscribe whose baseline exceeds the frame limit,
+which never goes live and applies nothing. The session tests passed 15 repeated runs.
+

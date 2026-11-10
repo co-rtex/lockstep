@@ -82,7 +82,7 @@ enginex_set_warnings(enginex_journal)
 
 # enginex_net: wire protocol, bounded queues, TCP server and client (R3).
 find_package(Threads REQUIRED)
-add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/client.cpp)
+add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/client.cpp src/mirror.cpp)
 target_link_libraries(enginex_net PUBLIC enginex_codec enginex_journal Threads::Threads)
 enginex_set_warnings(enginex_net)
 

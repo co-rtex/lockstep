@@ -12,6 +12,7 @@
 #include "cli.hpp"
 #include "enginex/canonical.hpp"
 #include "enginex/client.hpp"
+#include "enginex/mirror.hpp"
 #include "enginex/server.hpp"
 
 namespace enginex::cli {
@@ -275,11 +276,47 @@ int client_snapshot(const Args& args) {
     return reply->value("type", "") == "snapshot_response" ? 0 : 1;
 }
 
+// Read-only replica of the feed with gap refusal, automatic resubscribe and in-band
+// verification (mirror.hpp). Exit 0 only if the session ended live and verified.
+int client_mirror(const Args& args) {
+    net::MirrorOptions o;
+    o.host = args.get_or("host", "127.0.0.1");
+    o.port = port_arg(args, 9000);
+    o.duration = std::chrono::milliseconds(args.get_u64("duration-ms", 5000));
+    o.verify_every = std::chrono::milliseconds(args.get_u64("verify-ms", 500));
+    o.max_resubscribes = args.get_u64("max-resubscribes", 10);
+    if (o.verify_every.count() == 0) {
+        throw UsageError("--verify-ms must be > 0");
+    }
+    net::FeedMirror mirror;
+    const net::MirrorReport r = net::run_mirror(o, mirror);
+    const auto& s = r.stats;
+    std::cout << Json{{"type", "mirror_summary"},
+                      {"ok", r.ok()},
+                      {"state", r.state},
+                      {"final_verified", r.final_verified},
+                      {"connections", r.connections},
+                      {"last_event_sequence", r.last_event},
+                      {"baselines", s.baselines},
+                      {"events_applied", s.applied},
+                      {"events_rejected_not_live", s.rejected},
+                      {"gaps_refused", s.gaps},
+                      {"resync_required", s.resyncs},
+                      {"disconnects", s.disconnects},
+                      {"subscribe_failures", s.subscribe_failures},
+                      {"verifications", s.verified},
+                      {"mismatches", s.mismatches},
+                      {"last_problem", r.last_problem}}
+                     .dump()
+              << std::endl;
+    return r.ok() ? 0 : 1;
+}
+
 }  // namespace
 
 int cmd_client(const std::vector<std::string>& argv) {
     if (argv.empty()) {
-        throw UsageError("expected a subcommand: submit, subscribe or snapshot");
+        throw UsageError("expected a subcommand: submit, subscribe, snapshot or mirror");
     }
     net::ignore_sigpipe();
     const std::string sub = argv[0];
@@ -293,6 +330,10 @@ int cmd_client(const std::vector<std::string>& argv) {
     }
     if (sub == "snapshot") {
         return client_snapshot(Args(rest, {"host", "port", "symbol", "depth"}, {}));
+    }
+    if (sub == "mirror") {
+        return client_mirror(Args(
+            rest, {"host", "port", "duration-ms", "verify-ms", "max-resubscribes"}, {}));
     }
     throw UsageError("unknown client subcommand: " + sub);
 }
