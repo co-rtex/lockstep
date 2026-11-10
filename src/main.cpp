@@ -115,6 +115,7 @@ Usage:
                         [--anomalies-per-million N]
   enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]
                         [--metrics-out FILE.json] [--expected-orders N]
+                        [--level-vector-limit N] [--checkpoint-every N --checkpoint-out FILE]
   enginex itch dump     --input FILE [--limit N] [--all-fields]
   enginex itch mold-sim --input FILE [--seed N] [--loss-percent P] [--duplicate-percent P]
                         [--reorder-window N] [--mtu BYTES] [--no-recovery]   (simulation)

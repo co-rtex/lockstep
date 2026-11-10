@@ -96,11 +96,18 @@ with tempfile.TemporaryDirectory() as d:
             for line in p.stdout.splitlines():
                 json.loads(line)
     # Independent Python decoder + book (tools/itch_pybook.py) must reproduce every level of
-    # every final book of the generated file.
+    # every final book of the generated file, and the best bid/ask of every book after every
+    # 50th message.
     tools = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
     pb = subprocess.run([sys.executable, os.path.join(tools, "itch_pybook.py"), f,
+                         "--checkpoint-every", "50", "--enginex", exe], capture_output=True, text=True)
+    assert pb.returncode == 0 and "checkpoints" in pb.stdout, (pb.stdout, pb.stderr)
+    # Same with the C++ sorted level vector capped at 2 levels, so the deep tier (D32) spills
+    # and refills under the generator's churn and is checked mid-stream.
+    pb = subprocess.run([sys.executable, os.path.join(tools, "itch_pybook.py"), f,
+                         "--checkpoint-every", "50", "--level-vector-limit", "2",
                          "--enginex", exe], capture_output=True, text=True)
-    assert pb.returncode == 0 and "identical" in pb.stdout, (pb.stdout, pb.stderr)
+    assert pb.returncode == 0 and "checkpoints" in pb.stdout, (pb.stdout, pb.stderr)
     # MoldUDP64 over real UDP (loopback), two processes, with deliberate loss both ways.
     import socket
     import time

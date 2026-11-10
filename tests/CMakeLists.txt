@@ -74,7 +74,7 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME itch_pybook_lifecycle
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_pybook.py
                      ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/lifecycle.itch
-                     --enginex $<TARGET_FILE:enginex>)
+                     --checkpoint-every 1 --enginex $<TARGET_FILE:enginex>)
     set_tests_properties(itch_pydecode_lifecycle itch_pydecode_malformed
                          itch_pydecode_random_all_types itch_pybook_lifecycle
                          PROPERTIES LABELS "itch;cli" TIMEOUT 120)

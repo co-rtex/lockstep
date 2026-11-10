@@ -264,7 +264,8 @@ void print_text(const Json& j) {
 
 int cmd_replay_itch(const std::vector<std::string>& argv) {
     const Args a(argv,
-                 {"input", "depth", "symbol", "metrics-out", "expected-orders", "level-vector-limit"},
+                 {"input", "depth", "symbol", "metrics-out", "expected-orders", "level-vector-limit",
+                  "checkpoint-every", "checkpoint-out"},
                  {"strict", "json"});
     const std::string input = a.require("input");
     const std::size_t depth = a.get_u64("depth", 5);
@@ -280,10 +281,50 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
         throw UsageError("--level-vector-limit must be in [2, 2^30]");
     }
     BookBuilder book(a.get_u64("expected-orders", 0), static_cast<std::size_t>(limit));
+    // --checkpoint-every N --checkpoint-out FILE: after every N decoded messages, one JSON line
+    // with the live-order count and every non-empty book's top of book, so an independent
+    // model can be compared mid-stream, not only at the end (tools/itch_pybook.py).
+    const std::uint64_t every = a.get_u64("checkpoint-every", 0);
+    std::ofstream checkpoints;
+    std::uint64_t decoded = 0;
+    if (every == 0 && a.get("checkpoint-out")) {
+        throw UsageError("--checkpoint-out needs --checkpoint-every N (N >= 1)");
+    }
+    if (every != 0) {
+        const auto path = a.get("checkpoint-out");
+        if (!path) {
+            throw UsageError("--checkpoint-every needs --checkpoint-out FILE");
+        }
+        checkpoints.open(*path);
+        if (!checkpoints) {
+            throw std::runtime_error("cannot write " + *path);
+        }
+        opts.on_message = [&](const Message&, const ApplyOutcome&) {
+            if (++decoded % every != 0) {
+                return;
+            }
+            Json tops = Json::array();
+            for (const std::uint16_t l : book.locates()) {
+                const TopOfBook t = book.top(l);
+                if (t.bid || t.ask) {
+                    tops.push_back(Json::array({l, t.bid ? t.bid->price : 0, t.bid ? t.bid->shares : 0,
+                                                t.ask ? t.ask->price : 0, t.ask ? t.ask->shares : 0}));
+                }
+            }
+            checkpoints << Json{{"message", decoded},
+                                {"live_orders", book.stats().live_orders},
+                                {"tops", std::move(tops)}}
+                               .dump()
+                        << "\n";
+        };
+    }
     auto in = open_input(input);
     const auto t0 = std::chrono::steady_clock::now();
     const ReplayResult r = replay(*in, book, opts);
     const auto t1 = std::chrono::steady_clock::now();
+    if (every != 0 && !checkpoints.flush()) {
+        throw std::runtime_error("writing --checkpoint-out failed");
+    }
     if (only && !book.find_locate(*only)) {
         throw UsageError("--symbol " + *only + ": no such symbol in " + input);
     }
