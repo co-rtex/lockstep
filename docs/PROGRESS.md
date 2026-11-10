@@ -193,9 +193,11 @@ pushed, so GitHub CI has not run on them.
 Commands and results (latest):
 
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
-  481/481 passed (commit `d44ee6b`). Debug build (`cmake -S . -B build/debug -G Ninja
-  -DCMAKE_BUILD_TYPE=Debug -DENGINEX_ENABLE_TESTS=ON`, local dependency cache):
-  481/481 (125.7 s).
+  486/486 passed (commit `63a2475`; 1 opt-in real-data test skips without its file). Debug
+  build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 486/486 (91 s, `-j8`). UBSan (below):
+  486/486 at `63a2475` (175 s), no runtime errors.
+* `python3 tools/mutation_check.py`: 41/41 mutants killed (150 s, release build).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
   at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.

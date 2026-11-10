@@ -129,7 +129,8 @@ Three adversarial property tests were also added in the sprint:
 
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
-| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass |
+| macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass (R3, commit `418d247`) |
+| macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | 486/486 in each (commit `63a2475`); GCC/ASan/TSan not re-run for the sprint (see below) |
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
 | Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 375/375 |
 | Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 375/375 |
