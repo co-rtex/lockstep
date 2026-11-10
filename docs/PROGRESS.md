@@ -187,6 +187,8 @@ pushed, so GitHub CI has not run on them.
 | Real data on three sample days (2019-01-30, 2019-03-27, 2020-01-30): 0 decode errors, 0 anomalies, reference model agrees; all crossed books halted/paused | done | `scripts/real_data_check.sh` (all three dates) |
 | Third independent review (sorted-vector levels, paged index) | done | no correctness bug in the new layout; directory growth clamped, spare page, memory bound documented in `deb39c3` |
 | Fourth independent review (latest changes): confirmed JSON crash on non-ASCII wire bytes | fixed | `f6f2ffe`; hostile-bytes regression + CLI-level mutation fuzz in `tests/cli_itch_smoke.py` |
+| Fifth independent review (UDP transport, reorder buffer) | fixed | `a8225d0`: retry timer keyed by requested range (`RequestPlanner`), POLLERR spin, port sharing, stale end of session, CLI ranges; no Sequencer contract break found |
+| Independent Python decoder and book on real data | done | `tools/itch_pydecode.py` (63.7 M messages, every field), `tools/itch_pybook.py` (every level of every final book), 3 days |
 | Layout variants reconstruct identical books | done | ctest `itch_layout_variants_agree` |
 | MoldUDP64 over UDP on loopback (D29): sender with re-request answers, receiver, `RequestPlanner`, source filter, answer budget | done | `MoldUdp.*`, `MoldRequestPlanner.*`, `tests/cli_itch_smoke.py`, `scripts/mold_udp_demo.sh`, `mold-udp-loopback-macos-m3.csv` (3 real days exact at 50 k packets/s with 5 %/10 % loss); macOS only |
 | Reorder buffer redesign (D30) | done | `mold-sequencer-macos-m3.csv`: 121–147 → 20–21 ns/msg behind holes; set-model differential unchanged |
