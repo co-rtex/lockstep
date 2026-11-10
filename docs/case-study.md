@@ -149,6 +149,17 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
    fallback) together with sorted-vector price levels. Real-data replay went from 99.3 to
    62.1 ns/msg (−37 %), and the rehash spike disappeared without any capacity hint.
 
+10. **An outlier is a clue when it repeats.** On real data, book apply showed 2–10 ms maxima.
+    Making the benchmark report *which* message produced the max showed the same message in
+    every trial. The node pool, a `std::vector`, was doubling past ≈ 1 M live orders and
+    copying ≈ 50 MB in one message. A chunked pool (64 Ki nodes, never moved) took the max to
+    ≈ 100–170 µs at varying positions, which is noise. The fix had a price, and measuring it
+    honestly took a controlled A/B. An old commit was built in a worktree, and an unchanged
+    control binary first reproduced its recorded number, ruling out thermal drift on a
+    fanless laptop. The chunk indirection cost ≈ 1 ns/msg (kept). Exception-handling blocks I
+    had added for bad_alloc safety cost ≈ 0.7 ns/msg; they were removed, and the API now
+    states that a builder is discarded after an allocation failure.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every
