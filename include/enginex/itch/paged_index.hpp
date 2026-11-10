@@ -108,6 +108,12 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return size_; }
     [[nodiscard]] std::size_t pages() const noexcept { return pages_; }
     [[nodiscard]] std::size_t fallback_size() const noexcept { return far_.size(); }
+    // Allocated bytes: live pages plus the spare page, the directory, and the hash fallback.
+    [[nodiscard]] std::size_t page_bytes() const noexcept;
+    [[nodiscard]] std::size_t directory_bytes() const noexcept {
+        return dir_.capacity() * sizeof(dir_[0]);
+    }
+    [[nodiscard]] std::size_t fallback_bytes() const noexcept { return far_.allocated_bytes(); }
 
 private:
     struct Page {
@@ -147,5 +153,9 @@ private:
     std::size_t size_ = 0;
     std::size_t pages_ = 0;
 };
+
+inline std::size_t PagedIndex::page_bytes() const noexcept {
+    return (pages_ + (spare_ ? 1U : 0U)) * sizeof(Page);
+}
 
 }  // namespace enginex::itch

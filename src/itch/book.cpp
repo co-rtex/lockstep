@@ -35,6 +35,9 @@ namespace {
 
 constexpr std::uint32_t kNil = UINT32_MAX;
 constexpr std::size_t kLocates = 65536;
+// Memory accounting estimate for a red-black tree node's header: parent, left and right
+// pointers plus the colour, padded (libc++ and libstdc++ both use this layout).
+constexpr std::size_t kMapNodeHeaderBytes = 32;
 
 struct Level {
     std::uint64_t shares = 0;
@@ -148,6 +151,11 @@ public:
     }
     void erase(Price4 price) { map_.erase(price); }
     [[nodiscard]] std::size_t size() const noexcept { return map_.size(); }
+    // Memory accounting (MemoryUsage): no vector tier; each level lives in a map node.
+    [[nodiscard]] std::size_t vector_bytes() const noexcept { return 0; }
+    [[nodiscard]] std::size_t map_bytes_est() const noexcept {
+        return map_.size() * (kMapNodeHeaderBytes + sizeof(LevelMap::value_type));
+    }
     template <typename F>
     void for_each_best_first(std::size_t max_levels, F&& f) const {
         std::size_t n = 0;
@@ -234,6 +242,11 @@ public:
         }
     }
     [[nodiscard]] std::size_t size() const noexcept { return v_.size() + deep_.size(); }
+    // Memory accounting (MemoryUsage).
+    [[nodiscard]] std::size_t vector_bytes() const noexcept { return v_.capacity() * sizeof(Entry); }
+    [[nodiscard]] std::size_t map_bytes_est() const noexcept {
+        return deep_.size() * (kMapNodeHeaderBytes + sizeof(decltype(deep_)::value_type));
+    }
     template <typename F>
     void for_each_best_first(std::size_t max_levels, F&& f) const {
         std::size_t n = 0;
@@ -383,6 +396,11 @@ public:
     static_assert(BookBuilder::kMaxOrders == std::size_t{UINT32_MAX} - kChunk,
                   "node indices stay below the index's empty marker");
 
+    // Allocated chunk storage plus the chunk pointer array (MemoryUsage).
+    [[nodiscard]] std::size_t allocated_bytes() const noexcept {
+        return chunks_.size() * std::size_t{kChunk} * sizeof(Node) +
+               chunks_.capacity() * sizeof(chunks_[0]);
+    }
     Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)]; }
     const Node& operator[](std::uint32_t i) const noexcept {
         return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)];
@@ -825,6 +843,50 @@ std::optional<OrderView> BookBuilder::find_order(OrderRef ref) const {
     }
     const Node& n = impl_->pool[*slot];
     return OrderView{n.ref, n.side, n.price, n.shares};
+}
+
+namespace {
+
+template <typename I>
+void index_memory(const I& index, MemoryUsage& m) noexcept {
+    if constexpr (requires { index.page_bytes(); }) {
+        m.index_pages = index.page_bytes();
+        m.index_directory = index.directory_bytes();
+        m.index_fallback = index.fallback_bytes();
+    } else if constexpr (requires { index.allocated_bytes(); }) {
+        m.index_fallback = index.allocated_bytes();
+    }  // the std::unordered_map A/B variant is not accounted
+}
+
+template <typename S>
+std::uint64_t level_storage_bytes(const S& storage) noexcept {
+    if constexpr (requires { storage.levels.size(); storage.free.capacity(); }) {
+        return storage.levels.size() * sizeof(Level) + storage.free.capacity() * sizeof(Level*);
+    } else {
+        return 0;  // the map variant keeps each level inside its map node
+    }
+}
+
+}  // namespace
+
+MemoryUsage BookBuilder::memory_usage() const {
+    const Impl& im = *impl_;
+    MemoryUsage m;
+    m.node_pool = im.pool.allocated_bytes();
+    m.free_slots = im.free_slots.capacity() * sizeof(std::uint32_t);
+    index_memory(im.index, m);
+    m.levels = level_storage_bytes(im.level_storage);
+    std::uint64_t book_count = 0;
+    for (const auto& b : im.books) {
+        if (b) {
+            ++book_count;
+            m.level_vectors += b->bids.vector_bytes() + b->asks.vector_bytes();
+            m.level_maps_est += b->bids.map_bytes_est() + b->asks.map_bytes_est();
+        }
+    }
+    m.books = im.books.capacity() * sizeof(im.books[0]) + book_count * sizeof(Book) +
+              im.directory.capacity() * sizeof(im.directory[0]);
+    return m;
 }
 
 std::optional<Mpid> BookBuilder::attribution(OrderRef ref) const {

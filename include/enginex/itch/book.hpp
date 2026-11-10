@@ -114,6 +114,26 @@ struct BookStats {
     [[nodiscard]] std::uint64_t anomaly_count() const noexcept;
 };
 
+// Bytes the builder's own structures have allocated, by structure, computed from their
+// capacities (deterministic; not a reading of the allocator or RSS). Allocator overhead and
+// freed-but-retained heap pages are not included, so the total is a lower bound on what the
+// book costs in RSS.
+struct MemoryUsage {
+    std::uint64_t node_pool = 0;     // order nodes: allocated chunks x nodes per chunk x node size
+    std::uint64_t free_slots = 0;    // recycled node slots
+    std::uint64_t index_pages = 0;   // paged direct index: pages x page size
+    std::uint64_t index_directory = 0;
+    std::uint64_t index_fallback = 0;  // hash index (the fallback, or the whole index in A/B builds)
+    std::uint64_t levels = 0;        // Level objects ever created (pooled, reused, never freed)
+    std::uint64_t level_vectors = 0;   // the sorted vectors of every book side (capacity)
+    std::uint64_t level_maps_est = 0;  // deep-tier std::map nodes, estimated at 48 bytes each
+    std::uint64_t books = 0;           // per-locate book pointers, Book objects, directory
+    [[nodiscard]] std::uint64_t total() const noexcept {
+        return node_pool + free_slots + index_pages + index_directory + index_fallback + levels +
+               level_vectors + level_maps_est + books;
+    }
+};
+
 // Which order-index implementation this build uses ("open_addressing" or "std_unordered_map").
 extern const char* const kOrderIndexName;
 // Price-level map node allocation ("node_arena" or "std_allocator").
@@ -145,6 +165,8 @@ public:
     ApplyOutcome apply(const Message& m);
 
     [[nodiscard]] const BookStats& stats() const noexcept { return stats_; }
+    // Allocated bytes by structure (O(books)); see MemoryUsage.
+    [[nodiscard]] MemoryUsage memory_usage() const;
 
     // Locates with a directory entry or at least one add, ascending.
     [[nodiscard]] std::vector<std::uint16_t> locates() const;

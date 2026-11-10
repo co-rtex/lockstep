@@ -49,6 +49,7 @@ public:
 
     [[nodiscard]] std::size_t size() const noexcept { return size_; }
     [[nodiscard]] std::size_t capacity() const noexcept { return slots_.size(); }
+    [[nodiscard]] std::size_t allocated_bytes() const noexcept;  // the slot array
 
     // Value for `key`, or kEmpty.
     [[nodiscard]] std::uint32_t find(std::uint64_t key) const noexcept {
@@ -176,5 +177,9 @@ private:
     unsigned shift_ = 0;
     std::size_t size_ = 0;
 };
+
+inline std::size_t OrderIndex::allocated_bytes() const noexcept {
+    return slots_.capacity() * sizeof(Slot);
+}
 
 }  // namespace enginex::itch

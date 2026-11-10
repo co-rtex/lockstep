@@ -173,6 +173,18 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
                            {"last_system_event", s.last_system_event == 0
                                                      ? std::string()
                                                      : printable(s.last_system_event)}};
+    // Bytes the book's structures hold at the end, by structure (capacities, not RSS).
+    const MemoryUsage mem = b.memory_usage();
+    j["book_memory_bytes"] = Json{{"node_pool", mem.node_pool},
+                                  {"free_slots", mem.free_slots},
+                                  {"index_pages", mem.index_pages},
+                                  {"index_directory", mem.index_directory},
+                                  {"index_fallback", mem.index_fallback},
+                                  {"levels", mem.levels},
+                                  {"level_vectors", mem.level_vectors},
+                                  {"level_maps_estimated", mem.level_maps_est},
+                                  {"books", mem.books},
+                                  {"total", mem.total()}};
     j["state_hash"] = b.state_hash();
     Json books = Json::array();
     // Crossed/locked books by the symbol's last trading state ('T' trading, 'H' halted,

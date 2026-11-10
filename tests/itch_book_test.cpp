@@ -463,6 +463,43 @@ TEST(ItchLevelBound, HostileDeepBookStaysCorrectWithTheBound) {
 
 // ---- determinism and replay policy ----------------------------------------------------------
 
+// memory_usage() reports what the structures hold: nothing order-related before the first
+// add, every component after orders rest, the same numbers for the same input, and node and
+// index storage that cover at least the live orders.
+TEST(ItchBook, MemoryUsageAccountsForTheStructures) {
+    BookBuilder empty;
+    const MemoryUsage none = empty.memory_usage();
+    EXPECT_EQ(none.node_pool, 0U);
+    EXPECT_EQ(none.index_pages, 0U);
+    EXPECT_EQ(none.levels, 0U);
+    EXPECT_GT(none.books, 0U);  // the per-locate tables exist from the start
+
+    SyntheticOptions o;
+    o.seed = 5;
+    o.messages = 50'000;
+    o.symbols = 4;
+    const auto stream = generate(o);
+    BookBuilder a;
+    BookBuilder b;
+    for (const Message& m : stream) {
+        (void)a.apply(m);
+        (void)b.apply(m);
+    }
+    const MemoryUsage ma = a.memory_usage();
+    const MemoryUsage mb = b.memory_usage();
+    EXPECT_EQ(ma.total(), mb.total());  // capacities only: deterministic
+    EXPECT_EQ(ma.total(), ma.node_pool + ma.free_slots + ma.index_pages + ma.index_directory +
+                              ma.index_fallback + ma.levels + ma.level_vectors +
+                              ma.level_maps_est + ma.books);
+    const std::uint64_t live = a.stats().live_orders;
+    ASSERT_GT(live, 0U);
+    EXPECT_GE(ma.node_pool, live * 32);         // a node holds at least ref, prices, links
+    // Every live order occupies at least one 4-byte slot of some page (or of the fallback).
+    EXPECT_GE(ma.index_pages + ma.index_fallback, live * 4);
+    EXPECT_GT(ma.levels, 0U);
+    EXPECT_GT(ma.level_vectors, 0U);
+}
+
 TEST(ItchBook, CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty) {
     SyntheticOptions o;
     o.seed = 21;

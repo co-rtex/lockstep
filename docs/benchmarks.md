@@ -544,6 +544,28 @@ and spilled references into the hash fallback, and at 2⁸ replay slowed to 82�
 4 096-reference pages stay. A budget in bytes rather than in pages would be the precondition
 for revisiting this.
 
+*Measured breakdown.* `BookBuilder::memory_usage()` reports the bytes each structure has
+allocated. It is computed from capacities, so it is deterministic and is not an RSS
+reading. `itch replay --json` prints it as `book_memory_bytes`. At the end of each real day,
+per live order:
+
+| structure | 2019-01-30 | 2020-01-30 | 2019-03-27 |
+|---|---:|---:|---:|
+| index pages (16 KiB each, ≈ 7 % occupied) | 52.2 B | 58.6 B | 51.8 B |
+| order nodes (40 B each, 64 Ki-node chunks) | 40.9 B | 41.3 B | 41.5 B |
+| `Level` objects (24 B, pooled) | 10.2 B | 10.4 B | 10.2 B |
+| sorted level vectors (16 B entries, capacity) | 10.3 B | 10.5 B | 10.3 B |
+| per-locate tables, books, everything else | 1.5 B | 1.4 B | 1.5 B |
+| **structures total** | **115.1 B** | **122.3 B** | **115.3 B** |
+| share of peak RSS | 57 % | 58 % | 61 % |
+
+The deep-map tier and the hash fallback hold nothing on real data. The other ≈ 40 % of RSS
+is allocator overhead, memory freed but retained by the allocator, transient copies during
+vector growth, and the process itself; this accounting cannot attribute it. Index pages are
+the largest single item, and their occupancy is the lever for memory. They are kept for
+speed: direct page indexing avoids a hash. Raw rows:
+[`itch-real-memory-breakdown-macos-m3.csv`](../benchmarks/results/itch-real-memory-breakdown-macos-m3.csv).
+
 *Rejected: software prefetch.* While applying message *i*, the index slot of message *i + 8*
 was prefetched (book apply on pre-decoded real messages, 2019-03-27, 3 interleaved rounds
 of 5 trials). The result was 42.6–43.6 ns/msg without and 40.4–43.3 ns/msg with: at most a
