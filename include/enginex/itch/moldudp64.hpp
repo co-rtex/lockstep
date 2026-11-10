@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
 #include <span>
@@ -184,9 +185,26 @@ public:
     [[nodiscard]] const std::optional<Session>& session() const noexcept { return session_; }
 
 private:
+    // A buffered message: where its bytes are in a packet copy. kNoChunk = not present.
+    static constexpr std::uint32_t kNoChunk = UINT32_MAX;
+    struct Slot {
+        std::uint32_t chunk = kNoChunk;
+        std::uint32_t offset = 0;
+        std::uint32_t length = 0;
+    };
+    // A copy of one packet's message blocks, shared by its buffered messages and recycled
+    // (capacity kept) when the last of them is released.
+    struct Chunk {
+        std::vector<std::uint8_t> bytes;
+        std::uint32_t live = 0;
+    };
+
     template <typename Deliver>
     void on_parsed(const ParsedPacket& p, Deliver& deliver);
     void note_horizon(std::uint64_t end);
+    void open_hole(std::uint64_t end);  // [horizon_, end) is missing; horizon_ = end
+    [[nodiscard]] bool fill_hole(std::uint64_t seq);  // false if seq is not in a hole
+    std::uint32_t copy_packet(const ParsedPacket& p);
 
     Options o_;
     State state_ = State::Running;
@@ -195,8 +213,14 @@ private:
     std::uint64_t horizon_;
     bool ended_ = false;
     std::uint64_t end_sequence_ = 0;
-    // Messages ahead of next_, keyed by sequence (copies; the packet buffer is transient).
-    std::map<std::uint64_t, std::vector<std::uint8_t>> pending_;
+    // Messages ahead of next_: window_[k] is sequence next_ + k (holes are empty slots).
+    // Buffering costs one packet copy per packet, not one allocation per message.
+    std::deque<Slot> window_;
+    std::vector<Chunk> chunks_;
+    std::vector<std::uint32_t> free_chunks_;
+    // Missing ranges [first, end) inside [next_, horizon_), disjoint and never adjacent. Only
+    // touched when a hole opens or a retransmission fills one, so missing() is O(holes).
+    std::map<std::uint64_t, std::uint64_t> holes_;
     std::size_t buffered_count_ = 0;
     std::size_t buffered_bytes_ = 0;
     Stats stats_;
@@ -230,17 +254,31 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
         note_horizon(h.sequence);
     } else {
         const std::uint64_t first = h.sequence;
-        note_horizon(first + p.messages.size());
+        if (first > horizon_) {
+            open_hole(first);  // messages [horizon_, first) exist but have not arrived
+        }
+        std::uint32_t chunk = kNoChunk;  // this packet's copy, made on first use
         for (std::size_t i = 0; i < p.messages.size(); ++i) {
             const std::uint64_t seq = first + i;
-            if (seq < next_ || pending_.contains(seq)) {
+            if (seq < next_) {
                 ++stats_.duplicates;
                 continue;
+            }
+            if (seq < horizon_) {
+                if (!fill_hole(seq)) {  // [next_, horizon_) = holes + buffered messages
+                    ++stats_.duplicates;
+                    continue;
+                }
+            } else {
+                horizon_ = seq + 1;  // seq == horizon_: first <= horizon_ after open_hole()
             }
             if (seq == next_) {
                 deliver(seq, p.messages[i]);
                 ++stats_.delivered;
                 ++next_;
+                if (!window_.empty()) {
+                    window_.pop_front();  // the slot of the message just delivered
+                }
                 continue;
             }
             if (buffered_count_ >= o_.max_buffered_messages ||
@@ -248,8 +286,17 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
                 state_ = State::Failed;  // unrecoverable: never skip messages
                 return;
             }
-            pending_.emplace(seq, std::vector<std::uint8_t>(p.messages[i].begin(),
-                                                            p.messages[i].end()));
+            if (chunk == kNoChunk) {
+                chunk = copy_packet(p);
+            }
+            const auto k = static_cast<std::size_t>(seq - next_);
+            if (k >= window_.size()) {
+                window_.resize(k + 1);
+            }
+            window_[k] = Slot{chunk,
+                              static_cast<std::uint32_t>(p.messages[i].data() - p.messages.front().data()),
+                              static_cast<std::uint32_t>(p.messages[i].size())};
+            ++chunks_[chunk].live;
             ++buffered_count_;
             buffered_bytes_ += p.messages[i].size();
             stats_.buffered_peak = std::max<std::uint64_t>(stats_.buffered_peak, buffered_count_);
@@ -258,13 +305,18 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
         }
     }
     // Release buffered messages that are now contiguous.
-    for (auto it = pending_.begin(); it != pending_.end() && it->first == next_;) {
-        deliver(it->first, std::span<const std::uint8_t>(it->second));
+    while (!window_.empty() && window_.front().chunk != kNoChunk) {
+        const Slot slot = window_.front();
+        Chunk& c = chunks_[slot.chunk];
+        deliver(next_, std::span<const std::uint8_t>(c.bytes.data() + slot.offset, slot.length));
         ++stats_.delivered;
         ++next_;
-        buffered_bytes_ -= it->second.size();
-        it = pending_.erase(it);
+        window_.pop_front();
+        buffered_bytes_ -= slot.length;
         --buffered_count_;
+        if (--c.live == 0) {
+            free_chunks_.push_back(slot.chunk);
+        }
     }
     const bool was_gap = state_ == State::Gap;
     if (next_ < horizon_) {

@@ -168,19 +168,64 @@ Sequencer::Sequencer(Options options)
       next_(options.first_sequence),
       horizon_(options.first_sequence) {}
 
-void Sequencer::note_horizon(std::uint64_t end) { horizon_ = std::max(horizon_, end); }
+void Sequencer::note_horizon(std::uint64_t end) {
+    if (end > horizon_) {
+        open_hole(end);
+    }
+}
+
+void Sequencer::open_hole(std::uint64_t end) {
+    // The new hole starts at horizon_; only the last hole can end there (merge, so holes
+    // stay maximal and missing() reports one range per hole).
+    if (!holes_.empty() && std::prev(holes_.end())->second == horizon_) {
+        std::prev(holes_.end())->second = end;
+    } else {
+        holes_.emplace(horizon_, end);
+    }
+    horizon_ = end;
+}
+
+bool Sequencer::fill_hole(std::uint64_t seq) {
+    auto it = holes_.upper_bound(seq);
+    if (it == holes_.begin()) {
+        return false;
+    }
+    --it;
+    const auto [start, end] = *it;
+    if (seq >= end) {
+        return false;
+    }
+    holes_.erase(it);
+    if (start < seq) {
+        holes_.emplace(start, seq);
+    }
+    if (seq + 1 < end) {
+        holes_.emplace(seq + 1, end);
+    }
+    return true;
+}
+
+std::uint32_t Sequencer::copy_packet(const ParsedPacket& p) {
+    const std::uint8_t* base = p.messages.front().data();
+    const std::uint8_t* last = p.messages.back().data() + p.messages.back().size();
+    std::uint32_t id;
+    if (!free_chunks_.empty()) {
+        id = free_chunks_.back();
+        free_chunks_.pop_back();
+    } else {
+        id = static_cast<std::uint32_t>(chunks_.size());
+        chunks_.emplace_back();
+    }
+    chunks_[id].bytes.assign(base, last);
+    chunks_[id].live = 0;
+    return id;
+}
 
 std::vector<std::pair<std::uint64_t, std::uint64_t>> Sequencer::missing() const {
     std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
-    std::uint64_t cursor = next_;
-    for (const auto& [seq, bytes] : pending_) {
-        if (seq > cursor) {
-            out.emplace_back(cursor, seq - cursor);
-        }
-        cursor = seq + 1;
-    }
-    if (cursor < horizon_) {
-        out.emplace_back(cursor, horizon_ - cursor);
+    out.reserve(holes_.size());
+    for (const auto& [start, end] : holes_) {
+        out.emplace_back(start, end - start);
     }
     return out;
 }
