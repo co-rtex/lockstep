@@ -250,6 +250,13 @@ in [docs/benchmarks.md](docs/benchmarks.md). Raw CSVs are in
 | mixed | 8.19M | 125 | 333 | 417 |
 | mixed (1M commands) | 4.56M | 166 | 666 | 834 |
 
+These rows are the original R1 measurements. An optional R4 change, which moved book nodes
+into a per-engine `std::pmr` pool after an allocation probe found 2–3.5 heap calls per
+command, measured +14–28 % in the five scenarios that recycle nodes. Examples: `mixed` 8.18 M
+→ 9.63 M cmd/s, `cancel-heavy` 8.12 M → 10.41 M. `no-cross` is unchanged, and every pair
+ends in the same state hash
+([docs/benchmarks.md § R4](docs/benchmarks.md#r4-optional-result-pooled-book-nodes-in-the-matching-core)).
+
 These are not order-entry or end-to-end latencies. Durable acknowledgment latency is measured
 separately and is dominated by the flush. Same machine, `mixed`, seed 42, one sync per
 command, medians of 5 trials:

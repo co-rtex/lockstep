@@ -222,3 +222,17 @@ worse than stopping. When the buffer bound is exceeded the sequencer stops (`Fai
 consumer must rebuild from a snapshot or the start of the session. Packet validation is
 all-or-nothing, so a malformed packet cannot partially advance the sequence. There is no
 socket receiver or wire re-request protocol; channels are simulated in tests.
+
+## D26. Matching core: std::pmr pool for book nodes (optional R4, measured)
+An allocation probe showed 2.0–3.5 heap calls per command, mostly list, index and level nodes
+that are freed again on fill or cancel. The book now uses `std::pmr::list`, `std::pmr::map`
+and `std::pmr::unordered_map`, all on one `std::pmr::unsynchronized_pool_resource` per
+`MatchingEngine`. `PriceLevel` is allocator-aware, so levels created in a map inherit its
+resource. *Why pmr rather than the ITCH path's fixed-size arena:* one resource serves every
+node size and propagates through nested containers without custom allocator plumbing.
+*Lifetime rule:* the pool lives on the heap, declared before the containers.
+`MatchingEngine` may be move-constructed (containers keep pointing at the same pool) but not
+move-assigned (the target's pool would die under its live containers). The compiler then
+deleted `ExchangeStateMachine`'s unused move assignment. Result: +14–28 % throughput where
+nodes are recycled, unchanged without recycling, identical state hashes, +5–6 MiB retained
+memory. `-DENGINEX_CORE_STD_ALLOC=ON` restores `new_delete_resource` for comparisons.

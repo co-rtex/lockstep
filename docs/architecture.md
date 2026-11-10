@@ -102,6 +102,11 @@ command in the property tests:
 ASan and UBSan runs of the full suite (Linux, Clang 18) found no use-after-free or invalid
 iterator use.
 
+**Allocation (R4).** Lists, level maps and the order index are `std::pmr` containers on one
+`unsynchronized_pool_resource` per `MatchingEngine` (DECISIONS.md D26), so recycled nodes
+avoid malloc/free. Iterator-stability guarantees are unchanged; the engine is movable but
+not move-assignable.
+
 ## Identity and determinism
 
 * `command_sequence`: one per *accepted* mutating command (new or cancel). Rejections and

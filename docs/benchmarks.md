@@ -119,6 +119,37 @@ The table keeps the original run.
 These are in-process core numbers only. They contain no I/O, JSON parsing, journaling or
 networking, and they must not be presented as order-entry or end-to-end latency.
 
+## R4 (optional) result: pooled book nodes in the matching core
+
+Evidence first. `enginex_core_alloc_probe` (counts `operator new` around `process()`, same
+seeded workloads) showed **2.0–3.5 heap allocations per command**. Each resting order cost
+3.0–3.8: a `std::list` node, an order-index node and, sometimes, a new `std::map` level, all
+freed again on fill or cancel. The book containers now use `std::pmr` types backed by one
+`std::pmr::unsynchronized_pool_resource` per engine (DECISIONS.md D26). That leaves ≈1.0
+allocation per command, the permanent idempotency-map entry.
+
+Same machine, commit `c9b300aea8e2`, both builds from that commit. `std` is
+`-DENGINEX_CORE_STD_ALLOC=ON`: identical container types on `new_delete_resource`. 100 000
+commands × 7 trials, and 1 M × 5 for `mixed`, medians. Raw rows:
+[`r4-core-pool-macos-m3.csv`](../benchmarks/results/r4-core-pool-macos-m3.csv).
+
+| scenario | commands | std cmd/s | pool cmd/s | change | p99 ns | p99.9 ns | peak RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| no-cross | 100 k | 6.97 M | 6.98 M | +0.2 % | 375 → 375 | 500 → 541 | 43 → 49 |
+| high-cross | 100 k | 8.13 M | 9.31 M | +14.5 % | 375 → 333 | 500 → 417 | 49 → 55 |
+| same-price-burst | 100 k | 9.80 M | 11.32 M | +15.4 % | 333 → 292 | 458 → 417 | 49 → 55 |
+| multi-level-sweep | 100 k | 5.78 M | 7.02 M | +21.5 % | 1000 → 625 | 1750 → 1000 | 49 → 55 |
+| cancel-heavy | 100 k | 8.12 M | 10.41 M | +28.3 % | 292 → 292 | 417 → 375 | 49 → 56 |
+| mixed | 100 k | 8.18 M | 9.63 M | +17.8 % | 292 → 292 | 417 → 375 | 49 → 56 |
+| mixed | 1 M | 4.61 M | 5.05 M | +9.6 % | 625 → 584 | 875 → 750 | 305 → 305 |
+
+Every pair ends in the same state hash. The core suite (100-seed property tests against the
+reference model, TradeGrid fixtures, journal recovery) passes on both builds. `no-cross`
+only adds resting orders and never frees, so there is nothing for the pool to reuse, and it
+does not change. The cost is memory: the pool keeps freed blocks for reuse and returns
+nothing to the OS until the engine is destroyed (+5–6 MiB at 100 k commands). The R1 table
+above still shows the original measurements.
+
 ## R2 results: durable acknowledgment latency (measurement 2)
 
 Same machine, Release build at commit `ceefa9f037e4`, scenario `mixed`, seed 42, medians of 5
