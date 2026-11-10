@@ -295,6 +295,38 @@ def event_view(e):
             "best_bid": e["best_bid"], "best_ask": e["best_ask"]}
 
 
+def stop(proc, read=True, timeout=60):
+    """Stops a child for good: SIGTERM, then SIGKILL if it has not exited within `timeout`.
+    Returns its remaining stdout when `read` (pass read=False if a thread owns the pipe)."""
+    if proc is None:
+        return ""
+    if proc.poll() is None:
+        proc.terminate()
+    try:
+        if read:
+            try:
+                return proc.communicate(timeout=timeout)[0] or ""
+            except ValueError:  # pipes already consumed by an earlier communicate()
+                proc.wait(timeout=timeout)
+                return ""
+        proc.wait(timeout=timeout)
+        return ""
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        return ""
+
+
+def replies_of(out, label):
+    """Parsed reply lines of `client submit`; a client_error line (the client gave up on a
+    line, timed out, or lost the server) is a failure with its message, not a KeyError."""
+    lines = [json.loads(l) for l in out.splitlines() if l.strip()]
+    for line in lines:
+        if line.get("type") == "client_error":
+            sys.exit(f"{label}: client_error: {line.get('message')}")
+    return lines
+
+
 def one_pass(exe, seed, cmds, expected, journal_dir, model, events, watermark):
     serve = [exe, "serve", "--port", "0"]
     if journal_dir:
@@ -325,10 +357,8 @@ def one_pass(exe, seed, cmds, expected, journal_dir, model, events, watermark):
             feed_out, _ = sub.communicate(timeout=120)
             feed = [json.loads(l) for l in feed_out.splitlines() if l.strip()]
     finally:
-        if sub and sub.poll() is None:
-            sub.terminate()
-        srv.terminate()
-        rest, _ = srv.communicate(timeout=60)
+        stop(sub, read=False)
+        rest = stop(srv)
     updates = [u for u in feed if u.get("type") == "book_update"]
     if len(updates) != len(events):
         sys.exit(f"network seed {seed}: {len(updates)} book_updates, model has {len(events)}")
@@ -337,7 +367,7 @@ def one_pass(exe, seed, cmds, expected, journal_dir, model, events, watermark):
         if event_view(have) != w:
             sys.exit(f"network seed {seed}, event {want['event_sequence']}:\n"
                      f"  python: {json.dumps(w)}\n  server: {json.dumps(event_view(have))}")
-    replies = [json.loads(l) for l in out.stdout.splitlines() if l.strip()]
+    replies = replies_of(out.stdout, f"network seed {seed}")
     if len(replies) != len(cmds):
         sys.exit(f"network seed {seed}: {len(replies)} replies for {len(cmds)} commands")
     for line, (want, have) in enumerate(zip(expected, replies), start=1):
@@ -404,11 +434,13 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
                 for c in part:
                     f.write(json.dumps(c) + "\n")
                 paths.append(f.name)
-        procs = [subprocess.Popen([exe, "client", "submit", "--port", str(port), "--input", p],
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-                 for p in paths]
+        for p in paths:  # appended one by one, so a failed start still cleans up the others
+            procs.append(subprocess.Popen([exe, "client", "submit", "--port", str(port),
+                                           "--input", p], stdout=subprocess.PIPE,
+                                          stderr=subprocess.DEVNULL, text=True))
         outs = [p.communicate(timeout=300)[0] for p in procs]
-        views = [[reply_view(json.loads(l)) for l in out.splitlines() if l.strip()] for out in outs]
+        views = [[reply_view(r) for r in replies_of(out, f"concurrent seed {seed}, client {j}")]
+                 for j, out in enumerate(outs)]
         accepted = {}  # command sequence -> (command, reply)
         owner = {}     # command sequence -> client
         for j, (part, vs) in enumerate(zip(parts, views)):
@@ -418,8 +450,12 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
             for c, v in zip(part, vs):
                 if v["status"] == "accepted" and not v["duplicate"]:
                     s = v["command_sequence"]
-                    if s <= last or s in accepted:
-                        sys.exit(f"concurrent seed {seed}: client {j} sequence {s} after {last}")
+                    if s in accepted:
+                        sys.exit(f"concurrent seed {seed}: sequence {s} given to client "
+                                 f"{owner[s]} and to client {j}")
+                    if s <= last:
+                        sys.exit(f"concurrent seed {seed}: client {j} got sequence {s} after "
+                                 f"{last} (per-connection order broken)")
                     last = s
                     accepted[s] = (c, v)
                     owner[s] = j
@@ -431,17 +467,12 @@ def compare_concurrent(exe, seed, n, clients, journal_dir):
                 time.monotonic() < deadline:
             time.sleep(0.05)
     finally:
-        for p in procs:
-            if p.poll() is None:
-                p.kill()
-        srv.terminate()
-        rest, _ = srv.communicate(timeout=60)
-        if sub:
-            if sub.poll() is None:
-                sub.terminate()
-            sub.wait(timeout=30)
         for p in paths:
-            pathlib.Path(p).unlink()
+            pathlib.Path(p).unlink(missing_ok=True)
+        for p in procs:
+            stop(p, read=False, timeout=5)
+        rest = stop(srv)
+        stop(sub, read=False, timeout=30)  # its stdout belongs to the reader thread
     # Windows for the replies that did not take a sequence number.
     pending = {}  # first state index -> [(last state index, client, command, reply)]
     for j, (part, vs) in enumerate(zip(parts, views)):
