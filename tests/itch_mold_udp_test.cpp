@@ -6,7 +6,12 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include <cstdio>
+#include <functional>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/decoder.hpp"

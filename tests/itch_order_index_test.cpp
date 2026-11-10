@@ -1,6 +1,7 @@
 // OrderIndex (open addressing, backward-shift deletion) checked against std::unordered_map.
 #include <gtest/gtest.h>
 
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 

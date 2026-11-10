@@ -19,6 +19,7 @@
 //
 // This is where gap detection belongs: ITCH payloads have no sequence numbers of their own.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -26,6 +27,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace enginex::itch::mold {

@@ -14,8 +14,10 @@
 #include <algorithm>
 #include <cstdio>
 #include <deque>
-#include <stdexcept>
 #include <map>
+#include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>

@@ -4,9 +4,12 @@
 #include <poll.h>
 #include <sys/socket.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdio>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <vector>

@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iterator>
 #include <set>
+#include <stdexcept>
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/decoder.hpp"

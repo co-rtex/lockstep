@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include "cli.hpp"

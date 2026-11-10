@@ -14,13 +14,14 @@
 // network delivery. In-process numbers are not wire-to-wire latencies.
 #include <algorithm>
 #include <array>
-#include <ctime>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 

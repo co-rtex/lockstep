@@ -6,7 +6,10 @@
 
 #include <atomic>
 #include <map>
+#include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
 #include <thread>
 
 #include "enginex/bounded_queue.hpp"

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 

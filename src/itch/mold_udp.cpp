@@ -8,9 +8,12 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace enginex::itch::mold::udp {

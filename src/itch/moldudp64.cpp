@@ -1,6 +1,7 @@
 #include "enginex/itch/moldudp64.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <stdexcept>
 
 #include "enginex/itch/byte_reader.hpp"

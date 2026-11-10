@@ -4,6 +4,7 @@
 // consistent, and an identical input sequence must reproduce the identical state.
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <string>
 #include <vector>
 

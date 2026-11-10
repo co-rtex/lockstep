@@ -2,10 +2,12 @@
 // test against the naive reference model, determinism and replay error policy.
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <streambuf>
 
 #include "enginex/itch/book.hpp"

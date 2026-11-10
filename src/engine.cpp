@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 
 #include "enginex/checked.hpp"

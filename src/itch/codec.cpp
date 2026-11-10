@@ -1,5 +1,6 @@
 // ITCH 5.0 payload decoder and encoder. Offsets are the specification's (see messages.hpp).
 #include <cstring>
+#include <stdexcept>
 #include <type_traits>
 
 #include "enginex/itch/byte_reader.hpp"
