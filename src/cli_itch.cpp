@@ -1,10 +1,13 @@
 // `enginex itch ...`: historical ITCH 5.0 market-data tools. Independent of the synthetic
 // exchange's commands: these read *outbound market data*, they do not place orders.
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <span>
+#include <type_traits>
 
 #include "cli.hpp"
 #include "enginex/itch/book.hpp"

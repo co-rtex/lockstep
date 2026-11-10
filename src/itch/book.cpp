@@ -140,6 +140,7 @@ struct Node {
 
 // A/B baseline: -DENGINEX_ITCH_STD_INDEX=ON swaps the open-addressing index for the original
 // std::unordered_map (same interface) so both can be benchmarked from one commit.
+#ifdef ENGINEX_ITCH_STD_INDEX
 class StdOrderIndex {
 public:
     static constexpr std::uint32_t kEmpty = OrderIndex::kEmpty;
@@ -156,8 +157,6 @@ public:
 private:
     std::unordered_map<OrderRef, std::uint32_t> map_;
 };
-
-#ifdef ENGINEX_ITCH_STD_INDEX
 using Index = StdOrderIndex;
 #else
 using Index = OrderIndex;
