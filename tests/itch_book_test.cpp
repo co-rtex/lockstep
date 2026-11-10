@@ -626,10 +626,19 @@ TEST(ItchReplay, CorruptedFilesNeverBreakInvariants) {
         const auto bad = b.check_invariants();
         ASSERT_FALSE(bad) << "trial " << trial << ": " << *bad;
         EXPECT_EQ(r.decoded + r.decode_error_count(), r.frames) << trial;
-        // Replaying the same corrupted bytes is deterministic.
+        // Replaying the same corrupted bytes is deterministic, also when the bytes arrive in
+        // random-sized chunks (framing across chunk boundaries with garbage lengths).
         BookBuilder b2;
-        (void)replay(f, b2);
-        ASSERT_EQ(b.state_hash(), b2.state_hash());
+        std::istringstream in(std::string(f.begin(), f.end()));
+        ReplayOptions chunked;
+        chunked.chunk_bytes = 1 + rng.below(97);
+        const ReplayResult r2 = replay(in, b2, chunked);
+        ASSERT_EQ(b.state_hash(), b2.state_hash()) << "trial " << trial;
+        ASSERT_EQ(r.frames, r2.frames) << "trial " << trial;
+        ASSERT_EQ(r.decode_error_count(), r2.decode_error_count()) << "trial " << trial;
+        ASSERT_EQ(r.frame_error, r2.frame_error) << "trial " << trial;
+        ASSERT_EQ(r.frame_error_offset, r2.frame_error_offset) << "trial " << trial;
+        ASSERT_EQ(r.stopped_at_message, r2.stopped_at_message) << "trial " << trial;
     }
 }
 
