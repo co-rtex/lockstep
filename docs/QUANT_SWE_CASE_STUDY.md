@@ -68,7 +68,7 @@ are in-process and single-threaded; none is a wire latency.
   amplification, a filter on the feed's source address, and a reorder-buffer memory bound
   that counts the capacity actually held.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
-  kills 54/54 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
+  kills 55/55 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
   validation, journal, the UDP request planner and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
