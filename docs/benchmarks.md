@@ -190,6 +190,19 @@ Commands:
 ./build/release/enginex benchmark --scenario mixed --mode durable --durability none  --orders 20000 --trials 5 --out r2.csv
 ```
 
+*Reproduction after the sprint* (`94ee2d0`, which includes the R4 pool;
+[`r2-durable-macos-m3-rerun-20261110.csv`](../benchmarks/results/r2-durable-macos-m3-rerun-20261110.csv)):
+| mode | throughput | p50 ack |
+|---|---:|---:|
+| sync (`F_FULLFSYNC`) | 364 cmd/s (was 315) | 2.99 ms (was 3.12) |
+| fsync | 49.4 k cmd/s (was 40.0 k) | 20.7 µs (was 20.0) |
+| none | 461 k cmd/s (was 408 k) | 1.9 µs (was 2.0) |
+| recovery replay, 100 k records | 4.26 M records/s (was 3.60 M) | |
+
+The sync-mode ack is still dominated by the device flush (≈ 3 ms). The faster rows are
+consistent with the cheaper matching core (R4), but this rerun alone does not isolate the
+cause. Device flush times also vary between runs on this laptop.
+
 Interpretation:
 
 * **The flush dominates.** A real durable acknowledgment (`sync`, which flushes the drive
