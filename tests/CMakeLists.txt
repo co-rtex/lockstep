@@ -50,6 +50,12 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
                      --restart --seeds 5 --commands 1000 --enginex $<TARGET_FILE:enginex>)
     set_tests_properties(exchange_pymodel_network_restart PROPERTIES TIMEOUT 180 LABELS "cli;net;recovery")
+    # Eight concurrent clients, journaled: the server's interleaving must be linearizable
+    # against the model (every reply, every feed event, final books).
+    add_test(NAME exchange_pymodel_concurrent
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
+                     --clients 8 --journal --seeds 3 --commands 2000 --enginex $<TARGET_FILE:enginex>)
+    set_tests_properties(exchange_pymodel_concurrent PROPERTIES TIMEOUT 180 LABELS "cli;net")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict

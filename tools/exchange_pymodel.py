@@ -5,6 +5,13 @@ sequence, order id, remaining, order status, cancelled quantity, executions) and
 books must agree.
 
   python3 tools/exchange_pymodel.py [--seeds N] [--commands N] [--enginex build/release/enginex]
+      [--price-band LO:HI] [--max-qty N]
+      [--network [--journal] | --restart | --clients K [--journal]]
+
+--network sends the workload over TCP with a subscriber that checks every book_update;
+--restart also restarts the server on its journal and resends everything; --clients K splits
+the workload over K concurrent connections and checks that the server's interleaving is
+linearizable against the model (compare_concurrent).
 
 Rules modelled (docs/ENGINEERING_SPEC.md, docs/protocol.md): symbols AAPL and MSFT; price-time
 priority (best price first, FIFO within a price); executions at the resting order's price;
@@ -21,6 +28,7 @@ import random
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SYMBOLS = ("AAPL", "MSFT")
@@ -56,6 +64,30 @@ class Model:
         return {"request_id": cmd["request_id"], "status": "rejected", "code": code}
 
     def process(self, cmd):
+        r = self.precheck(cmd)
+        if r is not None:
+            return r
+        body = {k: v for k, v in cmd.items() if k != "request_id"}
+        if cmd["type"] == "new_limit":
+            return self.new_limit(cmd, body)
+        target = cmd["order_id"]
+        o = self.orders[int(target[4:])]
+        self.seq += 1
+        book = self.books[o["symbol"]][o["side"]]
+        book.remove(o)
+        cancelled = o["remaining"]
+        o["remaining"] = 0
+        o["status"] = "CANCELLED"
+        resp = {"request_id": cmd["request_id"], "status": "accepted", "duplicate": False,
+                "command_sequence": self.seq, "order_id": target, "cancelled_quantity": cancelled,
+                "order_status": "CANCELLED", "executions": []}
+        self.records[cmd["request_id"]] = (body, resp)
+        self.publish("cancel", o["symbol"], target, [], {(o["side"], o["price"])})
+        return resp
+
+    def precheck(self, cmd):
+        """The reply for a command that is rejected or replayed as a duplicate in the current
+        state, or None if it would be accepted. Never changes the model."""
         body = {k: v for k, v in cmd.items() if k != "request_id"}
         rid = cmd["request_id"]
         # Stage 1, the parser: values that cannot be represented as a command are rejected
@@ -79,26 +111,14 @@ class Model:
                 return self.reject(cmd, "INVALID_PRICE")
             if not 1 <= cmd["quantity"] <= 1_000_000:
                 return self.reject(cmd, "INVALID_QUANTITY")
-            return self.new_limit(cmd, body)
+            return None
         target = cmd["order_id"]
         n = int(target[4:]) if target.startswith("ord-") and target[4:].isdigit() else 0
         if n == 0 or n not in self.orders:
             return self.reject(cmd, "UNKNOWN_ORDER")
-        o = self.orders[n]
-        if o["status"] in ("FILLED", "CANCELLED"):
+        if self.orders[n]["status"] in ("FILLED", "CANCELLED"):
             return self.reject(cmd, "ORDER_NOT_OPEN")
-        self.seq += 1
-        book = self.books[o["symbol"]][o["side"]]
-        book.remove(o)
-        cancelled = o["remaining"]
-        o["remaining"] = 0
-        o["status"] = "CANCELLED"
-        resp = {"request_id": cmd["request_id"], "status": "accepted", "duplicate": False,
-                "command_sequence": self.seq, "order_id": target, "cancelled_quantity": cancelled,
-                "order_status": "CANCELLED", "executions": []}
-        self.records[cmd["request_id"]] = (body, resp)
-        self.publish("cancel", o["symbol"], target, [], {(o["side"], o["price"])})
-        return resp
+        return None
 
     def new_limit(self, cmd, body):
         self.seq += 1
@@ -340,6 +360,141 @@ def one_pass(exe, seed, cmds, expected, journal_dir, model, events, watermark):
             "feed_events_checked": len(updates)}
 
 
+def strip(reply):
+    return {k: v for k, v in reply.items() if k != "seq_ref"}
+
+
+def compare_concurrent(exe, seed, n, clients, journal_dir):
+    """The workload split round-robin over `clients` concurrent `client submit` processes,
+    with a subscriber connected first. The interleaving is the server's, so the check is a
+    linearizability check against the model:
+      * accepted (non-duplicate) replies carry command sequences 1..S, increasing within each
+        client (FIFO per connection), and the model fed those commands in sequence order
+        reproduces every one of them exactly (order ids, executions, remaining, status);
+      * every other reply (rejection or duplicate replay) must equal the model's reply at some
+        state between that client's previous and next accepted commands;
+      * the feed carries exactly the model's events, and the final books and watermarks agree.
+    """
+    rng = random.Random(seed)
+    cmds = workload(rng, n)
+    parts = [cmds[j::clients] for j in range(clients)]
+    serve = [exe, "serve", "--port", "0"]
+    if journal_dir:
+        serve += ["--journal", str(pathlib.Path(journal_dir) / f"conc{seed}.exj"), "--durability", "none"]
+    srv = subprocess.Popen(serve, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    sub, procs, paths, feed = None, [], [], []
+    try:
+        port = json.loads(srv.stdout.readline())["port"]
+        sub = subprocess.Popen([exe, "client", "subscribe", "--port", str(port)],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        snap = json.loads(sub.stdout.readline())
+        if snap.get("type") != "snapshot_response" or not snap.get("subscribed") or \
+                snap["event_watermark"] != 0:
+            sys.exit(f"concurrent seed {seed}: bad subscribe snapshot {json.dumps(snap)[:200]}")
+        import threading
+
+        def read_feed():
+            for line in sub.stdout:
+                if line.strip():
+                    feed.append(json.loads(line))
+        reader = threading.Thread(target=read_feed, daemon=True)
+        reader.start()
+        for part in parts:
+            with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+                for c in part:
+                    f.write(json.dumps(c) + "\n")
+                paths.append(f.name)
+        procs = [subprocess.Popen([exe, "client", "submit", "--port", str(port), "--input", p],
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                 for p in paths]
+        outs = [p.communicate(timeout=300)[0] for p in procs]
+        views = [[reply_view(json.loads(l)) for l in out.splitlines() if l.strip()] for out in outs]
+        accepted = {}  # command sequence -> (command, reply)
+        owner = {}     # command sequence -> client
+        for j, (part, vs) in enumerate(zip(parts, views)):
+            if len(vs) != len(part):
+                sys.exit(f"concurrent seed {seed}: client {j} got {len(vs)} replies for {len(part)}")
+            last = 0
+            for c, v in zip(part, vs):
+                if v["status"] == "accepted" and not v["duplicate"]:
+                    s = v["command_sequence"]
+                    if s <= last or s in accepted:
+                        sys.exit(f"concurrent seed {seed}: client {j} sequence {s} after {last}")
+                    last = s
+                    accepted[s] = (c, v)
+                    owner[s] = j
+        total = len(accepted)
+        if sorted(accepted) != list(range(1, total + 1)):
+            sys.exit(f"concurrent seed {seed}: accepted sequences are not 1..{total}")
+        deadline = time.monotonic() + 60
+        while sum(1 for u in feed if u.get("type") == "book_update") < total and \
+                time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        for p in procs:
+            if p.poll() is None:
+                p.kill()
+        srv.terminate()
+        rest, _ = srv.communicate(timeout=60)
+        if sub:
+            if sub.poll() is None:
+                sub.terminate()
+            sub.wait(timeout=30)
+        for p in paths:
+            pathlib.Path(p).unlink()
+    # Windows for the replies that did not take a sequence number.
+    pending = {}  # first state index -> [(last state index, client, command, reply)]
+    for j, (part, vs) in enumerate(zip(parts, views)):
+        seqs = [v["command_sequence"] if v["status"] == "accepted" and not v["duplicate"] else None
+                for v in vs]
+        for i, (c, v) in enumerate(zip(part, vs)):
+            if seqs[i] is not None:
+                continue
+            lo = max([s for s in seqs[:i] if s is not None], default=0)
+            hi = min([s for s in seqs[i + 1:] if s is not None], default=total + 1)
+            pending.setdefault(lo, []).append((hi - 1, j, c, v))
+    model, active, checked = Model(), [], 0
+    for state in range(total + 1):  # `state` accepted commands applied so far
+        active += pending.get(state, [])
+        still = []
+        for last, j, c, v in active:
+            r = model.precheck(c)
+            if r is not None and strip(r) == v:
+                checked += 1
+            elif state == last:
+                sys.exit(f"concurrent seed {seed}: client {j} command {json.dumps(c)} got "
+                         f"{json.dumps(v)}, which the model gives in no state it could have run in")
+            else:
+                still.append((last, j, c, v))
+        active = still
+        if state < total:
+            c, v = accepted[state + 1]
+            r = model.process(c)
+            if strip(r) != v:
+                sys.exit(f"concurrent seed {seed}, sequence {state + 1}: command {json.dumps(c)}\n"
+                         f"  python: {json.dumps(strip(r))}\n  server: {json.dumps(v)}")
+    updates = [u for u in feed if u.get("type") == "book_update"]
+    if len(updates) != len(model.events):
+        sys.exit(f"concurrent seed {seed}: {len(updates)} book_updates, model has {len(model.events)}")
+    for want, have in zip(model.events, updates):
+        w = dict(want, levels=sorted(want["levels"], key=lambda l: (l["side"], l["price"])))
+        if event_view(have) != w:
+            sys.exit(f"concurrent seed {seed}, event {want['event_sequence']} differs")
+    final = [json.loads(l) for l in rest.splitlines() if l.startswith("{")][-1]
+    if final.get("type") != "shutdown":
+        sys.exit(f"concurrent seed {seed}: no shutdown summary")
+    for b in final["books"]:
+        for side, key in (("BUY", "bids"), ("SELL", "asks")):
+            if b[key] != model.levels(b["symbol"], side):
+                sys.exit(f"concurrent seed {seed}: final {b['symbol']} {key} differ")
+    if final["last_command_sequence"] != model.seq or final["last_execution_sequence"] != model.exe:
+        sys.exit(f"concurrent seed {seed}: watermarks differ")
+    # Evidence that the clients really interleaved: consecutive sequences from different clients.
+    switches = sum(1 for s in range(2, total + 1) if owner[s] != owner[s - 1])
+    return {"accepted": total, "other_replies_linearized": checked, "executions": model.exe,
+            "feed_events_checked": len(updates), "client_switches": switches}
+
+
 def main():
     args = sys.argv[1:]
     restart = "--restart" in args  # implies --network --journal
@@ -347,7 +502,7 @@ def main():
     journal = "--journal" in args or restart
     args = [a for a in args if a not in ("--network", "--journal", "--restart")]
     opts = {"--seeds": "20", "--commands": "3000", "--enginex": str(ROOT / "build" / "release" / "enginex"),
-            "--price-band": "9950:10050", "--max-qty": "100"}
+            "--price-band": "9950:10050", "--max-qty": "100", "--clients": "0"}
     for k in list(opts):
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
@@ -359,17 +514,25 @@ def main():
         sys.exit("--price-band takes LO:HI (integer ticks) and --max-qty an integer")
     if not 1 <= lo <= hi or MAX_QTY < 1:
         sys.exit("--price-band needs 1 <= LO <= HI and --max-qty >= 1")
+    clients = int(opts["--clients"])
+    if clients < 0 or clients > 63 or (clients and restart):
+        sys.exit("--clients takes 1..63 concurrent clients (not combined with --restart)")
     total = {}
     with tempfile.TemporaryDirectory() as jdir:
         for seed in range(1, int(opts["--seeds"]) + 1):
-            if network:
+            if clients:
+                stats = compare_concurrent(opts["--enginex"], seed, int(opts["--commands"]),
+                                           clients, jdir if journal else None)
+            elif network:
                 stats = compare_network(opts["--enginex"], seed, int(opts["--commands"]),
                                         jdir if journal else None, restart)
             else:
                 stats = compare(opts["--enginex"], seed, int(opts["--commands"]))
             for k, v in stats.items():
                 total[k] = total.get(k, 0) + v
-    mode = ("over TCP, journaled, restarted and resent" if restart else
+    mode = (f"from {clients} concurrent TCP clients{' (journaled)' if journal else ''}, "
+            "linearized against the model" if clients else
+            "over TCP, journaled, restarted and resent" if restart else
             "over TCP (journaled)" if network and journal else
             "over TCP" if network else "via simulate")
     print(f"exchange_pymodel: {opts['--seeds']} seeds x {opts['--commands']} commands {mode} agree "
