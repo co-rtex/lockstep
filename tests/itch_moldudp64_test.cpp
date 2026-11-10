@@ -2,6 +2,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <set>
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/decoder.hpp"
@@ -342,6 +344,173 @@ TEST(MoldEndToEnd, LossyChannelWithReRequestsRebuildsTheExactBook) {
         EXPECT_GT(q.stats().gaps_opened, 0U);
         EXPECT_EQ(book.state_hash(), direct_hash(stream, stream.size())) << "seed " << seed;
     }
+}
+
+// Differential property test: the sequencer against a model that only remembers *which*
+// sequence numbers have arrived. After every packet the delivered stream, next expected
+// sequence, horizon, buffered count, missing() ranges, state and counters must equal what
+// that set implies. Traffic: a sender with loss, duplication, delay (reordering), random
+// overlapping retransmissions, heartbeats, and re-requests of the reported missing ranges.
+std::vector<std::uint8_t> payload_of(std::uint64_t seq) {
+    return std::vector<std::uint8_t>(1 + seq % 7, static_cast<std::uint8_t>(seq * 31));
+}
+
+std::vector<std::uint8_t> range_packet(std::uint64_t first, std::uint64_t count) {
+    std::vector<std::vector<std::uint8_t>> msgs;
+    for (std::uint64_t s = first; s < first + count; ++s) msgs.push_back(payload_of(s));
+    return build_packet(kS, first, msgs);
+}
+
+struct SequencerModel {
+    std::set<std::uint64_t> received;
+    std::uint64_t next = 1;
+    std::uint64_t horizon = 1;
+    std::uint64_t duplicates = 0;
+    std::uint64_t heartbeats = 0;
+    std::uint64_t gaps_opened = 0;
+    std::uint64_t gaps_closed = 0;
+    bool gap = false;
+
+    void data(std::uint64_t first, std::uint64_t count) {
+        for (std::uint64_t s = first; s < first + count; ++s) {
+            duplicates += received.insert(s).second ? 0 : 1;
+        }
+        horizon = std::max(horizon, first + count);
+        settle();
+    }
+    void heartbeat(std::uint64_t next_seq) {
+        ++heartbeats;
+        horizon = std::max(horizon, next_seq);
+        settle();
+    }
+    void settle() {
+        while (received.contains(next)) ++next;
+        const bool now_gap = next < horizon;
+        gaps_opened += (now_gap && !gap) ? 1 : 0;
+        gaps_closed += (!now_gap && gap) ? 1 : 0;
+        gap = now_gap;
+    }
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> missing() const {
+        std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
+        for (std::uint64_t s = next; s < horizon;) {
+            if (received.contains(s)) {
+                ++s;
+                continue;
+            }
+            const std::uint64_t start = s;
+            while (s < horizon && !received.contains(s)) ++s;
+            out.emplace_back(start, s - start);
+        }
+        return out;
+    }
+    std::size_t buffered() const {
+        return static_cast<std::size_t>(std::distance(received.upper_bound(next), received.end()));
+    }
+};
+
+TEST(MoldSequencer, MatchesASetModelUnderRandomTraffic) {
+    std::uint64_t gaps = 0;
+    std::uint64_t dups = 0;
+    std::uint64_t multi_hole = 0;
+    std::uint64_t peak_buffered = 0;
+    for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+        Rng rng(seed);
+        Sequencer q;
+        SequencerModel m;
+        std::vector<std::uint64_t> seqs;
+        bool payload_ok = true;
+        auto feed = [&](const std::vector<std::uint8_t>& pkt) {
+            q.on_packet(pkt, [&](std::uint64_t s, std::span<const std::uint8_t> msg) {
+                seqs.push_back(s);
+                const auto want = payload_of(s);
+                payload_ok = payload_ok && std::equal(msg.begin(), msg.end(), want.begin(), want.end());
+            });
+        };
+        auto check = [&](int step) {
+            ASSERT_EQ(q.state(), m.gap ? Sequencer::State::Gap : Sequencer::State::Running)
+                << "seed " << seed << " step " << step;
+            ASSERT_EQ(q.next_expected(), m.next) << "seed " << seed << " step " << step;
+            ASSERT_EQ(q.horizon(), m.horizon);
+            ASSERT_EQ(q.buffered(), m.buffered());
+            ASSERT_EQ(q.missing(), m.missing()) << "seed " << seed << " step " << step;
+            ASSERT_EQ(seqs.size(), m.next - 1);  // exactly the contiguous prefix, in order
+            ASSERT_TRUE(seqs.empty() || seqs.back() == m.next - 1);
+            ASSERT_EQ(q.stats().delivered, m.next - 1);
+            ASSERT_EQ(q.stats().duplicates, m.duplicates);
+            ASSERT_EQ(q.stats().heartbeats, m.heartbeats);
+            ASSERT_EQ(q.stats().gaps_opened, m.gaps_opened);
+            ASSERT_EQ(q.stats().gaps_closed, m.gaps_closed);
+            multi_hole += m.missing().size() >= 2 ? 1 : 0;
+            peak_buffered = std::max<std::uint64_t>(peak_buffered, q.buffered());
+        };
+        std::uint64_t cursor = 1;  // sender's next sequence
+        std::vector<std::pair<int, std::pair<std::uint64_t, std::uint64_t>>> delayed;
+        for (int step = 0; step < 1500; ++step) {
+            std::pair<std::uint64_t, std::uint64_t> send{0, 0};
+            const auto r = rng.below(100);
+            if (r < 70) {  // the sender's next packet
+                send = {cursor, 1 + rng.below(8)};
+                cursor += send.second;
+            } else if (r < 80 && cursor > 1) {  // a random overlapping retransmission
+                const std::uint64_t first = 1 + rng.below(cursor - 1);
+                send = {first, std::min<std::uint64_t>(1 + rng.below(12), cursor - first)};
+            } else if (r < 88) {  // re-request: the first missing range as the model reports it
+                if (const auto miss = m.missing(); !miss.empty()) {
+                    send = {miss.front().first, std::min<std::uint64_t>(miss.front().second, 20)};
+                }
+            } else {
+                feed(build_control(kS, cursor, kHeartbeat));
+                m.heartbeat(cursor);
+                check(step);
+                continue;
+            }
+            if (send.second == 0) continue;
+            const auto fate = rng.below(100);
+            if (fate < 10) continue;  // lost
+            if (fate < 25) {          // delayed by up to 6 steps (reordering)
+                delayed.push_back({step + static_cast<int>(1 + rng.below(6)), send});
+            } else {
+                feed(range_packet(send.first, send.second));
+                m.data(send.first, send.second);
+                if (fate < 30) {  // duplicated on the wire
+                    feed(range_packet(send.first, send.second));
+                    m.data(send.first, send.second);
+                }
+            }
+            check(step);
+            for (auto it = delayed.begin(); it != delayed.end();) {
+                if (it->first <= step) {
+                    feed(range_packet(it->second.first, it->second.second));
+                    m.data(it->second.first, it->second.second);
+                    check(step);
+                    it = delayed.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        // Fill every remaining hole: everything up to the horizon is delivered exactly once.
+        for (const auto& [first, count] : m.missing()) {
+            feed(range_packet(first, count));
+            m.data(first, count);
+        }
+        check(-1);
+        EXPECT_EQ(q.state(), Sequencer::State::Running);
+        EXPECT_EQ(q.next_expected(), m.horizon);
+        EXPECT_TRUE(payload_ok) << "seed " << seed;
+        for (std::size_t i = 0; i < seqs.size(); ++i) ASSERT_EQ(seqs[i], i + 1);
+        gaps += m.gaps_opened;
+        dups += m.duplicates;
+    }
+    // The traffic must actually exercise reordering, duplicates and multi-hole gaps.
+    EXPECT_GT(gaps, 300U);
+    EXPECT_GT(dups, 1000U);
+    EXPECT_GT(multi_hole, 1000U);
+    EXPECT_GT(peak_buffered, 20U);
+    std::printf("sequencer model: %llu gaps, %llu duplicates, %llu multi-hole states, peak buffered %llu\n",
+                static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(dups),
+                static_cast<unsigned long long>(multi_hole),
+                static_cast<unsigned long long>(peak_buffered));
 }
 
 TEST(MoldEndToEnd, WithoutRecoveryTheBookStopsAtTheHoleNeverSkips) {

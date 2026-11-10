@@ -89,6 +89,12 @@ of the specification and the Wireshark dissector, which agree.
   hash to equal a direct replay, for three channel seeds. Without recovery, the book stops
   exactly at the hole. Mutation check: letting the sequencer skip over gaps fails 5 of the 13
   tests that existed at the time, including both end-to-end tests.
+  `MoldSequencer.MatchesASetModelUnderRandomTraffic` is a differential property test against
+  a model that only records *which* sequence numbers have arrived. Over 20 seeds × 1 500 steps
+  of loss, duplication, delay, overlapping retransmissions, heartbeats and re-requests, the
+  delivered stream, next sequence, horizon, buffered count, `missing()` ranges, state and
+  counters must match the model after every packet. It is the only test that kills a mutant
+  computing the packet horizon one message short.
 * `enginex itch mold-sim --input FILE [--loss-percent P] [--no-recovery]` runs the same
   experiment from the command line, on a **simulated** channel. It reports packets lost and
   duplicated, gaps opened and closed, and whether the rebuilt book equals a direct replay.
@@ -259,7 +265,7 @@ and benchmark rows of the same workload carry identical hashes.
 | Book semantics | scenario tests per rule (priority on E/X, loss on U, aggregation, P/Q/B no-ops, crossed/locked, per-locate isolation, attribution) | `ItchBook.*` |
 | Anomalies | every kind, book hash unchanged after each rejected message | `ItchBook.AnomaliesAreRejected…` |
 | Differential | naive reference model (`std::map`, arrival counters, brute-force levels) compared message by message over 12 seeds, half with 2 % injected anomalies | `ItchDifferential.*` |
-| Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted). `tools/mutation_check.py` scripts 41 mutants across both systems, all killed | [verification.md](verification.md#do-the-tests-catch-bugs) |
+| Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted). `tools/mutation_check.py` scripts 44 mutants across both systems, all killed | [verification.md](verification.md#do-the-tests-catch-bugs) |
 | Corrupted files | 300 randomly corrupted/truncated files: no crash, invariants hold, deterministic | `ItchReplay.CorruptedFilesNeverBreakInvariants` |
 | Layout variants | the book compiled twice (current layout; `std::map` levels + hash index) into separate executables; identical state hashes on 5 seeded workloads incl. injected anomalies | ctest `itch_layout_variants_agree` |
 | Fuzzing | `fuzz/itch_fuzz.cpp` (libFuzzer entry point: ITCH replay lenient+strict, and MoldUDP64 sequencing → decode → book) checks invariants, frame accounting, determinism and in-order exactly-once delivery. The standalone seeded mutation driver (not coverage-guided; Apple clang has no libFuzzer) ran **5 000 000 inputs (2.3 GB) with no violation** in a Release build (seed 7, 13 min), and 300 000 inputs under UBSan (Debug, seed 20261110, 41 min) with no violation and no UBSan report. After the sorted-vector/paged-index change (`bbd4ff6`): 2 000 000 more inputs (Release, seed 11), no violation. After the chunked node pool (`8a40818`): 1 000 000 more inputs, no violation (8.3 M in total). ctest runs 20 000 inputs. The coverage-guided build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) is for Linux and has not been run here | `fuzz/README.md` |
