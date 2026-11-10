@@ -199,6 +199,15 @@ pushed, so GitHub CI has not run on them.
 | Bounded ITCH level vector (D32): adversarial worst case | done | `itch-level-bound-macos-m3.csv`: hostile pattern 25 130 → 96 ns/msg; `ItchLevelBound.*`; real day identical hash at limits 2/16/8192 |
 | R2 durable/recovery benchmark reproducibility | done | `r2-durable-macos-m3-rerun-20261110.csv` |
 | R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows (sync p99 −3 %) |
+| ITCH mid-stream checkpoints vs the Python book | done | `itch replay --checkpoint-every/--checkpoint-out`; 210–213 identical checkpoints per real day |
+| Hostile inputs: CLI arguments, JSON content, connections | fixed | `tools/cli_arg_sweep.py` (1 302 runs); two unbounded allocations, zero send timeout hang (`788e1b1`), repeated JSON keys (D33), key-count bound; `exchange_pymodel.py --chaos` |
+| Concurrency without TSan | done | `exchange_pymodel.py --clients K`: linearizability check, 32 clients; ctest `exchange_pymodel_concurrent`, `exchange_pymodel_chaos` |
+| Complexity audit (input-triggered super-linear work) | fixed / documented | D34 keyed ITCH fallback index (43 µs → 83 ns/msg on crafted refs), JSON key bound, `mold-sim` binary search; amplification limits measured in verification.md |
+| Memory accounting | done | `BookBuilder::memory_usage()`: 115–122 B/live order in structures (index pages 52–59 B), `itch-real-memory-breakdown-macos-m3.csv` |
+| Performance acceptance gates | done | `tools/paired_ab.py` (sign test + 2 % minimum effect, calibrated A/A and Debug-vs-Release); benchmarks.md "Acceptance gates" |
+| UDP bottleneck characterization | done | `recv()` cost per call (13–15 µs, 64 B–9 KB); 8 KB datagrams 2× lossless, 1.25× with loss; `Sequencer::FailReason` reported by `mold-recv`/`mold-sim` |
+| Flakiness audit | fixed | 5 repeated full runs found a load-dependent UDP test flake (reorder bound); 6/6 after; Debug/UBSan 3/3 each |
+| Linux GCC/ASan/TSan/clang-format | **outstanding** | blocked here (no GCC; Docker socket and gh denied; clang-format `-i` refused); dry run shows 802 format violations; plan in [linux-validation.md](linux-validation.md) |
 
 Commands and results (latest):
 
