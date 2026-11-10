@@ -266,7 +266,12 @@ Blocked in this environment (exact symptoms), so they are not claimed for the sp
   The ITCH optimization used allocation counts and per-type timing instead (docs/benchmarks.md).
 * Linux/Docker and GitHub CI: no Docker here, and pushing is not permitted in this sprint.
   In particular, **GCC 13 has not compiled the sprint code**. The CI workflow builds with
-  `-Werror` on GCC, and only Apple clang 17 was available locally.
+  `-Werror` on GCC, and only Apple clang 17 was available locally. Partial mitigation for two
+  known GCC-stricter warnings, at `90afbc4`: a clang build with `-Wshadow-all` (GCC's
+  `-Wshadow` also covers fields and constructor parameters) gave 0 warnings in project code;
+  a scripted search for compound assignments to sub-`int` types (`uint16_t x; x += y`, which
+  GCC's `-Wconversion` flags and clang's does not) found none. This does not replace a GCC
+  build.
 
 ## Blocked / external
 
