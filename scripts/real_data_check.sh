@@ -91,9 +91,9 @@ PY
         exit 1
     fi
 
-    echo "== independent Python decoder (every field of every frame) and book (every level; best bid/ask every 1 M messages)"
+    echo "== independent Python decoder (every field of every frame) and book (every level; best bid/ask every 100 k messages)"
     python3 tools/itch_pydecode.py "$ITCH" --enginex "$BUILD/enginex"
-    python3 tools/itch_pybook.py "$ITCH" --enginex "$BUILD/enginex" --checkpoint-every 1000000
+    python3 tools/itch_pybook.py "$ITCH" --enginex "$BUILD/enginex" --checkpoint-every 100000
 
     echo "== in-memory benchmark (decode, replay)"
     for m in itch_decode itch_replay; do
