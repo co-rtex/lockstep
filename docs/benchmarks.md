@@ -445,7 +445,8 @@ The `0ad62a6` row adds one more data-driven change. A temporary histogram on two
 showed that ≈ 70 % of level lookups land within 4 entries of the best price and ≈ 80 % within
 8. Lookups therefore scan those 8 linearly before binary searching. An interleaved A/B against
 the previous commit measured 59.1 → 54.2 ns/msg (2019-03-27) and 63.3 → 57.9 (2020-01-30).
-Current replay on the three days: 56.0, 58.1 and 54.8 ns/msg.
+Replay on the three days: 56.0, 58.1 and 54.8 ns/msg at `0ad62a6`, and 58.0, 59.3 and 54.9 in
+a reproduction at `562c56d` (5 trials each, same CSV).
 
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole

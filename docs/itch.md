@@ -359,15 +359,19 @@ Not covered: the rest of each trading day (≈ 95 % of each file), closing cross
 
 On the real sample: decode 13.0 ns/msg (≈ 2.3 GiB/s), full replay 99.3 → 62.1 ns/msg after the
 layout changes driven by that data, then 56.0 ns/msg with the near-top level scan (54.8–58.1
-across the three sample days, commit `0ad62a6`). Synthetic results follow.
+across the three sample days, commit `0ad62a6`). A reproduction at `562c56d` (5 trials, same
+CSV) measured 58.0 / 59.3 / 54.9 ns/msg on the same days, within the run-to-run spread of
+this fanless machine; it also re-ran `scripts/real_data_check.sh` with identical results for
+errors, anomalies, live orders and crossed books. Synthetic results follow.
 
 See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). The
 synthetic history, 1 M messages over 8 symbols, in the order the changes were made:
 decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s) throughout. Book apply went from 52.5 ns/msg
 (`std::unordered_map` index) to 32.2 (open-addressing hash), to 22.4 (sorted-vector levels +
-paged direct index), and to ≈ 24 with the chunked node pool (which removes a 10 ms stall).
+paged direct index), and to 24.2 with the chunked node pool (which removes a 10 ms stall;
+`562c56d`, [`itch-current-macos-m3.csv`](../benchmarks/results/itch-current-macos-m3.csv)).
 At 5000 symbols and 2 M messages, apply went 70.6 → 56.1 (level-node arena) → 44.8 (sorted-vector
-levels + paged index at `bbd4ff6`, before the chunked pool). Every number was measured at the commit recorded in its CSV. All in-process,
+levels + paged index at `bbd4ff6`, before the chunked pool) and 44.2 at `562c56d`. Every number was measured at the commit recorded in its CSV. All in-process,
 single thread. These are not wire-to-wire latencies.
 
 ## Limitations
