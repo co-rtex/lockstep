@@ -61,3 +61,20 @@ A few tasks changed during implementation; those changes are noted inline.
 
 Fresh clone build (debug, release, asan, tsan), full test suites, demo scripts, benchmarks,
 README command verification, Linux verification (Docker if available), clean `git status`.
+
+## Market-data sprint (2026-11, branch `enginex-quant-sprint-20261109`)
+
+A second phase after R1–R3, kept separate from the exchange's semantics. It has no spec
+acceptance criteria, so each item is closed by its own tests and measurements. The item list
+with evidence is in [PROGRESS.md](PROGRESS.md#market-data-sprint-2026-11-10-branch-enginex-quant-sprint-20261109);
+rationale is in DECISIONS.md D27–D32.
+
+| # | Work item | Verified by | Status |
+|---|---|---|---|
+| S.0 | Audit; fix the two server defects (subscribe without baseline, snapshot after fail-stop) | regression tests that failed before the fix | done |
+| S.1 | ITCH 5.0 decoder (23 types) and book reconstruction, with a strict anomaly policy | goldens, malformed inputs, reference-model differential, fuzzing, independent Python decoder and book (final state and mid-stream checkpoints), 3 real sample days | done |
+| S.2 | Read-only feed mirror; MoldUDP64 sequencing, simulation and loopback UDP transport | gap/refusal/resubscribe tests, lossy relays, set-model differential, real days over UDP | done (macOS loopback only) |
+| S.3 | Performance work driven by measurement: ITCH layout, exchange request index (D31), bounded level vector (D32) | interleaved A/B runs with identical state hashes; raw CSVs in `benchmarks/results/` | done |
+| S.4 | Independent checks of the exchange: Python model over simulate, TCP, journal and restart | ctest `exchange_pymodel_*` | done |
+| S.5 | Verification sweep: mutation testing (56/56), UBSan, hardened libc++, leaks, coverage, doc commands executed | docs/verification.md | done locally |
+| S.6 | GCC, ASan and TSan on the sprint code; clang-format | needs a push to CI (blocked in this environment) | outstanding |
