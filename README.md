@@ -273,6 +273,7 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 | book apply, open-addressing order index | 32.2 | 31.1 M | 0.008 |
 | book apply, open addressing + capacity hint (max latency 613 µs → 1.6 µs) | 26.8 | 37.4 M | 0.008 |
 | full replay (framing + decoding + book), open addressing + hint | 37.8 | 26.4 M | 0.008 |
+| book apply, 5000 symbols / 2 M msgs, `std::allocator` level nodes → free-list arena | 70.6 → 56.1 | 14.2 M → 17.8 M | 0.304 → 0.003 |
 
 ## Testing strategy
 

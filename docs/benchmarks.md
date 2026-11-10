@@ -299,6 +299,46 @@ hint, a production consumer would see that spike once per doubling. `std::unorde
 has the same issue: its 288 µs max is consistent with its own rehash, though that was not
 isolated.
 
+### Scaling with symbol count, and the price-level node arena
+
+Commit `a7492a0784f6`, same machine and compiler. 2 000 000 lifecycle messages, seed 42,
+`--reserve 262144`, 5 trials, medians. The live-order count is similar in every row (178–197 k
+at the end), so the rows differ mainly in how many independent books share that work. Raw
+rows: [`itch-scaling-macos-m3.csv`](../benchmarks/results/itch-scaling-macos-m3.csv)
+([console](../benchmarks/results/itch-scaling-macos-m3.txt)). The `std_allocator` rows are
+the `-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON` build of the same commit.
+
+| symbols | level nodes | book apply ns/msg | allocs/msg | apply p99.9 | replay ns/msg |
+|---:|---|---:|---:|---:|---:|
+| 8 | `std::allocator` | 29.2 | 0.0044 | 167 ns | 39.6 |
+| 8 | node arena | 28.8 | 0.0000 | 125 ns | 39.7 |
+| 100 | `std::allocator` | 35.1 | 0.0291 | 167 ns | 46.6 |
+| 100 | node arena | 34.4 | 0.0001 | 167 ns | 45.9 |
+| 1000 | `std::allocator` | 49.2 | 0.1277 | 209 ns | 66.5 |
+| 1000 | node arena | 44.0 | 0.0005 | 209 ns | 58.0 |
+| 5000 | `std::allocator` | 70.6 | 0.3043 | 334 ns | 90.7 |
+| 5000 | node arena | 56.1 | 0.0025 | 292 ns | 74.6 |
+
+Decoding stays at ≈14.6 ns/msg for every symbol count, as expected, since it does not touch a
+book. Cost per message grows with the number of books because each message touches a colder
+tree, level and order. With few symbols, `std::map` nodes for new price levels are rare.
+With 5000 sparse books, levels appear and vanish constantly, and `std::allocator` makes 0.30
+heap calls per message. A per-builder free-list arena for those nodes removes the calls and
+cuts 13–21 % at 1000–5000 symbols, with no change at 8. The remaining growth (28.8 → 56.1 ns)
+is cache-miss cost, which the allocator does not address. A flatter level structure would be
+the next experiment, and would need measurements on real symbol distributions to justify it.
+
+**Index sizing matters too.** With the same 2 M-message, 8-symbol workload, the capacity hint
+gives 33.7 ns/msg with no hint (growth during the run), 28.4 with `--reserve 262144`
+(index of 512 Ki slots, 8 MiB) and **46.7** with `--reserve 1048576` (2 Mi slots, 32 MiB).
+The oversized table exceeds the caches, and Fibonacci hashing spreads consecutive order
+references across it. A hint should be close to the expected peak live orders, not
+"as large as possible". (Single runs of 5 trials each, `--only itch_book_apply --no-latency`,
+from the console; not in the CSV.)
+
+**Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
+1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
+
 **Not shown / not claimed.** File I/O and cold page cache (a cache cannot be dropped without
 root on macOS; the "first pass" column in the CSV is only the first touch of freshly generated
 data in a warm process), multi-day or real Nasdaq files, and any network delivery. Decoding

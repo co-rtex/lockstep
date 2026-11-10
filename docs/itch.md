@@ -126,7 +126,8 @@ The book follows the specification text (§4.3–4.5):
 * **Locked and crossed books are reported, not rejected.** A historical feed can legitimately
   show either transiently, and the reconstructor does not "fix" market data.
 * Books are per stock locate. Locate is authoritative; the symbol comes from `R`. If no `R`
-  was seen, the symbol is learned from the first add.
+  was seen, the symbol is learned from the first add. A later `R` with a different symbol for
+  that locate is then counted as `directory_conflict`, and stops a `--strict` replay.
 
 ### Anomalies (input that contradicts the reconstructed book)
 
@@ -159,7 +160,9 @@ synthetic streams do.
   available as `-DENGINEX_ITCH_STD_INDEX=ON` for same-commit comparisons.
 * Each side of each book is a `std::map<price, Level>`. `Node::level` points into the map
   node, which `std::map` keeps stable; a level is erased only after its last order is
-  unlinked.
+  unlinked. Map nodes come from a per-builder free-list arena, so level churn makes no heap
+  calls (≈ 0.30 → 0.003 allocations/msg at 5000 symbols). `-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON`
+  restores `std::allocator` for comparison.
 * Containers that hash are never iterated for output. All output (depth, canonical state,
   JSON) comes from ordered structures, so results are deterministic.
 
@@ -221,9 +224,11 @@ works the same way. No such file was used in developing or measuring this code.
 ## Performance
 
 See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). In summary, on
-1 M synthetic messages: decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s), book apply 52.5 → 32.2 ns/msg
-after replacing the order index (26.8 ns/msg with a capacity hint), and full replay
-67.4 → 43.9 ns/msg. All in-process, single thread. These are not wire-to-wire latencies.
+1 M synthetic messages over 8 symbols: decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s), book apply
+52.5 → 32.2 ns/msg after replacing the order index (26.8 ns/msg with a capacity hint), and
+full replay 67.4 → 43.9 ns/msg. At 5000 symbols (2 M messages), apply costs 56.1 ns/msg
+with the level-node arena, versus 70.6 ns/msg without. All in-process, single thread. These
+are not wire-to-wire latencies.
 
 ## Limitations
 
