@@ -437,6 +437,14 @@ showed that ≈ 70 % of level lookups land within 4 entries of the best price an
 the previous commit measured 59.1 → 54.2 ns/msg (2019-03-27) and 63.3 → 57.9 (2020-01-30).
 Current replay on the three days: 56.0, 58.1 and 54.8 ns/msg.
 
+**Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
+records peak RSS. With `--depth 1`, so the JSON stays small, the whole process peaked at
+298 / 328 / 286 MiB on the three days. That is 1.54 / 1.65 / 1.58 M live orders at peak, or
+**≈ 190–210 bytes per live order** for everything. A rough breakdown: ≈ 48 B per order
+node, up to ≈ 80 MB of index pages for the ≈ 20 M reference range, and ≈ 650 k live levels
+at ≈ 48 B each (vector entry + `Level`), plus allocator and chunk slack (commit `37e41f2`
+plus the RSS field).
+
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 

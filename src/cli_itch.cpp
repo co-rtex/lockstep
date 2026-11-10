@@ -16,6 +16,7 @@
 #include "enginex/itch/replay.hpp"
 #include "enginex/itch/synthetic.hpp"
 #include "enginex/json_codec.hpp"
+#include "enginex/metrics.hpp"
 
 namespace enginex::cli {
 
@@ -279,9 +280,18 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
         Json m = j;
         const double secs = std::chrono::duration<double>(t1 - t0).count();
         // Wall time of the whole replay including file reads; not a latency measurement.
+        // The input is streamed in 1 MiB chunks, so peak RSS is dominated by the book itself.
+        const std::uint64_t rss_kib = metrics::peak_rss_kib();
+        const std::uint64_t peak_live = book.stats().peak_live_orders;
         m["timing"] = Json{{"wall_seconds", secs},
                            {"frames_per_second", secs > 0 ? static_cast<double>(r.frames) / secs : 0.0},
-                           {"note", "single run, includes I/O; see docs/benchmarks.md for methodology"}};
+                           {"peak_rss_kib", rss_kib},
+                           {"peak_rss_bytes_per_peak_live_order",
+                            peak_live == 0 ? 0.0
+                                           : static_cast<double>(rss_kib) * 1024.0 /
+                                                 static_cast<double>(peak_live)},
+                           {"note", "single run, includes I/O; RSS is the whole process (book, "
+                                    "tables, JSON); see docs/benchmarks.md for methodology"}};
         std::ofstream f(*out, std::ios::trunc);
         f << m.dump(2) << "\n";
         if (!f) {
