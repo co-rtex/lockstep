@@ -66,6 +66,16 @@ std::uint64_t Args::get_u64(const std::string& name, std::uint64_t fallback) con
     return out;
 }
 
+std::chrono::milliseconds Args::get_ms(const std::string& name, std::uint64_t fallback,
+                                      std::uint64_t min_ms, std::uint64_t max_ms) const {
+    const std::uint64_t v = get_u64(name, fallback);
+    if (v < min_ms || v > max_ms) {
+        throw UsageError("--" + name + " must be in [" + std::to_string(min_ms) + ", " +
+                         std::to_string(max_ms) + "] ms");
+    }
+    return std::chrono::milliseconds(static_cast<std::int64_t>(v));
+}
+
 std::vector<std::string> split_list(const std::string& text) {
     std::vector<std::string> out;
     std::size_t start = 0;

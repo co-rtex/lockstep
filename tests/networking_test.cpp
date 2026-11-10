@@ -921,6 +921,22 @@ TEST(Server, RefusesNonLoopbackBindWithoutOptIn) {
     EXPECT_THROW(Server{o}, std::invalid_argument);
 }
 
+// A zero (or negative) send timeout means "block forever" to SO_SNDTIMEO and disabled the
+// per-frame budget: one subscriber that stopped reading then kept graceful shutdown waiting
+// indefinitely (`serve --send-timeout-ms 0`: still running 15 s after SIGTERM).
+TEST(Server, RefusesNonPositiveTimeouts) {
+    for (const auto t : {std::chrono::milliseconds(0), std::chrono::milliseconds(-1)}) {
+        ServerOptions o;
+        o.port = 0;
+        o.send_timeout = t;
+        EXPECT_THROW(Server{o}, std::invalid_argument);
+        ServerOptions p;
+        p.port = 0;
+        p.partial_frame_timeout = t;
+        EXPECT_THROW(Server{p}, std::invalid_argument);
+    }
+}
+
 TEST(Server, JournalFailureFailStopsOverTheNetwork) {
     test::TempDir dir;
     ServerOptions o;

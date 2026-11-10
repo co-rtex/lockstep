@@ -745,7 +745,7 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
     o.retransmit_drop_percent = percent_arg(a, "retransmit-drop-percent");
     o.seed = a.get_u64("seed", 1);
     o.packets_per_second = a.get_u64("rate-pps", 100'000);
-    o.linger = std::chrono::milliseconds(std::min<std::uint64_t>(a.get_u64("linger-ms", 1000), 3'600'000));
+    o.linger = a.get_ms("linger-ms", 1000, 0, 3'600'000);
     const std::size_t mtu = a.get_u64("mtu", 1400);
     if (mtu < 100 || mtu > 65507) {
         throw UsageError("--mtu must be in [100, 65507]");
@@ -822,12 +822,8 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
     if (o.recovery && o.request_to.port == 0) {
         throw UsageError("--request-port is required unless --no-recovery");
     }
-    o.idle_timeout = std::chrono::milliseconds(std::min<std::uint64_t>(a.get_u64("idle-timeout-ms", 5000), 3'600'000));
-    const std::uint64_t interval = a.get_u64("request-interval-ms", 5);
-    if (interval < 1 || interval > 1000) {
-        throw UsageError("--request-interval-ms must be in [1, 1000]");
-    }
-    o.request_interval = std::chrono::milliseconds(interval);
+    o.idle_timeout = a.get_ms("idle-timeout-ms", 5000, 1, 3'600'000);
+    o.request_interval = a.get_ms("request-interval-ms", 5, 1, 1000);
     // Reorder buffer: bounded, but large enough to ride out a few request rounds at full rate.
     o.sequencer.max_buffered_messages = a.get_u64("max-buffered-messages", 1U << 20U);
     o.sequencer.session = mold::make_session(session_arg(a));

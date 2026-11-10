@@ -168,6 +168,11 @@ public:
             opts_.max_batch == 0 || opts_.outbound_byte_limit == 0) {
             throw std::invalid_argument("server limits must be positive");
         }
+        // Zero would mean "never time out" to SO_SNDTIMEO and disables the per-frame budget,
+        // so a reader that stops reading could block its writer (and shutdown) forever.
+        if (opts_.send_timeout.count() <= 0 || opts_.partial_frame_timeout.count() <= 0) {
+            throw std::invalid_argument("server timeouts must be positive");
+        }
         const bool loopback = opts_.host == "localhost" || opts_.host.rfind("127.", 0) == 0;
         if (!loopback && !opts_.allow_remote) {
             throw std::invalid_argument(

@@ -67,7 +67,8 @@ int cmd_serve(const std::vector<std::string>& argv) {
     opts.ingress_capacity = args.get_u64("ingress-capacity", 4096);
     opts.outbound_capacity = args.get_u64("outbound-capacity", 1024);
     opts.max_batch = args.get_u64("max-batch", 512);
-    opts.send_timeout = std::chrono::milliseconds(args.get_u64("send-timeout-ms", 2000));
+    // 0 would disable the slow-reader cut-off (and let one stalled reader block shutdown).
+    opts.send_timeout = args.get_ms("send-timeout-ms", 2000, 1, 3'600'000);
     opts.outbound_byte_limit = args.get_u64("outbound-byte-limit", 64ULL * 1024 * 1024);
     opts.allow_remote = args.flag("allow-remote");
     if (opts.allow_remote) {
@@ -146,7 +147,7 @@ namespace {
 
 int client_submit(const Args& args) {
     const std::string host = args.get_or("host", "127.0.0.1");
-    const auto timeout = std::chrono::milliseconds(args.get_u64("timeout-ms", 10000));
+    const auto timeout = args.get_ms("timeout-ms", 10000, 1, 3'600'000);
     net::Client client = net::Client::connect(host, port_arg(args, 9000));
     std::ifstream file;
     std::istream* in = &std::cin;
@@ -198,8 +199,8 @@ int client_submit(const Args& args) {
 int client_subscribe(const Args& args) {
     const std::string host = args.get_or("host", "127.0.0.1");
     const std::uint64_t count = args.get_u64("count", 0);  // 0 = until EOF/duration
-    const auto duration = std::chrono::milliseconds(args.get_u64("duration-ms", 0));
-    const auto slow = std::chrono::milliseconds(args.get_u64("slow-ms", 0));
+    const auto duration = args.get_ms("duration-ms", 0, 0, 86'400'000);  // 0 = no limit
+    const auto slow = args.get_ms("slow-ms", 0, 0, 3'600'000);
     const bool quiet = args.flag("quiet");
     net::Client client = net::Client::connect(host, port_arg(args, 9000));
     if (!client.send(Json{{"type", "subscribe"}, {"request_id", "subscribe"}})) {
@@ -284,12 +285,9 @@ int client_mirror(const Args& args) {
     net::MirrorOptions o;
     o.host = args.get_or("host", "127.0.0.1");
     o.port = port_arg(args, 9000);
-    o.duration = std::chrono::milliseconds(args.get_u64("duration-ms", 5000));
-    o.verify_every = std::chrono::milliseconds(args.get_u64("verify-ms", 500));
+    o.duration = args.get_ms("duration-ms", 5000, 0, 86'400'000);
+    o.verify_every = args.get_ms("verify-ms", 500, 1, 3'600'000);
     o.max_resubscribes = args.get_u64("max-resubscribes", 10);
-    if (o.verify_every.count() == 0) {
-        throw UsageError("--verify-ms must be > 0");
-    }
     net::FeedMirror mirror;
     const net::MirrorReport r = net::run_mirror(o, mirror);
     const auto& s = r.stats;

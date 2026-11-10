@@ -181,7 +181,7 @@ because the request map is rebuilt from the journal (`RetryAfterDisconnectProduc
 | connections | 64 (`--max-clients`) | extra connection gets `error SERVER_OVERLOADED` and is closed |
 | ingress queue (all connections) | 4096 requests (`--ingress-capacity`) | request answered immediately with `SERVER_OVERLOADED`, not processed |
 | outbound queue per connection | 1024 frames (`--outbound-capacity`) | connection marked overflowed: a final `resync_required` (subscriber) or `SERVER_OVERLOADED` error (non-subscriber) goes into a reserved slot, the subscription is dropped, and the socket closes after the queue drains |
-| socket send stall | 2 s (`--send-timeout-ms`) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
+| socket send stall | 2 s (`--send-timeout-ms`, 1 ms to 1 h; a server with a non-positive timeout is refused, because "no timeout" let one stalled reader block shutdown) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
 | frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth"); a `subscribe` whose initial snapshot does not fit is **not** registered (no baseline, so no increments) |
 | group commit batch | 512 commands (`--max-batch`) | larger bursts span several batches |
 
