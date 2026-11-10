@@ -34,8 +34,9 @@ ITCH data never become orders in the exchange. They have different types (`itch:
 
 ## Results that are measured, not asserted
 
-Machine: Apple M3 MacBook Air (fanless), macOS 26.6, Apple clang 17, `-O3`. All numbers
-are in-process and single-threaded; none is a wire latency.
+Machine: Apple M3 MacBook Air (fanless), macOS 26.6, Apple clang 17, `-O3`. The ITCH and
+matching-core numbers are in-process and single-threaded. The TCP, durable-ack and UDP rows
+are loopback measurements on this one machine. None is an exchange wire latency.
 
 | What | Result | Evidence |
 |---|---|---|
@@ -56,14 +57,15 @@ are in-process and single-threaded; none is a wire latency.
 * **Two server bugs, reproduced before fixing.** A subscriber whose snapshot was too large
   was registered with no baseline. A snapshot after an internal fail-stop could expose
   never-durable state.
-* **Seven independent adversarial reviews**. Five led to fixes with regression tests. The
-  last two, of the request-id index and the bounded price levels, found no defect. Findings
+* **Eight independent adversarial reviews**. Six led to fixes with regression tests. The
+  reviews of the request-id index and of the bounded price levels found no defect. Findings
   included:
   * strict-replay counters drifting after a stop;
   * mirror exceptions escaping a session, and partial application of a malformed update;
   * unclamped directory growth in the paged index;
   * a JSON-output crash on non-ASCII bytes in ITCH alpha fields;
-  * a UDP retry timer defeated by partly answered requests.
+  * a UDP retry timer defeated by partly answered requests;
+  * verification tools that could leave a server running when a step failed.
 
   Automated security review of the UDP transport added three more: no reflection
   amplification, a filter on the feed's source address, and a reorder-buffer memory bound
@@ -97,7 +99,11 @@ are in-process and single-threaded; none is a wire latency.
     `book_update` a subscriber receives, about 39 k events, also matches the model). With up
     to 32 concurrent clients it checks linearizability. Accepted replies must equal the model
     run in sequence order, and each rejection must match some state its client could have
-    seen. 100 k commands passed. This substitutes for TSan, which cannot run here.
+    seen. 100 k commands passed. This substitutes for TSan, which cannot run here. A further
+    200 k commands from 16 clients passed with hostile connections alongside: 2 544 of them,
+    sending garbage, bad lengths, half frames, malformed JSON, stalled subscribers and abrupt
+    drops. The server stayed up and answered every malformed message, and the journal replayed
+    to the server's final state hash.
 
   Writing the exchange model was itself a spec check. It first reported a retry's *current*
   order status; the spec says a retry returns the original result, which is what the C++
@@ -146,6 +152,17 @@ are in-process and single-threaded; none is a wire latency.
    the miss (≈ 75 vs 23 ns). The replacement is a flat fingerprint table over a record deque,
    keyed with SipHash because the ids come from clients. The rewrite only counts if the state
    hashes are identical, and they are.
+10. *"How do you test a concurrent server without TSan?"* Make the server's interleaving the
+    thing under test. K clients send concurrently, and the accepted replies, ordered by their
+    sequence numbers, must equal a single-threaded model run in that order. A rejection has
+    no sequence number. Per-connection FIFO bounds when it can have run, between its client's
+    neighbouring accepted commands, so it must match the model in some state in that window.
+    Corrupting one observed reply, even into a plausible error code, makes the check fail.
+11. *"An optimization you rejected?"* Software prefetch of the order index and node a few
+    messages ahead. The flat-array experiment pointed at cache misses, so it looked right.
+    On this noisy machine, 3-trial medians ranged from 50 to 106 ns/msg in *both* arms, so I
+    switched to 20 back-to-back pairs. The median ratio was 0.99. The code was reverted, and
+    the patch and raw pairs are kept.
 
 ## Honest limits
 
