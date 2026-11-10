@@ -133,6 +133,11 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
    non-move-assignable turned that into a compile error, and the compiler then flagged the
    state machine's unused move assignment.
 
+8. **Cold caches, measured honestly.** Flushing 64 MiB before each whole-run pass barely
+   moved the medians, because a run that builds its book from empty amortizes the cold
+   start. The useful question was a *large* book going cold. Timing the 2 000 messages after
+   a flush on a book of ≈ 89 k orders gave 2.6–2.9× the warm mean and 3× the warm p99.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every
