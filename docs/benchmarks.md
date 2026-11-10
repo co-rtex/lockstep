@@ -432,6 +432,13 @@ Raw rows (timings only, no market data):
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 
+Book apply alone (pre-decoded messages, 3 trials; console values, not in the CSV) went from
+75.4 to 48.1 ns/msg. Mean cost by type, timer included: adds 97 → 50 ns, deletes 79 → 59,
+replaces 182 → 117, executions 109 → 79. The latency pass recorded one sample of 1.84 ms, with
+the process at 2.4 GiB RSS on an 8 GiB machine. It may come from a page fault or from growth
+of the page directory or level pool, but it was not isolated, so treat it as an
+unexplained outlier.
+
 **How the data drove the changes.** The real per-type costs (adds ≈ 97 ns, deletes ≈ 79 ns,
 replaces ≈ 182 ns, timer included) were 3–4× the synthetic ones. New level counters showed
 43 % of adds and replaces opening a level, against 1.6 % in the synthetic stream, with books
