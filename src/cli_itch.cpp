@@ -148,6 +148,23 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
                                                      : std::string(1, s.last_system_event)}};
     j["state_hash"] = b.state_hash();
     Json books = Json::array();
+    // Crossed/locked books by the symbol's last trading state ('T' trading, 'H' halted,
+    // 'P' paused, 'Q' quotation only, '-' never stated): on real data, crossed books occur in
+    // halted or paused symbols, which keep accepting orders without matching them.
+    Json crossed_by_state = Json::object();
+    Json locked_by_state = Json::object();
+    for (const std::uint16_t locate : b.locates()) {
+        const TopOfBook t = b.top(locate);
+        const std::string state(1, b.trading_state(locate).value_or('-'));
+        if (t.crossed()) {
+            crossed_by_state[state] = crossed_by_state.value(state, 0) + 1;
+        }
+        if (t.locked()) {
+            locked_by_state[state] = locked_by_state.value(state, 0) + 1;
+        }
+    }
+    j["crossed_books_by_trading_state"] = crossed_by_state;
+    j["locked_books_by_trading_state"] = locked_by_state;
     for (const std::uint16_t locate : b.locates()) {
         const auto symbol = b.symbol(locate);
         if (only_symbol && symbol != only_symbol) {
@@ -161,6 +178,8 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
         bk["best_ask"] = t.ask ? level_json(*t.ask) : Json(nullptr);
         bk["locked"] = t.locked();
         bk["crossed"] = t.crossed();
+        const auto state = b.trading_state(locate);
+        bk["trading_state"] = state ? Json(std::string(1, *state)) : Json(nullptr);
         bk["bid_levels"] = b.level_count(locate, Side::Buy);
         bk["ask_levels"] = b.level_count(locate, Side::Sell);
         Json bids = Json::array();
