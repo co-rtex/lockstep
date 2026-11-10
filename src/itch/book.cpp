@@ -15,6 +15,7 @@
 #include <map>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 
 #include "enginex/itch/byte_reader.hpp"
 #include "enginex/itch/order_index.hpp"
@@ -54,6 +55,31 @@ struct Node {
     std::optional<Mpid> attribution;
 };
 
+// A/B baseline: -DENGINEX_ITCH_STD_INDEX=ON swaps the open-addressing index for the original
+// std::unordered_map (same interface) so both can be benchmarked from one commit.
+class StdOrderIndex {
+public:
+    static constexpr std::uint32_t kEmpty = OrderIndex::kEmpty;
+    [[nodiscard]] std::uint32_t find(OrderRef k) const {
+        const auto it = map_.find(k);
+        return it == map_.end() ? kEmpty : it->second;
+    }
+    [[nodiscard]] bool contains(OrderRef k) const { return map_.contains(k); }
+    bool insert(OrderRef k, std::uint32_t v) { return map_.emplace(k, v).second; }
+    bool erase(OrderRef k) { return map_.erase(k) == 1; }
+    void reserve(std::size_t n) { map_.reserve(n); }
+    [[nodiscard]] std::size_t size() const { return map_.size(); }
+
+private:
+    std::unordered_map<OrderRef, std::uint32_t> map_;
+};
+
+#ifdef ENGINEX_ITCH_STD_INDEX
+using Index = StdOrderIndex;
+#else
+using Index = OrderIndex;
+#endif
+
 struct DirectoryEntry {
     std::optional<Symbol> symbol;
     char trading_state = 0;
@@ -64,7 +90,7 @@ struct DirectoryEntry {
 struct BookBuilder::Impl {
     std::vector<Node> pool;
     std::vector<std::uint32_t> free_slots;
-    OrderIndex index;
+    Index index;
     std::vector<std::unique_ptr<Book>> books = std::vector<std::unique_ptr<Book>>(kLocates);
     std::vector<DirectoryEntry> directory = std::vector<DirectoryEntry>(kLocates);
 
@@ -78,7 +104,7 @@ struct BookBuilder::Impl {
 
     std::optional<std::uint32_t> lookup(OrderRef ref) const {
         const std::uint32_t slot = index.find(ref);
-        if (slot == OrderIndex::kEmpty) {
+        if (slot == Index::kEmpty) {
             return std::nullopt;
         }
         return slot;
@@ -150,6 +176,12 @@ struct BookBuilder::Impl {
         }
     }
 };
+
+#ifdef ENGINEX_ITCH_STD_INDEX
+const char* const kOrderIndexName = "std_unordered_map";
+#else
+const char* const kOrderIndexName = "open_addressing";
+#endif
 
 std::string_view to_string(Anomaly a) noexcept {
     switch (a) {

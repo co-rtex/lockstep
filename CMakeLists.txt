@@ -91,6 +91,10 @@ enginex_set_warnings(enginex_net)
 add_library(enginex_itch src/itch/codec.cpp src/itch/book.cpp src/itch/replay.cpp src/itch/synthetic.cpp)
 target_link_libraries(enginex_itch PUBLIC enginex_core)
 enginex_set_warnings(enginex_itch)
+option(ENGINEX_ITCH_STD_INDEX "Benchmark baseline: std::unordered_map order index" OFF)
+if(ENGINEX_ITCH_STD_INDEX)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_INDEX)
+endif()
 
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)

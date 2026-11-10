@@ -189,7 +189,8 @@ std::string csv_header() {
     return "started_utc,git_sha,compiler,build_type,system,measurement,seed,messages,symbols,"
            "file_bytes,trial,elapsed_ns,msgs_per_s,ns_per_msg,mib_per_s,allocs,alloc_bytes,"
            "lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,"
-           "timer_tick_ns,peak_rss_kib,live_orders,peak_live_orders,state_hash_prefix";
+           "timer_tick_ns,peak_rss_kib,live_orders,peak_live_orders,state_hash_prefix,order_index,"
+           "reserve";
 }
 
 void write_row(std::ostream& out, const std::string& started, const std::string& m,
@@ -199,7 +200,7 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
     std::snprintf(
         buf, sizeof buf,
         "%s,%s,%s %s,%s,%s,%s,%llu,%zu,%u,%zu,%s,%llu,%.0f,%.2f,%.1f,%llu,%llu,%.1f,%llu,%llu,%llu,"
-        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s\n",
+        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu\n",
         started.c_str(), bi::kGitSha, bi::kCompilerId, bi::kCompilerVersion, bi::kBuildType,
         bi::kSystem, m.c_str(), static_cast<unsigned long long>(o.seed), w.messages.size(),
         static_cast<unsigned>(o.symbols), w.file.size(), t.trial.c_str(),
@@ -213,7 +214,8 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
         static_cast<unsigned long long>(t.latency.max_ns), timer.mean_call_ns,
         static_cast<unsigned long long>(timer.min_nonzero_tick_ns),
         static_cast<unsigned long long>(rss), static_cast<unsigned long long>(t.live_orders),
-        static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str());
+        static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str(),
+        enginex::itch::kOrderIndexName, o.reserve);
     out << buf;
 }
 
@@ -244,7 +246,8 @@ int run(const Options& o) {
                 "symbols, %zu bytes; %zu trials + 1 warm-up\n",
                 static_cast<unsigned long long>(o.seed), w.messages.size(), o.messages,
                 static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
-    std::printf("book reserve hint: %zu orders\n", o.reserve);
+    std::printf("book reserve hint: %zu orders; order index: %s\n", o.reserve,
+                enginex::itch::kOrderIndexName);
     std::printf("timer: now() ~%.1f ns, smallest tick %llu ns\n", timer.mean_call_ns,
                 static_cast<unsigned long long>(timer.min_nonzero_tick_ns));
     for (const std::string m : {"itch_decode", "itch_book_apply", "itch_replay"}) {

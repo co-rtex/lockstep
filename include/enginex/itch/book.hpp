@@ -110,6 +110,9 @@ struct BookStats {
     [[nodiscard]] std::uint64_t anomaly_count() const noexcept;
 };
 
+// Which order-index implementation this build uses ("open_addressing" or "std_unordered_map").
+extern const char* const kOrderIndexName;
+
 class BookBuilder {
 public:
     // `expected_orders` (optional) pre-sizes the order index and pool so that growth (a full
