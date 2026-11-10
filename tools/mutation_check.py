@@ -157,6 +157,10 @@ MUTANTS = [
     # failed commit) survives because it is equivalent: both failures are permanent
     # fail-stops (DurableExchange::failed_ never clears; fatal_ short-circuits handle()), so
     # no event is ever staged or published again. The line is kept as defence in depth.
+    ("protocol: book_update order_count off by one", "src/protocol.cpp",
+     "it == map.end() ? 0U : static_cast<std::uint32_t>(it->second.orders.size());",
+     "it == map.end() ? 0U : static_cast<std::uint32_t>(it->second.orders.size() + 1);", 0,
+     "Server.*:FeedMirror*|ctest:exchange_pymodel_network"),
     ("server: slow-consumer notice reports stale watermark", "src/server.cpp",
      "s->last_event_queued = seq;", "(void)seq;", 0, "Server.*:FeedMirror*"),
 ]

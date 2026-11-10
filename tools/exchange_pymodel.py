@@ -33,6 +33,24 @@ class Model:
         self.records = {}   # request_id -> (body, response)
         self.orders = {}    # seq -> order dict (all accepted new_limit orders)
         self.books = {s: {"BUY": [], "SELL": []} for s in SYMBOLS}  # lists of resting order dicts
+        self.events = []    # one per accepted, non-duplicate command (the book_update feed)
+
+    def publish(self, cmd_type, symbol, order_id, executions, touched):
+        """The book_update for an accepted command: touched levels with their new totals."""
+        levels = []
+        for side, price in sorted(touched):
+            q = sum(o["remaining"] for o in self.books[symbol][side] if o["price"] == price)
+            c = sum(1 for o in self.books[symbol][side] if o["price"] == price)
+            levels.append({"side": side, "price": price, "quantity": q, "order_count": c})
+
+        def best(side):
+            lv = self.levels(symbol, side)
+            return {"price": lv[0]["price"], "quantity": lv[0]["quantity"]} if lv else None
+
+        self.events.append({"event_sequence": len(self.events) + 1, "command_sequence": self.seq,
+                            "command_type": cmd_type, "symbol": symbol, "order_id": order_id,
+                            "executions": executions, "levels": levels,
+                            "best_bid": best("BUY"), "best_ask": best("SELL")})
 
     def reject(self, cmd, code):
         return {"request_id": cmd["request_id"], "status": "rejected", "code": code}
@@ -79,6 +97,7 @@ class Model:
                 "command_sequence": self.seq, "order_id": target, "cancelled_quantity": cancelled,
                 "order_status": "CANCELLED", "executions": []}
         self.records[cmd["request_id"]] = (body, resp)
+        self.publish("cancel", o["symbol"], target, [], {(o["side"], o["price"])})
         return resp
 
     def new_limit(self, cmd, body):
@@ -115,6 +134,11 @@ class Model:
                 "command_sequence": seq, "order_id": f"ord-{seq}", "remaining": remaining,
                 "order_status": status, "executions": executions, "seq_ref": seq}
         self.records[cmd["request_id"]] = (body, resp)
+        contra_side = "SELL" if side == "BUY" else "BUY"
+        touched = {(contra_side, e["price"]) for e in executions}
+        if remaining > 0:
+            touched.add((side, price))
+        self.publish("new_limit", cmd["symbol"], f"ord-{seq}", executions, touched)
         return resp
 
     def levels(self, symbol, side):
@@ -225,21 +249,42 @@ def compare_network(exe, seed, n, journal_dir, restart=False):
     rng = random.Random(seed)
     cmds = workload(rng, n)
     model = Model()
+    before = len(model.events)
     expected = [model.process(c) for c in cmds]
-    stats = one_pass(exe, seed, cmds, expected, journal_dir, model)
+    stats = one_pass(exe, seed, cmds, expected, journal_dir, model, model.events[before:], before)
     if restart:  # same journal, new server process, same commands again
+        before = len(model.events)
         expected = [model.process(c) for c in cmds]
-        stats = one_pass(exe, seed, cmds, expected, journal_dir, model)
+        stats = one_pass(exe, seed, cmds, expected, journal_dir, model, model.events[before:], before)
     return stats
 
 
-def one_pass(exe, seed, cmds, expected, journal_dir, model):
+def event_view(e):
+    """A book_update in the model's event format."""
+    return {"event_sequence": e["event_sequence"], "command_sequence": e["command_sequence"],
+            "command_type": e["command_type"], "symbol": e["symbol"], "order_id": e["order_id"],
+            "executions": [{k: x[k] for k in ("execution_id", "resting_order_id", "price", "quantity")}
+                           for x in e["executions"]],
+            "levels": sorted(e["levels"], key=lambda l: (l["side"], l["price"])),
+            "best_bid": e["best_bid"], "best_ask": e["best_ask"]}
+
+
+def one_pass(exe, seed, cmds, expected, journal_dir, model, events, watermark):
     serve = [exe, "serve", "--port", "0"]
     if journal_dir:
         serve += ["--journal", str(pathlib.Path(journal_dir) / f"seed{seed}.exj"), "--durability", "none"]
     srv = subprocess.Popen(serve, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    sub = None
     try:
         port = json.loads(srv.stdout.readline())["port"]
+        if events:  # subscribe before the first command: snapshot, then every book_update
+            sub = subprocess.Popen([exe, "client", "subscribe", "--port", str(port), "--count",
+                                    str(len(events))], stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, text=True)
+            snap = json.loads(sub.stdout.readline())
+            if snap.get("type") != "snapshot_response" or not snap.get("subscribed") or \
+                    snap["event_watermark"] != watermark:
+                sys.exit(f"network seed {seed}: bad subscribe snapshot {json.dumps(snap)[:200]}")
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
             for c in cmds:
                 f.write(json.dumps(c) + "\n")
@@ -249,9 +294,23 @@ def one_pass(exe, seed, cmds, expected, journal_dir, model):
                                  capture_output=True, text=True, timeout=300)
         finally:
             pathlib.Path(path).unlink()
+        feed = []
+        if sub:
+            feed_out, _ = sub.communicate(timeout=120)
+            feed = [json.loads(l) for l in feed_out.splitlines() if l.strip()]
     finally:
+        if sub and sub.poll() is None:
+            sub.terminate()
         srv.terminate()
         rest, _ = srv.communicate(timeout=60)
+    updates = [u for u in feed if u.get("type") == "book_update"]
+    if len(updates) != len(events):
+        sys.exit(f"network seed {seed}: {len(updates)} book_updates, model has {len(events)}")
+    for want, have in zip(events, updates):
+        w = dict(want, levels=sorted(want["levels"], key=lambda l: (l["side"], l["price"])))
+        if event_view(have) != w:
+            sys.exit(f"network seed {seed}, event {want['event_sequence']}:\n"
+                     f"  python: {json.dumps(w)}\n  server: {json.dumps(event_view(have))}")
     replies = [json.loads(l) for l in out.stdout.splitlines() if l.strip()]
     if len(replies) != len(cmds):
         sys.exit(f"network seed {seed}: {len(replies)} replies for {len(cmds)} commands")
@@ -271,7 +330,8 @@ def one_pass(exe, seed, cmds, expected, journal_dir, model):
         sys.exit(f"network seed {seed}: watermarks differ")
     return {"accepted": sum(1 for e in expected if e["status"] == "accepted"),
             "rejected": sum(1 for e in expected if e["status"] == "rejected"),
-            "duplicates": sum(1 for e in expected if e.get("duplicate")), "executions": model.exe}
+            "duplicates": sum(1 for e in expected if e.get("duplicate")), "executions": model.exe,
+            "feed_events_checked": len(updates)}
 
 
 def main():
@@ -284,7 +344,7 @@ def main():
     for k in list(opts):
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
-    total = {"accepted": 0, "rejected": 0, "duplicates": 0, "executions": 0}
+    total = {}
     with tempfile.TemporaryDirectory() as jdir:
         for seed in range(1, int(opts["--seeds"]) + 1):
             if network:
@@ -293,7 +353,7 @@ def main():
             else:
                 stats = compare(opts["--enginex"], seed, int(opts["--commands"]))
             for k, v in stats.items():
-                total[k] += v
+                total[k] = total.get(k, 0) + v
     mode = ("over TCP, journaled, restarted and resent" if restart else
             "over TCP (journaled)" if network and journal else
             "over TCP" if network else "via simulate")
