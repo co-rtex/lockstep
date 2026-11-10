@@ -513,6 +513,16 @@ the previous commit measured 59.1 → 54.2 ns/msg (2019-03-27) and 63.3 → 57.9
 Replay on the three days: 56.0, 58.1 and 54.8 ns/msg at `0ad62a6`, and 58.0, 59.3 and 54.9 in
 a reproduction at `562c56d` (5 trials each, same CSV).
 
+*Regression check of later changes.* D32, lazy node construction and the checkpoint hook
+came after `562c56d`. The sprint's last `real_data_check.sh` run measured replay at
+64.5–68.5 ns/msg, but under load ≈ 5. So `562c56d` was rebuilt and run against the current
+code in 12 back-to-back pairs on 2019-03-27 (1 trial each, order alternating; one pair lost
+a sample). The median ratio was 1.019 (IQR 0.94–1.05), and the current code was slower in 6 of
+11 pairs. In the three quietest pairs it was 2.4–4.8 % slower, and the best runs were 58.5 vs
+56.1 ns/msg. A regression of up to ≈ 4 % therefore cannot be excluded on this machine. It has
+not been attributed to a specific change. The state hash is identical. Raw pairs:
+[`itch-replay-regression-ab-macos-m3.txt`](../benchmarks/results/itch-replay-regression-ab-macos-m3.txt).
+
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
 process peaked at 296 / 327–332 / 282–302 MiB (2019-01-30 / 2020-01-30 / 2019-03-27, two
