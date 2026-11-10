@@ -197,6 +197,10 @@ Commands and results (latest):
   differential under UBSan (21.26 M messages, 65 s): passed, no runtime errors. After the
   chunked node pool (`8a40818`): UBSan 479/479, plus 1 000 000 standalone fuzz inputs with
   no violation.
+* Leak checks with macOS `leaks --atExit` (LeakSanitizer cannot run here). The full test
+  binary minus the fork-based crash-point tests (their `_exit` children hang under the tool):
+  466 tests passed, **0 leaks**. Also 0 leaks for `enginex itch replay` of the real sample
+  prefix, 20 000 fuzz inputs, and `itch mold-sim`.
 * `scripts/real_data_check.sh` (opt-in; network): strict replay of 21 255 695 real messages
   with 0 decode errors and 0 anomalies; reference-model differential OK.
 * `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
