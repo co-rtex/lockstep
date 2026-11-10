@@ -99,7 +99,9 @@ rollback after a failed commit cannot be observed, because both failure modes ar
 fail-stops. The current score is **44/44** (≈ 150 s on the M3 with an incremental release
 build). Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
-`mutation_results.json` in the build directory. The mutants are chosen by hand to probe
+`mutation_results.json` in the build directory. The latest full run, with the failing tests
+for each mutant, is in
+[`benchmarks/results/mutation-check-macos-m3.json`](../benchmarks/results/mutation-check-macos-m3.json). The mutants are chosen by hand to probe
 specific rules, so the score is not a measure of coverage. It complements
 `scripts/coverage.sh`.
 
