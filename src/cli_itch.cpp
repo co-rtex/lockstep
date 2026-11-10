@@ -214,13 +214,16 @@ void print_text(const Json& j) {
 }
 
 int cmd_replay_itch(const std::vector<std::string>& argv) {
-    const Args a(argv, {"input", "depth", "symbol", "metrics-out"}, {"strict", "json"});
+    const Args a(argv, {"input", "depth", "symbol", "metrics-out", "expected-orders"},
+                 {"strict", "json"});
     const std::string input = a.require("input");
     const std::size_t depth = a.get_u64("depth", 5);
     const auto only = a.get("symbol");
     ReplayOptions opts;
     opts.strict = a.flag("strict");
-    BookBuilder book;
+    // Capacity hint: size it near the expected peak of live orders (docs/benchmarks.md shows
+    // both too small (rehash spikes) and far too large (cache misses) cost time).
+    BookBuilder book(a.get_u64("expected-orders", 0));
     auto in = open_input(input);
     const auto t0 = std::chrono::steady_clock::now();
     const ReplayResult r = replay(*in, book, opts);

@@ -113,7 +113,7 @@ Usage:
   enginex itch generate --out FILE [--seed N] [--messages N] [--symbols N]
                         [--anomalies-per-million N]
   enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]
-                        [--metrics-out FILE.json]
+                        [--metrics-out FILE.json] [--expected-orders N]
   enginex itch dump     --input FILE [--limit N]
   enginex version
   enginex help

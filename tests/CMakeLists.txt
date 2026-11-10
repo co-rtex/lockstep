@@ -63,3 +63,11 @@ if(Python3_Interpreter_FOUND)
                      $<TARGET_FILE:enginex>)
     set_tests_properties(cli_itch_generate_replay_dump PROPERTIES LABELS "itch;cli" TIMEOUT 120)
 endif()
+
+# Short, seeded run of the fuzz harness (regression net; long runs are manual, see fuzz/README).
+add_test(NAME fuzz_itch_standalone_smoke
+         COMMAND enginex_fuzz_itch_standalone 20000 1
+                 ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/lifecycle.itch
+                 ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/malformed.itch
+                 ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_packets.bin)
+set_tests_properties(fuzz_itch_standalone_smoke PROPERTIES LABELS "itch;fuzz" TIMEOUT 300)

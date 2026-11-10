@@ -187,6 +187,29 @@ def malformed():
     return data, expected
 
 
+def mold_packets():
+    """Fuzz seed: the lifecycle messages as MoldUDP64 packets (session "FIXTURE", 3 messages per
+    packet, then end of session), each packet preceded by a 2-byte length for the fuzz harness."""
+    data, _ = lifecycle()
+    msgs, pos = [], 0
+    while pos < len(data):
+        n = struct.unpack(">H", data[pos:pos + 2])[0]
+        msgs.append(data[pos + 2:pos + 2 + n])
+        pos += 2 + n
+    session = b"FIXTURE".ljust(10)
+    out, seq = bytearray(), 1
+    for i in range(0, len(msgs), 3):
+        batch = msgs[i:i + 3]
+        pkt = session + struct.pack(">QH", seq, len(batch))
+        for m in batch:
+            pkt += struct.pack(">H", len(m)) + m
+        out += struct.pack(">H", len(pkt)) + pkt
+        seq += len(batch)
+    end = session + struct.pack(">QH", seq, 0xFFFF)
+    out += struct.pack(">H", len(end)) + end
+    return bytes(out)
+
+
 def main():
     check = "--check" in sys.argv[1:]
     stale = []
@@ -201,6 +224,15 @@ def main():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
                 print(f"wrote {path} ({len(content)} bytes)")
+    corpus = pathlib.Path(__file__).resolve().parent.parent / "fuzz" / "corpus" / "mold_packets.bin"
+    content = mold_packets()
+    if check:
+        if not corpus.exists() or corpus.read_bytes() != content:
+            stale.append(str(corpus))
+    else:
+        corpus.parent.mkdir(parents=True, exist_ok=True)
+        corpus.write_bytes(content)
+        print(f"wrote {corpus} ({len(content)} bytes)")
     if stale:
         print("stale fixtures (run tools/itch_fixture.py):", *stale, sep="\n  ")
         return 1

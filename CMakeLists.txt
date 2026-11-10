@@ -124,6 +124,19 @@ add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
 target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
 enginex_set_warnings(enginex_itch_bench)
 
+# Fuzz harness (fuzz/itch_fuzz.cpp). The standalone mutation driver builds everywhere; with
+# -DENGINEX_FUZZ_LIBFUZZER=ON (clang with libFuzzer, e.g. Linux) a coverage-guided binary too.
+add_executable(enginex_fuzz_itch_standalone fuzz/itch_fuzz.cpp fuzz/standalone_driver.cpp)
+target_link_libraries(enginex_fuzz_itch_standalone PRIVATE enginex_itch)
+enginex_set_warnings(enginex_fuzz_itch_standalone)
+option(ENGINEX_FUZZ_LIBFUZZER "Build enginex_fuzz_itch with -fsanitize=fuzzer" OFF)
+if(ENGINEX_FUZZ_LIBFUZZER)
+    add_executable(enginex_fuzz_itch fuzz/itch_fuzz.cpp)
+    target_link_libraries(enginex_fuzz_itch PRIVATE enginex_itch)
+    target_compile_options(enginex_fuzz_itch PRIVATE -fsanitize=fuzzer)
+    target_link_options(enginex_fuzz_itch PRIVATE -fsanitize=fuzzer)
+endif()
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------

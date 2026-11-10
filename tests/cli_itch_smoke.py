@@ -29,6 +29,8 @@ with tempfile.TemporaryDirectory() as d:
     assert [b["symbol"] for b in r2["books"]] == ["SYM1"] and len(r2["books"][0]["bids"]) <= 1
     m = json.load(open(os.path.join(d, "m.json")))
     assert m["timing"]["wall_seconds"] > 0
+    r3 = json.loads(run("itch", "replay", "--input", f, "--json", "--expected-orders", "50000"))
+    assert r3["state_hash"] == r1["state_hash"], "capacity hint changed the result"
     text = run("itch", "replay", "--input", f)
     assert "state hash " + r1["state_hash"] in text
     lines = run("itch", "dump", "--input", f, "--limit", "3").splitlines()

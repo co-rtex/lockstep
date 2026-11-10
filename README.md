@@ -49,6 +49,11 @@ specification, not Nasdaq data.
 | MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels (no socket receiver) |
 | UDP multicast receiver, live retransmission, SoupBinTCP, real historical data | — | **Not implemented** (no such claim is made) |
 
+The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
+*ITCH* and *Sprint* have been verified locally only: macOS, Apple clang 17, release suite,
+UBSan, coverage and fuzz runs. GCC, ASan and TSan have not run on them yet
+([docs/PROGRESS.md](docs/PROGRESS.md#market-data-sprint-2026-11-10-branch-enginex-quant-sprint-20261109)).
+
 ## Architecture
 
 ```text
@@ -297,7 +302,10 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 * ITCH: hand-written golden bytes for all 23 message types, fixtures packed independently in
   Python, every wrong length and unknown type, framing split at every offset, a message-by-message
   differential test against a naive reference book (mutation-checked), and 300 randomly
-  corrupted files. See [docs/itch.md § Verification](docs/itch.md#verification).
+  corrupted files. MoldUDP64 sequencing is tested end to end over a simulated lossy,
+  duplicating and reordering channel, where the rebuilt book must hash-match a direct replay.
+  A libFuzzer-compatible harness (`fuzz/`) also runs as a seeded standalone mutation fuzzer.
+  See [docs/itch.md § Verification](docs/itch.md#verification).
 
 See [docs/verification.md](docs/verification.md) for the full test matrix, the environments
 where each suite ran, and known limitations. One of those is that macOS 26.6 + Apple clang 17
