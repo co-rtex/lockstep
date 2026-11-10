@@ -141,6 +141,21 @@ add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
 target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
 enginex_set_warnings(enginex_itch_bench)
 
+# Cross-layout check: the ITCH book sources compiled a second time with the earlier layout
+# (std::map levels + open-addressing hash index), each linked into its own small executable.
+set(ENGINEX_ITCH_SOURCES src/itch/codec.cpp src/itch/book.cpp src/itch/replay.cpp
+    src/itch/synthetic.cpp src/itch/moldudp64.cpp src/itch/mold_sim.cpp)
+add_library(enginex_itch_maphash STATIC ${ENGINEX_ITCH_SOURCES})
+target_link_libraries(enginex_itch_maphash PUBLIC enginex_core)
+target_compile_definitions(enginex_itch_maphash PRIVATE ENGINEX_ITCH_MAP_LEVELS ENGINEX_ITCH_HASH_INDEX)
+enginex_set_warnings(enginex_itch_maphash)
+add_executable(enginex_itch_state_hash tools/variant/itch_state_hash.cpp)
+target_link_libraries(enginex_itch_state_hash PRIVATE enginex_itch)
+enginex_set_warnings(enginex_itch_state_hash)
+add_executable(enginex_itch_state_hash_maphash tools/variant/itch_state_hash.cpp)
+target_link_libraries(enginex_itch_state_hash_maphash PRIVATE enginex_itch_maphash)
+enginex_set_warnings(enginex_itch_state_hash_maphash)
+
 # Fuzz harness (fuzz/itch_fuzz.cpp). The standalone mutation driver builds everywhere; with
 # -DENGINEX_FUZZ_LIBFUZZER=ON (clang with libFuzzer, e.g. Linux) a coverage-guided binary too.
 add_executable(enginex_fuzz_itch_standalone fuzz/itch_fuzz.cpp fuzz/standalone_driver.cpp)

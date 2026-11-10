@@ -71,3 +71,12 @@ add_test(NAME fuzz_itch_standalone_smoke
                  ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/malformed.itch
                  ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_packets.bin)
 set_tests_properties(fuzz_itch_standalone_smoke PROPERTIES LABELS "itch;fuzz" TIMEOUT 300)
+
+# Every ITCH book layout variant must reconstruct byte-identical books (D27/D28).
+if(Python3_Interpreter_FOUND)
+    add_test(NAME itch_layout_variants_agree
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/compare_variant_hashes.py
+                     $<TARGET_FILE:enginex_itch_state_hash>
+                     $<TARGET_FILE:enginex_itch_state_hash_maphash>)
+    set_tests_properties(itch_layout_variants_agree PROPERTIES LABELS "itch" TIMEOUT 300)
+endif()
