@@ -231,8 +231,9 @@ synthetic streams do.
 `canonical_state()` writes every locate (all 8 symbol bytes, non-printables escaped), every
 level, and every order in priority order. `state_hash()` is its SHA-256. Tests check that the
 same bytes give the same hash across runs, across read chunk sizes (1, 2, 3, 7, 64, 4096
-bytes and the whole buffer) and across every index and level variant (benchmark rows of the
-same workload carry identical hashes).
+bytes and the whole buffer) and across index and level variants: ctest
+`itch_layout_variants_agree` compares the current layout with `std::map` levels + hash index,
+and benchmark rows of the same workload carry identical hashes.
 
 ## Error policy (`replay`)
 
@@ -258,6 +259,7 @@ same workload carry identical hashes).
 | Differential | naive reference model (`std::map`, arrival counters, brute-force levels) compared message by message over 12 seeds, half with 2 % injected anomalies | `ItchDifferential.*` |
 | Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted) | recorded in the commit log |
 | Corrupted files | 300 randomly corrupted/truncated files: no crash, invariants hold, deterministic | `ItchReplay.CorruptedFilesNeverBreakInvariants` |
+| Layout variants | the book compiled twice (current layout; `std::map` levels + hash index) into separate executables; identical state hashes on 5 seeded workloads incl. injected anomalies | ctest `itch_layout_variants_agree` |
 | Fuzzing | `fuzz/itch_fuzz.cpp` (libFuzzer entry point: ITCH replay lenient+strict, and MoldUDP64 sequencing → decode → book) checks invariants, frame accounting, determinism and in-order exactly-once delivery. The standalone seeded mutation driver (not coverage-guided; Apple clang has no libFuzzer) ran **5 000 000 inputs (2.3 GB) with no violation** in a Release build (seed 7, 13 min), and 300 000 inputs under UBSan (Debug, seed 20261110, 41 min) with no violation and no UBSan report. After the sorted-vector/paged-index change (`bbd4ff6`): 2 000 000 more inputs (Release, seed 11), no violation. ctest runs 20 000 inputs. The coverage-guided build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) is for Linux and has not been run here | `fuzz/README.md` |
 | Order index | `OrderIndex` and `PagedIndex` vs `std::unordered_map` under random operations; wrapping collision chains; boundary keys (2³²−1, 2³², 2³²+4095); fallback keys behind pages that appear and are freed; a 2-page budget forcing fallback | `OrderIndex.*`, `PagedIndex.*` |
 | Coverage | `scripts/coverage.sh` (clang source-based, whole ctest suite incl. CLI subprocesses). Latest run (commit `9c98867`): lines 94.2 %, branches 86.4 %, regions 91.8 % over `src/itch`, `include/enginex/itch`, `mirror.cpp`, `cli_itch.cpp`, `server.cpp`. `paged_index.hpp` 100 %, `order_index.hpp` 99 %, `book.cpp` 92.7 %, `moldudp64.cpp` 86.5 %. Uncovered code is mostly `to_string` defaults, accessors and the `-DENGINEX_ITCH_STD_INDEX` A/B index | |
