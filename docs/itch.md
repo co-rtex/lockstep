@@ -136,8 +136,11 @@ Loopback envelope on the real 2019-03-27 prefix (21.4 M messages, 498 172 packet
 
 | live / retransmit loss | 20 k packets/s | 50 k packets/s | 70 k packets/s | 100 k packets/s |
 |---|---|---|---|---|
-| 0 % / 0 % | exact, 26.7 s | exact, 11.7 s (kernel drops recovered: 53 gaps) | fail-stop | fail-stop |
+| 0 % / 0 % | exact, 26.7 s | exact, 11.7 s (kernel drops recovered: the receiver entered the gap state 53 times) | fail-stop | fail-stop |
 | 5 % / 10 % | exact, 26.7 s | exact, 11.9 s | fail-stop | fail-stop |
+
+`gaps_opened` in the CSV counts transitions from in order to gapped, not missing ranges: under
+continuous 5 % loss the receiver stays gapped until the end, so those rows show 1.
 
 At `bfd47a1`, all three sample days (21.1–21.4 M messages each) arrived as the exact book at
 50 k packets/s with 5 % / 10 % loss, in 11.6–12.0 s each (same CSV). 50 k packets/s is
