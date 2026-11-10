@@ -66,6 +66,9 @@ struct Options {
     std::size_t flush_mib = 0;
     std::string out;
     std::string only;  // run a single measurement
+    // Cold-book probe: build the book from all but the last N messages (untimed), then time
+    // the last N one by one, once warm and once right after a cache flush (0 = off).
+    std::size_t cold_probe = 0;
     std::size_t reserve = 0;  // BookBuilder expected_orders hint (0 = none)
 };
 
@@ -246,6 +249,53 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
     out << buf;
 }
 
+// Times messages [start, end) individually on a book already built from [0, start).
+metrics::LatencyStats probe_tail(const Workload& w, std::size_t start, std::size_t reserve,
+                                 std::size_t flush_mib, std::string& hash) {
+    BookBuilder book(reserve);
+    for (std::size_t i = 0; i < start; ++i) {
+        (void)book.apply(w.messages[i]);
+    }
+    flush_caches(flush_mib);
+    std::vector<std::uint64_t> samples;
+    samples.reserve(w.messages.size() - start);
+    for (std::size_t i = start; i < w.messages.size(); ++i) {
+        const auto t0 = metrics::Clock::now();
+        (void)book.apply(w.messages[i]);
+        samples.push_back(metrics::elapsed_ns(t0, metrics::Clock::now()));
+    }
+    hash = book.state_hash();
+    // First-message latency is the most cache-sensitive: report it separately via max/mean.
+    return metrics::summarize(samples);
+}
+
+int run_cold_probe(const Options& o, const Workload& w) {
+    const std::size_t n = std::min(o.cold_probe, w.messages.size());
+    const std::size_t start = w.messages.size() - n;
+    std::printf("[itch_cold_probe] book built from %zu messages, then %zu messages timed one by "
+                "one; 64 MiB flush before the cold runs; %zu repetitions each\n",
+                start, n, o.trials);
+    for (const char* mode : {"warm", "cold"}) {
+        std::vector<double> mean, p50, p99, p999, mx;
+        std::string first_hash;
+        for (std::size_t t = 0; t < o.trials; ++t) {
+            std::string hash;
+            const auto s = probe_tail(w, start, o.reserve, std::string(mode) == "cold" ? 64 : 0, hash);
+            if (first_hash.empty()) first_hash = hash;
+            if (hash != first_hash) throw std::runtime_error("cold probe diverged");
+            mean.push_back(s.mean_ns);
+            p50.push_back(static_cast<double>(s.p50_ns));
+            p99.push_back(static_cast<double>(s.p99_ns));
+            p999.push_back(static_cast<double>(s.p999_ns));
+            mx.push_back(static_cast<double>(s.max_ns));
+        }
+        std::printf("  %s: median over repetitions of: mean %.1f ns, p50 %.0f, p99 %.0f, p99.9 %.0f, "
+                    "max %.0f (includes one ~15 ns timer call; 41.7 ns tick)\n",
+                    mode, median(mean), median(p50), median(p99), median(p999), median(mx));
+    }
+    return 0;
+}
+
 int run(const Options& o) {
     SyntheticOptions so;
     so.seed = o.seed;
@@ -287,6 +337,9 @@ int run(const Options& o) {
                 o.flush_mib);
     std::printf("timer: now() ~%.1f ns, smallest tick %llu ns\n", timer.mean_call_ns,
                 static_cast<unsigned long long>(timer.min_nonzero_tick_ns));
+    if (o.cold_probe != 0) {
+        return run_cold_probe(o, w);
+    }
     for (const std::string m : {"itch_decode", "itch_book_apply", "itch_replay"}) {
         if (!o.only.empty() && o.only != m) {
             continue;
@@ -424,6 +477,7 @@ int main(int argc, char** argv) {
             else if (a == "--trials") o.trials = parse_u64(value());
             else if (a == "--out") o.out = value();
             else if (a == "--only") o.only = value();
+            else if (a == "--cold-probe") o.cold_probe = parse_u64(value());
             else if (a == "--no-latency") o.latency = false;
             else if (a == "--reserve") o.reserve = parse_u64(value());
             else if (a == "--flush-cache-mib") o.flush_mib = parse_u64(value());
