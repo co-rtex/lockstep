@@ -25,6 +25,56 @@ combined into one number. The ITCH market-data measurements are a separate fifth
 | 3 | **Network round trip** (`network_rtt_<durability>_c<clients>`) | TCP client → framing → queue → sequencer (+group-commit journal) → ack | R3 section |
 | 4 | **Recovery time** (`recovery_replay`) | open + validate + replay N journal records (warm cache) | R2 section |
 
+## Acceptance gates for performance changes
+
+A performance change is accepted only through these gates. They were adopted after the
+measurement laptop's load (average 4–9) made 3-trial medians range from 50 to 106 ns/msg
+for one binary.
+
+**1. One workload at a time.** Each family has its own bench, metric and correctness check,
+and they are never merged into one latency claim:
+
+| | workload | command (both binaries, `tools/paired_ab.py` appends `--trials 1 --out`) | metric | correctness check |
+|---|---|---|---|---|
+| a | ITCH parse only, real day | `enginex_itch_bench --input DAY --only itch_decode` | `ns_per_msg` | `state_hash_prefix` (field checksum) |
+| b | ITCH book apply only, real day | `enginex_itch_bench --input DAY --only itch_book_apply --no-latency` | `ns_per_msg` | `state_hash_prefix` (book) |
+| c | ITCH full replay, real day | `enginex_itch_bench --input DAY --only itch_replay` | `ns_per_msg` | `state_hash_prefix` (book) |
+| d | synthetic matching core | `enginex_bench --scenario S --orders N` | `elapsed_ns` | `state_hash_prefix` (exchange state) |
+| e | MoldUDP64 sequencer, in process | `enginex_mold_bench --messages N` (`--measurement NAME`) | `ns_per_msg` | `delivered` |
+| f | UDP loopback with loss and recovery | `scripts/mold_udp_demo.sh` or `tools/mold_udp_sweep.py` | wall time, exactness | book hash equals the direct replay |
+
+Synthetic generator workloads (d, e, and the synthetic ITCH files) are never reported as
+results on a real feed. Real-day numbers name the day.
+
+**2. Paired runs against an unchanged control binary.** The control is built from the parent
+commit in a separate worktree. `tools/paired_ab.py --control OLD --candidate NEW --pairs 20
+-- ARGS` runs the two back to back, 1 trial each, alternating which goes first. It refuses the
+comparison if the correctness column differs in any run.
+
+**3. A claim needs all three of:** at least 10 pairs, an exact two-sided sign test with
+p < 0.05, and a median paired ratio at least 2 % from 1. Otherwise the result is reported as
+"no measurable difference", with the median ratio, IQR and win count.
+
+The gates were calibrated in both directions:
+
+| run | median ratio | IQR | sign test p | verdict |
+|---|---:|---:|---:|---|
+| A/A, exchange core, 12 pairs | 0.990 | 0.975–1.004 | 0.15 | no measurable difference |
+| A/A, ITCH book apply, 12 pairs | 1.001 | 0.995–1.003 | 1.0 | no measurable difference |
+| Debug hardened build vs Release, 10 pairs | 15.9 | 15.81–15.92 | 0.002 | candidate slower (correct) |
+
+The ratio-only rule used before these gates (IQR excluding 1.0) was not safe. An A/A run with
+4 pairs gave IQR 1.0023–1.0054, which would have counted as a regression.
+
+**4. Then the correctness gates of the changed path:**
+* the Python differential models;
+* `scripts/real_data_check.sh` on all three days;
+* the mutation harness when its target files changed;
+* Release, Debug, UBSan and hardened suites.
+
+Negative results stay in the record, as they are for software prefetch and smaller index
+pages below.
+
 ## Machine and build (R1 run)
 
 | Item | Value |
