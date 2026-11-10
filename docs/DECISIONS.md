@@ -341,3 +341,20 @@ inside one command, as the old map's rehash was. The core benchmark pre-reserves
 not reserve, so their timings include it. *Rejected:* a plain `std::hash` fingerprint
 (floodable), and evicting old ids (would break idempotency across the session, which the spec
 requires). `reserve()` was never an alternative: the benchmark already used it.
+
+## D32. Bounded level vector with a deep map tier (adversarial worst case)
+The sorted-vector price levels (D27) were known to have no adversarial bound. Measured with
+`tools/itch_adversarial.py` on one 200 k-level side whose every add opens a level worse than
+all others: 25 130 ns/msg, against 141 ns for the `std::map` variant (`itch-level-bound-macos-m3.csv`).
+Each side's vector now holds at most `level_vector_limit` best levels (default 8 192; the
+deepest side in the real samples has 3 831). Worse levels live in a `std::map`. Every deep rank
+is below every vector rank, so best-first iteration is the vector, then the map. Overflow
+moves the vector's worst half to the map in one batch; an emptied vector takes back the map's
+best half. Any operation is O(limit + log n), amortized. Hostile pattern 25 130 → 96 ns/msg; a
+200 k-level monotone-improving book 17 → 54 ns/msg (it keeps spilling); real data unchanged
+within noise. Correctness: the reference-model differential at limits 2, 3 and 8 (constant
+spill/refill), a hostile deep-book test, and identical state hashes on a full real day at
+limits 2, 16 and 8 192. *Rejected:* switching the default to `std::map` (on real data the sorted vector measured
+8 % faster, D27 and benchmarks.md); a balanced tree or B-tree for all levels (more code for no real-data gain);
+switching a whole side to a map once it gets deep (the top of a deep book would lose the
+contiguous fast path).

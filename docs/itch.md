@@ -452,9 +452,9 @@ single thread. These are not wire-to-wire latencies.
   but do not alter the book.
 * MPID attribution is kept per order but is not part of the state hash.
 * Sorted-vector levels are fast near the top of the book but O(distance from the best price)
-  to insert or remove. A hostile feed that keeps opening levels *worse* than every existing
-  one, in a book with 10⁵–10⁶ levels, would make each insert move the whole vector. Real data
-  (and the page-budgeted index) do not have this problem, but the level structure has no
-  adversarial bound. The `std::map` variant (`-DENGINEX_ITCH_MAP_LEVELS=ON`) is O(log n)
-  everywhere.
+  to insert or remove. A hostile feed that kept opening levels *worse* than every existing one
+  used to move the whole vector on each insert: 25 µs/msg at 200 k levels. Since D32 the vector
+  holds at most 8 192 best levels per side and deeper ones go to an ordered map, so the same
+  feed costs 96 ns/msg (the pure `std::map` variant: 141). A monotone-improving 200 k-level
+  side now costs 54 ns/msg instead of 17, because it keeps spilling.
 * Symbols are not validated against the directory beyond the `symbol_mismatch` count.

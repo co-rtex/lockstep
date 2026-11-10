@@ -196,6 +196,7 @@ pushed, so GitHub CI has not run on them.
 | Exchange core request-id index (D31): deque of records + keyed flat index | done | `core-request-index-ab-macos-m3.csv`: 198 → 119 ns/cmd at 1 M, 296 → 196 at 3 M, identical state hashes; recovery of 1 M records 2.09 → 4.06 M rec/s |
 | Independent Python exchange model | done | `tools/exchange_pymodel.py`; ctest `exchange_pymodel_differential`, `exchange_pymodel_network_restart` (responses, feed events, restart) |
 | ITCH order nodes constructed on first use | done | `itch-node-chunk-ab-macos-m3.txt`: first-add sample 92–102 → 30–39 µs; percentiles unchanged |
+| Bounded ITCH level vector (D32): adversarial worst case | done | `itch-level-bound-macos-m3.csv`: hostile pattern 25 130 → 96 ns/msg; `ItchLevelBound.*`; real day identical hash at limits 2/16/8192 |
 | R2 durable/recovery benchmark reproducibility | done | `r2-durable-macos-m3-rerun-20261110.csv` |
 | R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows (sync p99 −3 %) |
 

@@ -144,7 +144,8 @@ are in-process and single-threaded; none is a wire latency.
 * GCC, ASan, TSan and clang-format have not run on the sprint's code. The sandbox blocked
   them locally, and the branch has not been pushed to CI. UBSan, coverage, fuzzing and leak
   checks ran.
-* Sorted-vector price levels have no adversarial bound (documented). The `std::map` variant
-  is one build flag away.
+* The price-level structure is tuned for real books (≤ 3.8 k levels per side here). Its
+  adversarial worst case was measured at 25 µs/msg and is now bounded (96 ns/msg, D32), but a
+  monotone-improving 200 k-level side is slower than before (54 vs 17 ns/msg).
 * It is a lab, not trading software: no risk checks, no real connectivity, no
   authentication.

@@ -601,6 +601,23 @@ hint. State hashes are identical across builds for each workload.
 **Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
 1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
 
+**Adversarial level pattern (D32).** `tools/itch_adversarial.py 200000 worse|better` builds
+one 200 k-level side. With `worse`, every add opens a level worse than all others (the sorted
+vector's front); with `better`, the back. Book apply, 3 trials, medians
+([`itch-level-bound-macos-m3.csv`](../benchmarks/results/itch-level-bound-macos-m3.csv); the
+`level_alloc` column tells the layouts apart):
+
+| layout | `worse` ns/msg | `better` ns/msg |
+|---|---:|---:|
+| sorted vector, unbounded (before D32) | 25 130 | 17.5 |
+| `std::map` levels (`-DENGINEX_ITCH_MAP_LEVELS=ON`) | 141 | 121 |
+| sorted vector bounded at 8 192 + deep map (`b7f750e`) | 96 | 54 |
+
+Real data stays in the vector (deepest side 3 831 levels). In interleaved runs on 2019-03-27
+under load (≈ 4), the best-trial throughput was 23.25–23.94 M msg/s before and 21.75–23.56
+after, so there is no measurable change (console). The control binary was built from the
+pre-D32 code during the node-chunk experiment, so its label reads `6d1546a…-dirty`.
+
 **Not shown / not claimed.** File I/O and cold page cache (a cache cannot be dropped without
 root on macOS; the "first pass" column in the CSV is only the first touch of freshly generated
 data in a warm process), full-day real Nasdaq files, and any network delivery. Decoding
