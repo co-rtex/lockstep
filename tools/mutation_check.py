@@ -24,10 +24,19 @@ ARGS = sys.argv[1:]
 ONLY = ""
 if "--only" in ARGS:
     i = ARGS.index("--only")
+    if i + 1 >= len(ARGS):
+        sys.exit(__doc__)
     ONLY = ARGS[i + 1]
     del ARGS[i:i + 2]
+# Validate everything before any mutant touches the source tree: an unknown option such as
+# --help used to be taken as BUILD_DIR, and the run started mutating files.
+if len(ARGS) > 1 or any(a.startswith("-") for a in ARGS):
+    sys.exit(__doc__)
 BUILD = pathlib.Path(ARGS[0] if ARGS else ROOT / "build" / "release")
 TESTS = BUILD / "tests" / "enginex_tests"
+if not (BUILD / "CMakeCache.txt").is_file() or not TESTS.is_file():
+    sys.exit(f"{BUILD} is not a configured and built build directory "
+             f"(need CMakeCache.txt and tests/enginex_tests)")
 
 ITCH = "*Itch*:ByteReader*:StreamFramer*:OrderIndex*:PagedIndex*:Mold*"
 CORE = "-Server.*:FeedMirrorSession.*:Points/*:*Itch*:Mold*"
