@@ -88,7 +88,7 @@ enginex_set_warnings(enginex_net)
 
 # enginex_itch: Nasdaq TotalView-ITCH 5.0 decoding and order-book reconstruction from historical
 # market data. Independent of the synthetic exchange (it only reuses SHA-256 from the core).
-add_library(enginex_itch src/itch/codec.cpp)
+add_library(enginex_itch src/itch/codec.cpp src/itch/book.cpp src/itch/replay.cpp src/itch/synthetic.cpp)
 target_link_libraries(enginex_itch PUBLIC enginex_core)
 enginex_set_warnings(enginex_itch)
 

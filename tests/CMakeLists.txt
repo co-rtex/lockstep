@@ -12,7 +12,8 @@ add_executable(enginex_tests
     journal_test.cpp
     recovery_test.cpp
     networking_test.cpp
-    itch_codec_test.cpp)
+    itch_codec_test.cpp
+    itch_book_test.cpp)
 target_link_libraries(enginex_tests PRIVATE enginex_net enginex_bench_lib enginex_itch
     GTest::gtest_main)
 target_include_directories(enginex_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
