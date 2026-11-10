@@ -626,6 +626,22 @@ under load (≈ 4), the best-trial throughput was 23.25–23.94 M msg/s before a
 after, so there is no measurable change (console). The control binary was built from the
 pre-D32 code during the node-chunk experiment, so its label reads `6d1546a…-dirty`.
 
+**Rejected: software prefetch in book apply.** The flat-array experiment above suggested that
+index and node lookups miss the cache, so the book got two hints. `prefetch_index` touched
+the index slot of a message 2D ahead, and `prefetch_order` touched the order node of the
+message D ahead (by then its slot is cached). The bench applied them in its book-apply loop.
+State hashes were unchanged. Under load ≈ 5, single 3-trial runs ranged from 50 to 106
+ns/msg in *both* arms, so they could not resolve the effect. An opt-in
+`QOS_CLASS_USER_INTERACTIVE` request (performance cores; macOS has no pinning) did not narrow
+that spread either. Twenty back-to-back pairs on 2019-03-27 (1 trial each, D = 16 vs off)
+gave a median ratio of 0.990 (IQR 0.85–1.08). D = 16 was faster in 10 of 20 pairs, and the
+best runs were 49.4 vs 50.0 ns/msg. So there is no measurable gain, and the code was not kept.
+A plausible reason, not tested: Nasdaq references mostly increase, so index pages and recently
+allocated nodes are already close together and cached. Raw pairs:
+[`itch-prefetch-ab-macos-m3.txt`](../benchmarks/results/itch-prefetch-ab-macos-m3.txt). The
+experiment's code is kept as a patch against commit `1cb8455`:
+[`itch-prefetch-experiment.patch`](../benchmarks/results/itch-prefetch-experiment.patch).
+
 **Not shown / not claimed.** File I/O and cold page cache (a cache cannot be dropped without
 root on macOS; the "first pass" column in the CSV is only the first touch of freshly generated
 data in a warm process), full-day real Nasdaq files, and any network delivery. Decoding

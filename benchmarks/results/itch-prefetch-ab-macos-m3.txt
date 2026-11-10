@@ -1,0 +1,45 @@
+enginex_itch_bench book-apply prefetch experiment (rejected; code reverted). Input build/realdata/03272019.prefix256.itch (21 375 302 messages).
+Binary: code at 1cb8455 + prefetch_index/prefetch_order hooks + --prefetch D (index slot 2D ahead, node D ahead) + --qos-interactive; Apple clang 17, Release, M3 MacBook Air.
+Command per run: enginex_itch_bench --input FILE --only itch_book_apply --trials 1 --no-latency --qos-interactive --prefetch D; pairs run back to back (D=0 then D=16). Load average 4.5-5.5 (shared machine).
+columns: pair D ns_per_msg state_hash_prefix
+1 0 141.99 8cbb4baaf680ec45
+1 16 64.29 8cbb4baaf680ec45
+2 0 61.28 8cbb4baaf680ec45
+2 16 51.89 8cbb4baaf680ec45
+3 0 56.40 8cbb4baaf680ec45
+3 16 57.67 8cbb4baaf680ec45
+4 0 55.08 8cbb4baaf680ec45
+4 16 75.44 8cbb4baaf680ec45
+5 0 81.23 8cbb4baaf680ec45
+5 16 81.66 8cbb4baaf680ec45
+6 0 56.00 8cbb4baaf680ec45
+6 16 54.66 8cbb4baaf680ec45
+7 0 86.58 8cbb4baaf680ec45
+7 16 58.35 8cbb4baaf680ec45
+8 0 51.37 8cbb4baaf680ec45
+8 16 49.38 8cbb4baaf680ec45
+9 0 51.44 8cbb4baaf680ec45
+9 16 77.05 8cbb4baaf680ec45
+10 0 90.47 8cbb4baaf680ec45
+10 16 52.08 8cbb4baaf680ec45
+11 0 58.72 8cbb4baaf680ec45
+11 16 49.95 8cbb4baaf680ec45
+12 0 50.58 8cbb4baaf680ec45
+12 16 51.69 8cbb4baaf680ec45
+13 0 51.95 8cbb4baaf680ec45
+13 16 55.89 8cbb4baaf680ec45
+14 0 51.38 8cbb4baaf680ec45
+14 16 49.84 8cbb4baaf680ec45
+15 0 49.95 8cbb4baaf680ec45
+15 16 86.34 8cbb4baaf680ec45
+16 0 88.13 8cbb4baaf680ec45
+16 16 57.24 8cbb4baaf680ec45
+17 0 53.14 8cbb4baaf680ec45
+17 16 55.56 8cbb4baaf680ec45
+18 0 50.32 8cbb4baaf680ec45
+18 16 60.64 8cbb4baaf680ec45
+19 0 51.64 8cbb4baaf680ec45
+19 16 51.82 8cbb4baaf680ec45
+20 0 52.79 8cbb4baaf680ec45
+20 16 51.15 8cbb4baaf680ec45
+summary: median ratio d16/d0 0.990, IQR 0.851-1.076, d16 faster in 10 of 20; d0 median 54.1 (min 50.0), d16 median 55.7 (min 49.4)
