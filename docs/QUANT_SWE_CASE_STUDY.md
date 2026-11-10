@@ -91,7 +91,10 @@ are in-process and single-threaded; none is a wire latency.
   * an ITCH book (every price level of three real days);
   * an exchange model (every response of 1 M random commands, and over TCP with a journal
     across a server restart, where resent commands must replay their original results; every
-    `book_update` a subscriber receives, about 39 k events, also matches the model).
+    `book_update` a subscriber receives, about 39 k events, also matches the model). With up
+    to 32 concurrent clients it checks linearizability. Accepted replies must equal the model
+    run in sequence order, and each rejection must match some state its client could have
+    seen. 100 k commands passed. This substitutes for TSan, which cannot run here.
 
   Writing the exchange model was itself a spec check. It first reported a retry's *current*
   order status; the spec says a retry returns the original result, which is what the C++

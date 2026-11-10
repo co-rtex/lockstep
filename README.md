@@ -344,7 +344,9 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   invariant after every command. A second model in Python (`tools/exchange_pymodel.py`)
   implements the matching and command rules from the spec. On 1 M random commands (valid
   orders, cancels, invalid fields, identical and conflicting retries) it agrees with
-  `enginex simulate` on every response line and on the final books. It also agrees over TCP
+  `enginex simulate` on every response line and on the final books. With up to 32 concurrent
+  TCP clients, the server's interleaving is linearizable against it (`--clients K`). It also
+  agrees over TCP
   (`serve` + `client submit`), with a journal, and across a server restart where the whole
   workload is resent and every accepted id must replay its original result.
 * Fixtures: TradeGrid's published matching examples and fixtures, translated with attribution
