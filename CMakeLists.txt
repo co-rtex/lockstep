@@ -145,6 +145,11 @@ enginex_set_warnings(enginex_core_alloc_probe)
 # ITCH decode / book / replay measurements (counts heap allocations via operator new).
 add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
 target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
+
+# MoldUDP64 sequencer cost in process (reorder buffer vs in order).
+add_executable(enginex_mold_bench benchmarks/mold_bench.cpp)
+target_link_libraries(enginex_mold_bench PRIVATE enginex_itch)
+enginex_set_warnings(enginex_mold_bench)
 enginex_set_warnings(enginex_itch_bench)
 
 # Cross-layout check: the ITCH book sources compiled a second time with the earlier layout
