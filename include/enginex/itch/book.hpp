@@ -127,6 +127,9 @@ public:
     BookBuilder(const BookBuilder&) = delete;
     BookBuilder& operator=(const BookBuilder&) = delete;
 
+    // Applies one message. Throws only on allocation failure (std::bad_alloc /
+    // std::length_error); the builder is then in an unspecified state and must be discarded
+    // (replay() propagates the exception and the CLI exits with an error).
     ApplyOutcome apply(const Message& m);
 
     [[nodiscard]] const BookStats& stats() const noexcept { return stats_; }

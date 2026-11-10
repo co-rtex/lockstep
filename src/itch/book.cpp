@@ -189,12 +189,7 @@ public:
         } else {
             level = &storage_->levels.emplace_back();
         }
-        try {
-            v_.insert(it, Entry{r, level});
-        } catch (...) {
-            storage_->free.push_back(level);  // not leaked if the vector cannot grow
-            throw;
-        }
+        v_.insert(it, Entry{r, level});
         created = true;
         return *level;
     }
@@ -358,23 +353,11 @@ struct BookBuilder::Impl {
         } else {
             slot = pool.emplace_back();
         }
-        // Everything that can throw (index page, level vector) happens before the node is
-        // linked, and is undone on failure, so a bad_alloc never leaves a half-added order.
-        try {
-            (void)index.insert(ref, slot);
-        } catch (...) {
-            free_slots.push_back(slot);
-            throw;
-        }
+        // No exception guarantee here (see BookBuilder::apply): handling bad_alloc in this hot
+        // path measurably cost ~0.7 ns/message, so allocation failure is fatal to the builder.
         bool created = false;
-        Level* level_ptr = nullptr;
-        try {
-            level_ptr = &book(locate).side(side).get_or_create(price, created);
-        } catch (...) {
-            (void)index.erase(ref);
-            free_slots.push_back(slot);
-            throw;
-        }
+        Level* level_ptr = &book(locate).side(side).get_or_create(price, created);
+        (void)index.insert(ref, slot);
         Level& level = *level_ptr;
         levels_created += created ? 1U : 0U;
         Node& n = pool[slot];

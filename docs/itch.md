@@ -199,8 +199,12 @@ synthetic streams do.
   a chunk and never moves existing nodes. A `std::vector<Node>` doubling past ≈ 1 M live
   orders used to copy ≈ 50 MB inside one message (a deterministic ≈ 10 ms stall on the real
   sample). Each price level holds an intrusive doubly linked FIFO of 32-bit pool indices.
-  `add()` performs everything that can throw (index page, level vector) before linking the
-  node, and undoes it on failure.
+  `apply()` gives no exception guarantee: it throws only on allocation failure, after which
+  the builder must be discarded. Catching and undoing inside the hot path was measured at
+  ≈ 0.7 ns per message (≈ 3 %) and was removed. The chunked pool itself costs ≈ 1 ns per
+  message on the hot synthetic path, against the ≈ 10 ms stall it removes. A same-day
+  interleaved A/B against `bbd4ff6` measured 22.3 → 23.9 ns/msg (synthetic, 8 symbols),
+  and real-data replay is unchanged within noise (62.1 → 62.7 ns/msg).
 * The order index is a **paged direct index** (`paged_index.hpp`, D27). Nasdaq order
   references are dense and mostly increasing. On the real sample, 73 % of adds carry a larger
   reference than the previous add, and there are ≈ 20 M distinct references in 21 M
