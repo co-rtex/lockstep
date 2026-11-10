@@ -5,7 +5,8 @@ targets. The first input byte selects one (modulo 3):
 
 * **0**: `replay()` of the rest as a length-prefixed ITCH file, lenient and strict. Checks
   book invariants, frame accounting (`decoded + decode errors == frames`), that strict mode
-  never processes more frames than lenient mode, and determinism (two replays, same hash).
+  never processes more frames than lenient mode, determinism (two replays, same hash), and that
+  a builder with the smallest level-vector limit (D32) produces the same hash.
 * **1**: the rest is a sequence of 2-byte-length-prefixed MoldUDP64 packets. They are fed
   to a `Sequencer` with small bounds (256 messages, 4 KiB), and each delivered message is
   ITCH-decoded and applied to a book. Checks strictly in-order, exactly-once delivery and book
