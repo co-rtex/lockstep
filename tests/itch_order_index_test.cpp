@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "enginex/itch/order_index.hpp"
+#include "enginex/itch/paged_index.hpp"
 #include "enginex/rng.hpp"
 
 namespace enginex::itch {
@@ -131,6 +132,70 @@ TEST(OrderIndex, DeletionInsideCollisionChains) {
                 << "victim " << victim << " key " << i;
         }
     }
+}
+
+}  // namespace
+}  // namespace enginex::itch
+
+// ---- PagedIndex ------------------------------------------------------------------------------
+
+namespace enginex::itch {
+namespace {
+
+// Keys mix dense recent references, scattered old ones, and huge (≥ 2^32) values; a tiny page
+// budget forces the hash fallback while pages are created and freed.
+TEST(PagedIndex, MatchesUnorderedMapIncludingFallbackAndPageFreeing) {
+    for (const std::size_t budget : {std::size_t{2}, std::size_t{64}, std::size_t{16384}}) {
+        Rng rng(budget);
+        PagedIndex idx(budget);
+        std::unordered_map<std::uint64_t, std::uint32_t> ref;
+        std::vector<std::uint64_t> keys;
+        std::uint64_t next = 1;
+        for (int i = 0; i < 200'000; ++i) {
+            std::uint64_t k = 0;
+            switch (rng.below(10)) {
+                case 0: k = rng.next(); break;                          // anywhere, often huge
+                case 1: k = rng.below(1 << 20); break;                  // old, scattered
+                default: k = next + rng.below(64); next += rng.below(3);  // dense, increasing
+            }
+            if (!keys.empty() && rng.chance(40)) k = keys[rng.below(keys.size())];
+            keys.push_back(k);
+            if (rng.chance(55)) {
+                const auto v = static_cast<std::uint32_t>(rng.below(1'000'000));
+                ASSERT_EQ(idx.insert(k, v), ref.emplace(k, v).second) << k;
+            } else {
+                ASSERT_EQ(idx.erase(k), ref.erase(k) == 1) << k;
+            }
+            ASSERT_EQ(idx.size(), ref.size());
+            ASSERT_LE(idx.pages(), budget);
+            if (i % 9973 == 0) {
+                for (const std::uint64_t q : keys) {
+                    const auto it = ref.find(q);
+                    ASSERT_EQ(idx.find(q), it == ref.end() ? PagedIndex::kEmpty : it->second) << q;
+                }
+            }
+        }
+        if (budget == 2) {
+            EXPECT_GT(idx.fallback_size(), 0U);  // the budget really forced the fallback
+        }
+    }
+}
+
+TEST(PagedIndex, PagesAreFreedWhenEmptyAndKeyZeroWorks) {
+    PagedIndex idx;
+    EXPECT_TRUE(idx.insert(0, 1));
+    EXPECT_TRUE(idx.insert(5000, 2));  // second page
+    EXPECT_EQ(idx.pages(), 2U);
+    EXPECT_TRUE(idx.erase(5000));
+    EXPECT_EQ(idx.pages(), 1U);
+    EXPECT_EQ(idx.find(0), 1U);
+    EXPECT_TRUE(idx.insert(UINT64_MAX, 3));  // beyond the direct range
+    EXPECT_EQ(idx.fallback_size(), 1U);
+    EXPECT_EQ(idx.find(UINT64_MAX), 3U);
+    EXPECT_FALSE(idx.insert(0, 9));
+    EXPECT_TRUE(idx.erase(0));
+    EXPECT_EQ(idx.pages(), 0U);
+    EXPECT_THROW(idx.insert(1, PagedIndex::kEmpty), std::invalid_argument);
 }
 
 }  // namespace

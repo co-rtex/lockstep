@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <deque>
+#include <stdexcept>
 #include <map>
 #include <string_view>
 #include <type_traits>
@@ -20,6 +22,7 @@
 
 #include "enginex/itch/byte_reader.hpp"
 #include "enginex/itch/order_index.hpp"
+#include "enginex/itch/paged_index.hpp"
 #include "enginex/sha256.hpp"
 
 namespace enginex::itch {
@@ -106,6 +109,12 @@ struct ArenaAllocator {
     }
 };
 
+// ---- price levels of one side ---------------------------------------------------------------
+// Both implementations offer the same interface; Level objects never move while they exist
+// (Node::level points at them), and a level is destroyed only after its last order is unlinked.
+
+#ifdef ENGINEX_ITCH_MAP_LEVELS
+// A/B baseline: one std::map per side, nodes from the builder's arena (or std::allocator).
 #ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
 using LevelMap = std::map<Price4, Level>;
 #else
@@ -113,17 +122,121 @@ using LevelMap = std::map<Price4, Level, std::less<>,
                           ArenaAllocator<std::pair<const Price4, Level>>>;
 #endif
 
-struct Book {
+class SideLevels {
+public:
+    struct Storage {
+        NodeArena arena;
+    };
 #ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
-    explicit Book(NodeArena*) {}
+    SideLevels(Side side, Storage*) : side_(side) {}
 #else
-    explicit Book(NodeArena* arena) : bids(LevelMap::allocator_type(arena)),
-                                      asks(LevelMap::allocator_type(arena)) {}
+    SideLevels(Side side, Storage* storage)
+        : side_(side), map_(LevelMap::allocator_type(&storage->arena)) {}
 #endif
-    LevelMap bids;  // ascending; best bid = last
-    LevelMap asks;  // ascending; best ask = first
-    LevelMap& side(Side s) noexcept { return s == Side::Buy ? bids : asks; }
-    const LevelMap& side(Side s) const noexcept { return s == Side::Buy ? bids : asks; }
+    Level& get_or_create(Price4 price, bool& created) {
+        const auto [it, inserted] = map_.try_emplace(price);
+        created = inserted;
+        return it->second;
+    }
+    void erase(Price4 price) { map_.erase(price); }
+    [[nodiscard]] std::size_t size() const noexcept { return map_.size(); }
+    template <typename F>
+    void for_each_best_first(std::size_t max_levels, F&& f) const {
+        std::size_t n = 0;
+        auto visit = [&](auto first, auto last) {
+            for (auto it = first; it != last && (max_levels == 0 || n < max_levels); ++it, ++n) {
+                f(it->first, it->second);
+            }
+        };
+        if (side_ == Side::Buy) {
+            visit(map_.rbegin(), map_.rend());
+        } else {
+            visit(map_.begin(), map_.end());
+        }
+    }
+
+private:
+    Side side_;
+    LevelMap map_;
+};
+#else
+// Default: a contiguous vector of (rank, Level*) sorted by rank, where rank is the price for
+// bids and UINT32_MAX - price for asks, so the BEST level of either side is at the back.
+// Lookups are binary searches over contiguous memory; inserting or removing a level near the
+// top of the book moves only the few entries behind it. Level objects live in a deque-based
+// pool (stable addresses) with a free list. Chosen from real-data measurements (D27).
+class SideLevels {
+public:
+    struct Storage {
+        std::deque<Level> levels;
+        std::vector<Level*> free;
+    };
+    SideLevels(Side side, Storage* storage) : side_(side), storage_(storage) {}
+
+    Level& get_or_create(Price4 price, bool& created) {
+        const std::uint32_t r = rank(price);
+        auto it = std::lower_bound(v_.begin(), v_.end(), r,
+                                   [](const Entry& e, std::uint32_t key) { return e.rank < key; });
+        if (it != v_.end() && it->rank == r) {
+            created = false;
+            return *it->level;
+        }
+        Level* level = nullptr;
+        if (!storage_->free.empty()) {
+            level = storage_->free.back();
+            storage_->free.pop_back();
+            *level = Level{};
+        } else {
+            level = &storage_->levels.emplace_back();
+        }
+        v_.insert(it, Entry{r, level});
+        created = true;
+        return *level;
+    }
+    void erase(Price4 price) {
+        const std::uint32_t r = rank(price);
+        auto it = std::lower_bound(v_.begin(), v_.end(), r,
+                                   [](const Entry& e, std::uint32_t key) { return e.rank < key; });
+        if (it == v_.end() || it->rank != r) {
+            throw std::logic_error("ITCH book: erasing a missing price level");
+        }
+        storage_->free.push_back(it->level);
+        v_.erase(it);
+    }
+    [[nodiscard]] std::size_t size() const noexcept { return v_.size(); }
+    template <typename F>
+    void for_each_best_first(std::size_t max_levels, F&& f) const {
+        std::size_t n = 0;
+        for (auto it = v_.rbegin(); it != v_.rend() && (max_levels == 0 || n < max_levels);
+             ++it, ++n) {
+            f(price_of(it->rank), *it->level);
+        }
+    }
+
+private:
+    struct Entry {
+        std::uint32_t rank;
+        Level* level;
+    };
+    [[nodiscard]] std::uint32_t rank(Price4 p) const noexcept {
+        return side_ == Side::Buy ? p : UINT32_MAX - p;
+    }
+    [[nodiscard]] Price4 price_of(std::uint32_t r) const noexcept {
+        return side_ == Side::Buy ? r : UINT32_MAX - r;
+    }
+    Side side_;
+    Storage* storage_;
+    std::vector<Entry> v_;
+};
+#endif
+
+struct Book {
+    explicit Book(SideLevels::Storage* storage)
+        : bids(Side::Buy, storage), asks(Side::Sell, storage) {}
+    SideLevels bids;
+    SideLevels asks;
+    SideLevels& side(Side s) noexcept { return s == Side::Buy ? bids : asks; }
+    const SideLevels& side(Side s) const noexcept { return s == Side::Buy ? bids : asks; }
 };
 
 struct Node {
@@ -158,8 +271,10 @@ private:
     std::unordered_map<OrderRef, std::uint32_t> map_;
 };
 using Index = StdOrderIndex;
+#elif defined(ENGINEX_ITCH_HASH_INDEX)
+using Index = OrderIndex;  // A/B: open-addressing hash table only
 #else
-using Index = OrderIndex;
+using Index = PagedIndex;  // default (D27)
 #endif
 
 struct DirectoryEntry {
@@ -170,7 +285,9 @@ struct DirectoryEntry {
 }  // namespace
 
 struct BookBuilder::Impl {
-    NodeArena level_arena;  // declared first: destroyed after the books that use it
+    SideLevels::Storage level_storage;  // declared first: destroyed after the books using it
+    std::uint64_t levels_created = 0;
+    std::uint64_t levels_removed = 0;
     std::vector<Node> pool;
     std::vector<std::uint32_t> free_slots;
     Index index;
@@ -180,7 +297,7 @@ struct BookBuilder::Impl {
     Book& book(std::uint16_t locate) {
         auto& b = books[locate];
         if (!b) {
-            b = std::make_unique<Book>(&level_arena);
+            b = std::make_unique<Book>(&level_storage);
         }
         return *b;
     }
@@ -203,7 +320,9 @@ struct BookBuilder::Impl {
             slot = static_cast<std::uint32_t>(pool.size());
             pool.emplace_back();
         }
-        Level& level = book(locate).side(side)[price];
+        bool created = false;
+        Level& level = book(locate).side(side).get_or_create(price, created);
+        levels_created += created ? 1U : 0U;
         Node& n = pool[slot];
         n.ref = ref;
         n.level = &level;
@@ -242,6 +361,7 @@ struct BookBuilder::Impl {
         --level.count;
         if (level.count == 0) {
             books[n.locate]->side(n.side).erase(n.price);  // invalidates `level`
+            ++levels_removed;
         }
         index.erase(n.ref);
         n.level = nullptr;
@@ -260,15 +380,19 @@ struct BookBuilder::Impl {
     }
 };
 
-#ifdef ENGINEX_ITCH_STD_INDEX
+#if defined(ENGINEX_ITCH_STD_INDEX)
 const char* const kOrderIndexName = "std_unordered_map";
-#else
+#elif defined(ENGINEX_ITCH_HASH_INDEX)
 const char* const kOrderIndexName = "open_addressing";
-#endif
-#ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
-const char* const kLevelAllocName = "std_allocator";
 #else
-const char* const kLevelAllocName = "node_arena";
+const char* const kOrderIndexName = "paged_direct";
+#endif
+#if !defined(ENGINEX_ITCH_MAP_LEVELS)
+const char* const kLevelAllocName = "sorted_vector";
+#elif defined(ENGINEX_ITCH_STD_LEVEL_ALLOC)
+const char* const kLevelAllocName = "map_std_allocator";
+#else
+const char* const kLevelAllocName = "map_node_arena";
 #endif
 
 std::string_view to_string(Anomaly a) noexcept {
@@ -322,6 +446,8 @@ ApplyOutcome BookBuilder::apply(const Message& m) {
             ++stats_.anomalies[static_cast<std::size_t>(info)];
         }
         stats_.live_orders = im.index.size();
+        stats_.levels_created = im.levels_created;
+        stats_.levels_removed = im.levels_removed;
         stats_.peak_live_orders = std::max(stats_.peak_live_orders, stats_.live_orders);
         return ApplyOutcome{ApplyStatus::Applied, info};
     };
@@ -496,14 +622,12 @@ TopOfBook BookBuilder::top(std::uint16_t locate) const {
     if (!b) {
         return t;
     }
-    if (!b->bids.empty()) {
-        const auto& [price, level] = *b->bids.rbegin();
+    b->bids.for_each_best_first(1, [&](Price4 price, const Level& level) {
         t.bid = LevelView{price, level.shares, level.count};
-    }
-    if (!b->asks.empty()) {
-        const auto& [price, level] = *b->asks.begin();
+    });
+    b->asks.for_each_best_first(1, [&](Price4 price, const Level& level) {
         t.ask = LevelView{price, level.shares, level.count};
-    }
+    });
     return t;
 }
 
@@ -511,18 +635,8 @@ namespace {
 
 // Visits levels of one side best-first.
 template <typename F>
-void for_each_level(const LevelMap& levels, Side side, std::size_t max_levels, F&& f) {
-    std::size_t n = 0;
-    auto visit = [&](auto first, auto last) {
-        for (auto it = first; it != last && (max_levels == 0 || n < max_levels); ++it, ++n) {
-            f(it->first, it->second);
-        }
-    };
-    if (side == Side::Buy) {
-        visit(levels.rbegin(), levels.rend());
-    } else {
-        visit(levels.begin(), levels.end());
-    }
+void for_each_level(const SideLevels& levels, Side, std::size_t max_levels, F&& f) {
+    levels.for_each_best_first(max_levels, std::forward<F>(f));
 }
 
 }  // namespace
@@ -636,9 +750,23 @@ std::optional<std::string> BookBuilder::check_invariants() const {
             continue;
         }
         for (const Side side : {Side::Buy, Side::Sell}) {
-            for (const auto& [price, level] : im.books[locate]->side(side)) {
+            std::optional<std::string> problem;
+            std::optional<Price4> previous_price;
+            im.books[locate]->side(side).for_each_best_first(0, [&](Price4 price,
+                                                                    const Level& level) {
+                if (problem) {
+                    return;
+                }
+                // Best-first order must be strictly decreasing for bids, increasing for asks.
+                if (previous_price && (side == Side::Buy ? price >= *previous_price
+                                                         : price <= *previous_price)) {
+                    problem = "levels out of order at price " + std::to_string(price);
+                    return;
+                }
+                previous_price = price;
                 if (level.count == 0) {
-                    return "empty level kept at price " + std::to_string(price);
+                    problem = "empty level kept at price " + std::to_string(price);
+                    return;
                 }
                 std::uint64_t shares = 0;
                 std::uint32_t count = 0;
@@ -647,19 +775,25 @@ std::optional<std::string> BookBuilder::check_invariants() const {
                     const Node& n = im.pool[s];
                     if (n.prev != prev || n.level != &level || n.price != price ||
                         n.side != side || n.locate != locate || n.shares == 0) {
-                        return "corrupt order node for ref " + std::to_string(n.ref);
+                        problem = "corrupt order node for ref " + std::to_string(n.ref);
+                        return;
                     }
                     if (im.index.find(n.ref) != s) {
-                        return "index does not point at ref " + std::to_string(n.ref);
+                        problem = "index does not point at ref " + std::to_string(n.ref);
+                        return;
                     }
                     shares += n.shares;
                     ++count;
                     prev = s;
                 }
                 if (prev != level.tail || shares != level.shares || count != level.count) {
-                    return "level totals disagree at price " + std::to_string(price);
+                    problem = "level totals disagree at price " + std::to_string(price);
+                    return;
                 }
                 linked += count;
+            });
+            if (problem) {
+                return problem;
             }
         }
     }
