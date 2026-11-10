@@ -168,7 +168,7 @@ Three adversarial property tests were also added in the sprint:
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass (R3, commit `418d247`) |
-| macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | Release, Debug and Debug + UBSan: 516/516 each at `383ca9e`; earlier 486/486 in each at `63a2475`. GCC/ASan/TSan not re-run for the sprint (see below) |
+| macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | Release, Debug and Debug + UBSan (`-fno-sanitize-recover`): 519/519 each at `f8f605a`; 516/516 each at `383ca9e`; earlier 486/486 in each at `63a2475`. GCC/ASan/TSan not re-run for the sprint (see below) |
 | macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Debug + hardened libc++ (`cmake --preset hardened`: `_LIBCPP_HARDENING_MODE_DEBUG`, bounds-checked containers, spans and iterators) | 516/516 at `7a65a1a` + preset; one real day (21 051 558 messages) replayed at level-vector limits 8192 and 2 with no assertion and the Release state hash; `tools/exchange_pymodel.py` against the hardened binary: 4 × 50 000 commands, 20 × 3 000 in a 5-tick crossing band, 3 × 2 000 over TCP with journal and restart, all agreeing; fuzz: 160 000 standalone inputs (4 seeds × 40 000, ≈ 6 ms per input in this Debug build), no invariant violated, no assertion |
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
 | Linux (Docker `ubuntu:24.04`, aarch64) | GCC 13.3.0 | Debug | 375/375 |

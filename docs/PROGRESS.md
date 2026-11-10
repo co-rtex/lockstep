@@ -206,7 +206,8 @@ Commands and results (latest):
   516/516 passed (commit `383ca9e`; 1 opt-in real-data test skips without its file). Debug
   build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
   -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 516/516 at `383ca9e`. UBSan
-  (below): 516/516 at `383ca9e`, no runtime errors.
+  (below): 516/516 at `383ca9e`, no runtime errors. Re-run at `f8f605a` after the day's
+  fixes: Release, Debug and UBSan 519/519 each.
 * `python3 tools/mutation_check.py`: 56/56 mutants killed (≈ 5.8 min, release build, commit `c7b0fc6`); re-run at `9908922` (after the day's fixes to book, server and CLI): 56/56 again (5.9 min).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
