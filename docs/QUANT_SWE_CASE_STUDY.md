@@ -83,7 +83,8 @@ are in-process and single-threaded; none is a wire latency.
   specs and compared output for output:
   * an ITCH decoder (every field of 63.7 M real messages);
   * an ITCH book (every price level of three real days);
-  * an exchange model (every response of 1 M random commands).
+  * an exchange model (every response of 1 M random commands, and over TCP with a journal
+    across a server restart, where resent commands must replay their original results).
 
   Writing the exchange model was itself a spec check. It first reported a retry's *current*
   order status; the spec says a retry returns the original result, which is what the C++
