@@ -392,10 +392,26 @@ Whole-run medians are nearly insensitive to the starting cache state. Each trial
 book from empty and processes 1–2 M messages, so the cold start is amortized over the run.
 The cold start does show up in the worst-case message (max) and in run-to-run spread. The
 cache effect that matters for these workloads is the *working-set size*: the symbol-count
-sweep above (29 → 71 ns/msg) and the oversized index (46.7 ns/msg). Measuring a book that is
-already large when it goes cold (for example, after an idle period mid-session) would need a
-pre-built book and per-message samples around the first messages after the flush. That has
-not been done.
+sweep above (29 → 71 ns/msg) and the oversized index (46.7 ns/msg).
+
+**A large book that goes cold.** The case that does matter is a book already built when its
+memory leaves the caches, for example after an idle period mid-session. `--cold-probe 2000`
+builds the book from all but the last 2 000 messages (untimed, ≈ 89 k live orders). It then
+times those 2 000 one by one, once directly (warm) and once after a 64 MiB flush (cold), 7
+repetitions each, medians. Commit `f516b0516c93`; console:
+[`itch-cold-probe-macos-m3.txt`](../benchmarks/results/itch-cold-probe-macos-m3.txt).
+Samples include one timer call and are quantized to 41.7 ns, so use the means and the tails.
+
+| symbols | warm mean | cold mean | warm p99 | cold p99 | warm p99.9 | cold p99.9 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 8 | 25.9 ns | 67.0 ns | 83 ns | 250 ns | 84 ns | 459 ns |
+| 5000 | 65.4 ns | 188.4 ns | 209 ns | 625 ns | 292 ns | 875 ns |
+
+The first messages after the book goes cold cost about 2.6–2.9× more on average and 3× more
+at p99. Each one misses on the index slot, the order node and the level node. This is the
+measurable reason latency-sensitive systems keep hot data warm (for example by touching it
+during idle time). Nothing like that is implemented here; this only quantifies the cost on
+this machine.
 
 **Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
 1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
