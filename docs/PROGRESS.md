@@ -203,10 +203,10 @@ pushed, so GitHub CI has not run on them.
 Commands and results (latest):
 
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
-  511/511 passed (commit `a02372f`; 1 opt-in real-data test skips without its file). Debug
+  516/516 passed (commit `383ca9e`; 1 opt-in real-data test skips without its file). Debug
   build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
-  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 509/509 at `da59f3c` (54 s). UBSan
-  (below): 509/509 at `da59f3c`, no runtime errors. (The two tests added since, `exchange_pymodel_*`, are Python tools driving the release binary.)
+  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 516/516 at `383ca9e`. UBSan
+  (below): 516/516 at `383ca9e`, no runtime errors.
 * `python3 tools/mutation_check.py`: 56/56 mutants killed (≈ 5.8 min, release build, commit `c7b0fc6`).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
