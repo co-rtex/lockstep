@@ -57,8 +57,10 @@ are in-process and single-threaded; none is a wire latency.
   Findings included strict-replay counters drifting after a stop, mirror exceptions escaping
   a session, partial application of a malformed update, and unclamped memory in the paged
   index.
-* **Mutation checks prove the tests can fail.** A replace that keeps priority fails every
-  differential seed. A sequencer that skips gaps fails 5 of 13 transport tests.
+* **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
+  kills 33/33 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
+  journal and server. Its first run found a real test gap: a duplicate of an already-buffered
+  MoldUDP64 message was counted against the buffer bound.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 8 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
