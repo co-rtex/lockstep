@@ -172,6 +172,30 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
     crosses rather than rejecting them, and the replay output now shows the trading state
     next to each crossed book.
 
+12. **Putting MoldUDP64 on a real socket** (D29, D30). The simulator had shown that the
+    sequencing logic is right. Real UDP on loopback showed where it was slow, in this order:
+    * *A retransmission storm.* The first receiver asked for every hole every round, so
+      answers still in flight were requested again. A lossless run took 305 s and 1.8 M
+      requests before failing (console). The fix is a 50 ms retry timer per requested range.
+      A later review showed that keying it by hole start let a partly answered hole look new;
+      the `RequestPlanner` keys it by range and is unit-tested.
+    * *Syscall costs.* `enginex_udp_syscall_bench` measured an unconnected `sendto()` at
+      ≈ 69 µs against ≈ 1.7 µs for a connected `send()` here. The hot paths moved to connected
+      sockets, with per-peer answer sockets sharing the request port. `recv()` costs
+      ≈ 12.8 µs, which bounds one receiver thread near 75 k datagrams/s.
+    * *The reorder buffer was the cliff.* `enginex_mold_bench` showed 121–147 ns/msg behind a
+      hole against 4 ns in order, because every buffered message cost a `std::map` node plus
+      a vector. A receiver under steady loss is always behind a hole, so it fell behind the
+      feed and fail-stopped. A deque window over one copy per packet, with an explicit map of
+      holes, brought this to 20–21 ns/msg. The set-model differential test reported identical
+      counts before and after, which is what made the rewrite safe. A security review then
+      found that a packet of duplicates could pin a large copy for a few bytes of payload, so
+      copies now count against the byte bound by the capacity they hold.
+
+    Result: all three real sample days arrive as the exact book at 50 k packets/s with 5 % live
+    and 10 % retransmission loss (`mold-udp-loopback-macos-m3.csv`). Faster than ≈ 70 k
+    packets/s the receiver falls behind and fail-stops, never skipping.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every
@@ -182,6 +206,12 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
   was `poll()`.
 * A README percentage ("13–21 %") did not match the CSV rows (11 % and 21 %). It was caught
   while cross-checking and corrected in its own commit.
+* A benchmark's `git_sha` was captured at CMake configure time, so reused build directories
+  labelled results with an older commit (a run at `f365234` said `776cdec`). The revision is now
+  generated at build time with a `-dirty` flag; older rows carry a documented caveat.
+* A verification claim ("UBSan 500/500") was committed before its output was read. That run had
+  compiled a mutant left in the tree by a concurrent mutation check and failed 18 tests. A clean
+  rebuild passed, and the harness now warns against concurrent builds.
 
 ## 8. Limits and next steps
 
