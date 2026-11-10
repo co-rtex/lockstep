@@ -289,6 +289,9 @@ were downloaded, with an HTTP range request (SHA-256 of those bytes
 decompressed locally (676 MB). It is used for validation and measurement on this machine
 only; it is not committed, redistributed, or required by any build or test.
 
+`scripts/real_data_check.sh` does all of this in one command: range download, SHA-256 check,
+decompression, strict replay, reference-model differential and benchmark. Done by hand:
+
 ```bash
 curl -r 0-268435455 -o prefix.gz https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz
 python3 -c "import zlib,sys; d=zlib.decompressobj(31); sys.stdout.buffer.write(d.decompress(open('prefix.gz','rb').read()))" > prefix.itch
