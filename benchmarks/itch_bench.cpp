@@ -61,6 +61,9 @@ struct Options {
     std::uint16_t symbols = 8;
     std::size_t trials = 7;
     bool latency = true;
+    // Before every timed pass, stream through this many MiB (0 = off) so the workload and book
+    // structures start outside the CPU caches ("CPU-cache-cold"; the page cache stays warm).
+    std::size_t flush_mib = 0;
     std::string out;
     std::string only;  // run a single measurement
     std::size_t reserve = 0;  // BookBuilder expected_orders hint (0 = none)
@@ -188,12 +191,30 @@ Trial run_pass(const std::string& m, const Workload& w, bool with_latency, std::
     return t;
 }
 
+// Evicts CPU caches by writing and reading a buffer much larger than the last-level cache.
+void flush_caches(std::size_t mib) {
+    if (mib == 0) {
+        return;
+    }
+    static std::vector<std::uint64_t> junk;
+    junk.resize(mib * 1024 * 1024 / sizeof(std::uint64_t));
+    std::uint64_t sum = 0;
+    for (std::size_t i = 0; i < junk.size(); ++i) {
+        junk[i] += i;
+    }
+    for (const std::uint64_t v : junk) {
+        sum += v;
+    }
+    volatile std::uint64_t sink = sum;
+    (void)sink;
+}
+
 std::string csv_header() {
     return "started_utc,git_sha,compiler,build_type,system,measurement,seed,messages,symbols,"
            "file_bytes,trial,elapsed_ns,msgs_per_s,ns_per_msg,mib_per_s,allocs,alloc_bytes,"
            "lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,"
            "timer_tick_ns,peak_rss_kib,live_orders,peak_live_orders,state_hash_prefix,order_index,"
-           "reserve,level_alloc";
+           "reserve,level_alloc,flush_cache_mib";
 }
 
 void write_row(std::ostream& out, const std::string& started, const std::string& m,
@@ -203,7 +224,7 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
     const int len = std::snprintf(
         buf, sizeof buf,
         "%s,%s,%s %s,%s,%s,%s,%llu,%zu,%u,%zu,%s,%llu,%.0f,%.2f,%.1f,%llu,%llu,%.1f,%llu,%llu,%llu,"
-        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s\n",
+        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s,%zu\n",
         started.c_str(), bi::kGitSha, bi::kCompilerId, bi::kCompilerVersion, bi::kBuildType,
         bi::kSystem, m.c_str(), static_cast<unsigned long long>(o.seed), w.messages.size(),
         static_cast<unsigned>(o.symbols), w.file.size(), t.trial.c_str(),
@@ -218,7 +239,7 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
         static_cast<unsigned long long>(timer.min_nonzero_tick_ns),
         static_cast<unsigned long long>(rss), static_cast<unsigned long long>(t.live_orders),
         static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str(),
-        enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName);
+        enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName, o.flush_mib);
     if (len < 0 || static_cast<std::size_t>(len) >= sizeof buf) {
         throw std::runtime_error("CSV row does not fit the buffer");
     }
@@ -260,20 +281,25 @@ int run(const Options& o) {
                 "symbols, %zu bytes; %zu trials + 1 warm-up\n",
                 static_cast<unsigned long long>(o.seed), w.messages.size(), o.messages,
                 static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
-    std::printf("book reserve hint: %zu orders; order index: %s; level nodes: %s\n", o.reserve,
-                enginex::itch::kOrderIndexName, enginex::itch::kLevelAllocName);
+    std::printf("book reserve hint: %zu orders; order index: %s; level nodes: %s; cache flush "
+                "before each pass: %zu MiB\n",
+                o.reserve, enginex::itch::kOrderIndexName, enginex::itch::kLevelAllocName,
+                o.flush_mib);
     std::printf("timer: now() ~%.1f ns, smallest tick %llu ns\n", timer.mean_call_ns,
                 static_cast<unsigned long long>(timer.min_nonzero_tick_ns));
     for (const std::string m : {"itch_decode", "itch_book_apply", "itch_replay"}) {
         if (!o.only.empty() && o.only != m) {
             continue;
         }
+        flush_caches(o.flush_mib);
         Trial first = run_pass(m, w, false, o.reserve);
         first.trial = "first_pass";
         std::vector<Trial> trials;
         for (std::size_t i = 0; i < o.trials; ++i) {
+            flush_caches(o.flush_mib);
             Trial t = run_pass(m, w, false, o.reserve);
             if (o.latency && m == "itch_book_apply") {
+                flush_caches(o.flush_mib);
                 const Trial lat = run_pass(m, w, true, o.reserve);
                 if (lat.state_hash != t.state_hash) {
                     throw std::runtime_error("latency pass diverged");
@@ -400,6 +426,7 @@ int main(int argc, char** argv) {
             else if (a == "--only") o.only = value();
             else if (a == "--no-latency") o.latency = false;
             else if (a == "--reserve") o.reserve = parse_u64(value());
+            else if (a == "--flush-cache-mib") o.flush_mib = parse_u64(value());
             else throw std::invalid_argument("unknown option " + a);
         }
         if (o.trials == 0 || o.symbols == 0) {
