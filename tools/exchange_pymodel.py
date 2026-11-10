@@ -194,18 +194,102 @@ def compare(exe, seed, n):
     return stats
 
 
+def reply_view(have):
+    """A server reply (ack/error) in the model's response format."""
+    if have["type"] == "error":
+        return {"request_id": have.get("request_id"), "status": "rejected", "code": have["code"]}
+    h = {"request_id": have["request_id"], "status": "accepted"}
+    h.update({k: have[k] for k in ("duplicate", "command_sequence", "order_id", "order_status")})
+    for k in ("remaining", "cancelled_quantity"):
+        if k in have:
+            h[k] = have[k]
+    h["executions"] = [{k: e[k] for k in ("execution_id", "resting_order_id", "price", "quantity")}
+                       for e in have["executions"]]
+    return h
+
+
+def compare_network(exe, seed, n, journal_dir, restart=False):
+    """The same workload over TCP: `enginex serve` (journaled when journal_dir is set) and
+    `enginex client submit`; every reply and the server's final books must match the model.
+    With restart, the server is restarted on its journal and the whole workload is sent
+    again: the model processes it twice (accepted ids now replay their original results)."""
+    rng = random.Random(seed)
+    cmds = workload(rng, n)
+    model = Model()
+    expected = [model.process(c) for c in cmds]
+    stats = one_pass(exe, seed, cmds, expected, journal_dir, model)
+    if restart:  # same journal, new server process, same commands again
+        expected = [model.process(c) for c in cmds]
+        stats = one_pass(exe, seed, cmds, expected, journal_dir, model)
+    return stats
+
+
+def one_pass(exe, seed, cmds, expected, journal_dir, model):
+    serve = [exe, "serve", "--port", "0"]
+    if journal_dir:
+        serve += ["--journal", str(pathlib.Path(journal_dir) / f"seed{seed}.exj"), "--durability", "none"]
+    srv = subprocess.Popen(serve, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        port = json.loads(srv.stdout.readline())["port"]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            for c in cmds:
+                f.write(json.dumps(c) + "\n")
+            path = f.name
+        try:
+            out = subprocess.run([exe, "client", "submit", "--port", str(port), "--input", path],
+                                 capture_output=True, text=True, timeout=300)
+        finally:
+            pathlib.Path(path).unlink()
+    finally:
+        srv.terminate()
+        rest, _ = srv.communicate(timeout=60)
+    replies = [json.loads(l) for l in out.stdout.splitlines() if l.strip()]
+    if len(replies) != len(cmds):
+        sys.exit(f"network seed {seed}: {len(replies)} replies for {len(cmds)} commands")
+    for line, (want, have) in enumerate(zip(expected, replies), start=1):
+        w = {k: v for k, v in want.items() if k != "seq_ref"}
+        if reply_view(have) != w:
+            sys.exit(f"network seed {seed}, line {line}: command {json.dumps(cmds[line - 1])}\n"
+                     f"  python: {json.dumps(w)}\n  server: {json.dumps(reply_view(have))}")
+    final = [json.loads(l) for l in rest.splitlines() if l.startswith("{")][-1]
+    if final.get("type") != "shutdown":
+        sys.exit(f"network seed {seed}: no shutdown summary")
+    for b in final["books"]:
+        for side, key in (("BUY", "bids"), ("SELL", "asks")):
+            if b[key] != model.levels(b["symbol"], side):
+                sys.exit(f"network seed {seed}: final {b['symbol']} {key} differ")
+    if final["last_command_sequence"] != model.seq or final["last_execution_sequence"] != model.exe:
+        sys.exit(f"network seed {seed}: watermarks differ")
+    return {"accepted": sum(1 for e in expected if e["status"] == "accepted"),
+            "rejected": sum(1 for e in expected if e["status"] == "rejected"),
+            "duplicates": sum(1 for e in expected if e.get("duplicate")), "executions": model.exe}
+
+
 def main():
     args = sys.argv[1:]
+    restart = "--restart" in args  # implies --network --journal
+    network = "--network" in args or restart
+    journal = "--journal" in args or restart
+    args = [a for a in args if a not in ("--network", "--journal", "--restart")]
     opts = {"--seeds": "20", "--commands": "3000", "--enginex": str(ROOT / "build" / "release" / "enginex")}
     for k in list(opts):
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
     total = {"accepted": 0, "rejected": 0, "duplicates": 0, "executions": 0}
-    for seed in range(1, int(opts["--seeds"]) + 1):
-        for k, v in compare(opts["--enginex"], seed, int(opts["--commands"])).items():
-            total[k] += v
-    print(f"exchange_pymodel: {opts['--seeds']} seeds x {opts['--commands']} commands agree line by line "
-          f"and in final books ({json.dumps(total)})")
+    with tempfile.TemporaryDirectory() as jdir:
+        for seed in range(1, int(opts["--seeds"]) + 1):
+            if network:
+                stats = compare_network(opts["--enginex"], seed, int(opts["--commands"]),
+                                        jdir if journal else None, restart)
+            else:
+                stats = compare(opts["--enginex"], seed, int(opts["--commands"]))
+            for k, v in stats.items():
+                total[k] += v
+    mode = ("over TCP, journaled, restarted and resent" if restart else
+            "over TCP (journaled)" if network and journal else
+            "over TCP" if network else "via simulate")
+    print(f"exchange_pymodel: {opts['--seeds']} seeds x {opts['--commands']} commands {mode} agree "
+          f"line by line and in final books ({json.dumps(total)})")
     return 0
 
 

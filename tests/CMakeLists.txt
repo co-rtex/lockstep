@@ -45,6 +45,11 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
                      --seeds 10 --commands 2000 --enginex $<TARGET_FILE:enginex>)
     set_tests_properties(exchange_pymodel_differential PROPERTIES TIMEOUT 120 LABELS "cli")
+    # The same model over TCP with a journal: serve, submit, restart on the journal, resubmit.
+    add_test(NAME exchange_pymodel_network_restart
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
+                     --restart --seeds 5 --commands 1000 --enginex $<TARGET_FILE:enginex>)
+    set_tests_properties(exchange_pymodel_network_restart PROPERTIES TIMEOUT 180 LABELS "cli;net;recovery")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict
