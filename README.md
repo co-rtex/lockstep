@@ -49,9 +49,9 @@ runs).
 | ITCH 5.0 decoder: all 23 message types, bounds-checked big-endian fields, incremental length-prefixed file framing | ITCH | **Implemented, tested** (golden bytes, Python-packed fixtures, malformed/truncated input) |
 | ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
-| MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels and over loopback UDP (next row) |
+| MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels and over loopback UDP (UDP row below) |
 | Validation on real Nasdaq data: three public sample days (2019-01-30, 2019-03-27, 2020-01-30), ≈ 21 M messages each through the 09:30 open; zero decode errors, zero book anomalies, every live order matching the reference model; crossed books only in halted/paused symbols | ITCH | **Verified locally** (data not redistributed; `scripts/real_data_check.sh`; docs/itch.md) |
-| MoldUDP64 over real UDP (`itch mold-send` / `mold-recv`): paced feed, re-request answers, receiver gap recovery, exact book on a real sample day at 50 k packets/s with 5 % loss | ITCH | **Implemented, tested on loopback only** (`scripts/mold_udp_demo.sh`) |
+| MoldUDP64 over real UDP (`itch mold-send` / `mold-recv`): paced feed, re-request answers, receiver gap recovery; exact book on all three real sample days at 50 k packets/s with 5 % live and 10 % retransmission loss | ITCH | **Implemented, tested on loopback only** (`scripts/mold_udp_demo.sh`) |
 | UDP multicast, a separate re-request server, SoupBinTCP, full-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
 The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
