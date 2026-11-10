@@ -510,6 +510,33 @@ nodes per chunk, never moved) removed it. The worst sample is now 97–168 µs a
 message in each trial (consistent with OS noise) and apply runs at 50.4 ns/msg (commit after
 `55b199d`).
 
+**Per-message latency on real data** (`dd78a8d`,
+[`itch-real-latency-macos-m3.csv`](../benchmarks/results/itch-real-latency-macos-m3.csv); book
+apply over pre-decoded messages; each sample includes one ≈ 15 ns `now()` call; medians of 5
+trials):
+
+| day | ns/msg | p50 | p90 | p99 | p99.9 | max |
+|---|---:|---:|---:|---:|---:|---:|
+| 2019-01-30 | 45.1 | 42 ns | 84 ns | 292 ns | 458 ns | 35 µs |
+| 2019-03-27 | 43.3 | 41 ns | 84 ns | 333 ns | 541 ns | 36 µs |
+| 2020-01-30 | 46.8 | 42 ns | 84 ns | 292 ns | 500 ns | 39 µs |
+
+The maximum is more sensitive than the percentiles: single trials still show 0.2–2 ms samples
+at varying messages (OS noise on a shared laptop; load average ≈ 4.5 during these runs).
+
+*A second structural sample.* After the chunked pool, the largest sample on 2019-03-27 still
+fell on the same message (index 219 328) in most trials: the day's first add order. Allocating
+a 64 Ki-node chunk with `make_unique<Node[]>` value-initialized ≈ 3 MB inside that one add
+(and in the one that opens each later chunk). Chunks are now raw storage, and each node is
+constructed when handed out. Three interleaved rounds of 5 trials against a control binary
+([`itch-node-chunk-ab-macos-m3.txt`](../benchmarks/results/itch-node-chunk-ab-macos-m3.txt) and
+`.csv`) show:
+* That sample was 91.8–102.4 µs before and is 30.2–38.5 µs after. The remainder is first-use
+  allocation of the other structures. Using 4 Ki-node chunks did not change it.
+* The control also showed 138–325 µs at message 20 386 914 in each process's first trial.
+  This never appeared with the change.
+* Mean, p99 and p99.9 are unchanged.
+
 **How the data drove the changes.** The real per-type costs (adds ≈ 97 ns, deletes ≈ 79 ns,
 replaces ≈ 182 ns, timer included) were 3–4× the synthetic ones. New level counters showed
 43 % of adds and replaces opening a level, against 1.6 % in the synthetic stream, with books

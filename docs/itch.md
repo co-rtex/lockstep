@@ -263,7 +263,9 @@ synthetic streams do.
 * Orders live in a chunked pool (64 Ki nodes per chunk) with a free list. Growth allocates
   a chunk and never moves existing nodes. A `std::vector<Node>` doubling past ≈ 1 M live
   orders used to copy ≈ 50 MB inside one message (a deterministic ≈ 10 ms stall on the real
-  sample). Each price level holds an intrusive doubly linked FIFO of 32-bit pool indices.
+  sample). Chunks are raw storage and each node is constructed when it is handed out:
+  value-initializing a whole chunk cost ≈ 90–100 µs inside the add that needed it (benchmarks.md).
+  Each price level holds an intrusive doubly linked FIFO of 32-bit pool indices.
   `apply()` gives no exception guarantee: it throws only on allocation failure, after which
   the builder must be discarded. Catching and undoing inside the hot path was measured at
   ≈ 0.7 ns per message (≈ 3 %) and was removed. The chunked pool itself costs ≈ 1–1.6 ns per
