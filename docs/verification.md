@@ -110,15 +110,31 @@ hand to probe specific rules, so the score is not a measure of coverage. It comp
 
 ### Hostile command-line arguments
 
-`python3 tools/cli_arg_sweep.py` (≈ 2.5 min) gives every value flag of every offline
-subcommand, and the client commands against a closed port, 21 hostile values. These include
-empty, non-numeric, negative, `2^64`, `2^32`, non-ASCII and 5 000 bytes. The sweep fails if
-any run dies on a signal, aborts, prints an uncaught-exception banner, or exits outside 0–4.
+`python3 tools/cli_arg_sweep.py` (≈ 3.5 min) gives 21 hostile values to every value flag of:
+* every offline subcommand,
+* `serve`,
+* `itch mold-recv`,
+* the client commands, run against a closed port.
+
+The values include empty, non-numeric, negative, `2^64`, `2^32`, non-ASCII and 5 000 bytes. The
+sweep fails if any run dies on a signal, aborts, prints an uncaught-exception banner, or exits
+outside 0–4.
+
 Its first run (861 runs) found two arguments that allocated until the OS killed the process:
 `itch replay --expected-orders 2^64−1` and `benchmark --orders 2^32`. Both are now bounded
-(`87a883b`; test `ItchBook.ExpectedOrdersAboveCapacityIsRejected`), and the sweep passes.
-Requests for billions of trials or generated messages run as asked; the sweep stops them
-after 20 s and lists them.
+(`87a883b`; test `ItchBook.ExpectedOrdersAboveCapacityIsRejected`).
+
+Reviewing which hostile `serve` values were *accepted* found a defect the sweep itself cannot
+detect, because it is a hang rather than a crash. With `--send-timeout-ms 0`, or `2^64−1`,
+which wrapped negative, the writer had no send timeout. One subscriber that stopped reading
+then blocked graceful shutdown indefinitely: the server was still running 15 s after SIGTERM,
+against 0.2 s at the default. The server now refuses non-positive timeouts (test
+`Server.RefusesNonPositiveTimeouts`), and every `*-ms` flag is range-checked (`788e1b1`).
+
+At that commit the sweep passes: 1 302 runs, 0 suspicious. Requests for billions of trials or
+generated messages run as asked; the sweep stops them after 20 s and lists them. Capacity flags
+such as `--max-clients` still accept any positive value: that is the operator's choice, not
+validated.
 
 ## Test matrix (ITCH 5.0 market data)
 

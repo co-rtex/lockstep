@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """CLI robustness sweep: hostile values (empty, non-numeric, negative, overflowing, huge,
-non-ASCII, 5 000 bytes) for every value flag of every offline subcommand, plus the client
-commands against a closed port. Fails if any run dies on a signal (including an OS kill
-after unbounded allocation), aborts, prints an uncaught-exception banner, or exits with a
-code outside 0-4. Runs that legitimately take long (billions of trials or generated messages)
-are stopped after 20 s and listed, not failed. Every command runs inside a temporary
-directory, because some flags take the hostile value as an output file name.
+non-ASCII, 5 000 bytes) for every value flag of every offline subcommand, `serve`, the
+client commands against a closed port, and `itch mold-recv`. Fails if any run dies on a
+signal (including an OS kill after unbounded allocation), aborts, prints an uncaught-exception
+banner, or exits with a code outside 0-4. Runs that legitimately take long (billions of trials
+or generated messages) are stopped after 20 s and listed, not failed; a `serve` still running
+after 1 s has started and is stopped. Every command runs inside a temporary directory,
+because some flags take the hostile value as an output file name.
 
-  python3 tools/cli_arg_sweep.py [--enginex build/release/enginex]   (about 2-3 minutes)
+  python3 tools/cli_arg_sweep.py [--enginex build/release/enginex]   (about 3-4 minutes)
 """
 import os
 import pathlib
@@ -51,10 +52,20 @@ CMDS = [
     (["client", "snapshot", "--port", "1"], ["--port", "--host", "--depth", "--symbol"]),
     (["client", "submit", "--port", "1", "--input", "/dev/null"],
      ["--port", "--host", "--timeout-ms"]),
+    (["client", "subscribe", "--port", "1"], ["--count", "--duration-ms", "--slow-ms"]),
+    (["client", "mirror", "--port", "1"], ["--duration-ms", "--verify-ms", "--max-resubscribes"]),
+    (["itch", "mold-recv", "--port", "0", "--request-port", "1", "--idle-timeout-ms", "200"],
+     ["--idle-timeout-ms", "--request-interval-ms", "--max-buffered-messages", "--session"]),
+    # A valid server runs until stopped: still running after 1 s counts as started.
+    (["serve", "--port", "0"], ["--port", "--host", "--max-clients", "--ingress-capacity",
+                                "--outbound-capacity", "--max-batch", "--send-timeout-ms",
+                                "--outbound-byte-limit", "--durability", "--symbols",
+                                "--journal"]),
 ]
 OK_CODES = {0, 1, 2, 3, 4}
 bad, timeouts, runs = [], [], 0
 for base, flags in CMDS:
+    limit = 1 if base[0] == "serve" else 20
     for flag in flags:
         for v in VALUES:
             argv = list(base)
@@ -66,10 +77,11 @@ for base, flags in CMDS:
                 argv += ["--checkpoint-out", os.path.join(TMP, "sweep_c.jsonl")]
             runs += 1
             try:
-                p = subprocess.run([EXE] + argv, capture_output=True, text=True, timeout=20,
+                p = subprocess.run([EXE] + argv, capture_output=True, text=True, timeout=limit,
                                    errors="replace", cwd=TMP)
             except subprocess.TimeoutExpired:
-                timeouts.append(" ".join(argv[:2] + [flag, repr(v)[:30]]))
+                if limit == 20:
+                    timeouts.append(" ".join(argv[:2] + [flag, repr(v)[:30]]))
                 continue
             err = p.stderr
             if (p.returncode not in OK_CODES or "terminate" in err or "libc++abi" in err
