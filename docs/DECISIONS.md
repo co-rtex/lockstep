@@ -318,3 +318,22 @@ differential test reports identical counts. *Rejected:* storing whole packets ke
 sequence, because overlapping retransmissions with different packet boundaries would need
 interval logic in the duplicate check.
 
+## D31. Exchange core: request-id index as a keyed flat table over a record deque
+Idempotency keeps every accepted command's record for the life of the process (retries must
+return the original result, also after a restart). Measured: the per-command cost of `mixed`
+grew from 108 ns at 100 k commands to 296 ns at 3 M, with a tiny book. Reserving capacity did
+not help, while an isolated probe put a miss in the node-based `unordered_map` at ≈ 75 ns
+against ≈ 23 ns for a flat table. Records now sit in a `std::deque` indexed by sequence.
+Stable references remove the separate `by_sequence_` pointer vector and the duplicated key
+string. `request_id` → record is an open-addressing table of 8-byte slots
+`{32-bit fingerprint, index + 1}` at load ≤ ½. Probes start from the fingerprint, so growth
+copies slots without re-hashing strings, and a full string compare confirms every match. The
+index grows before a record is appended, and placing a slot cannot fail, so no record is ever
+left unindexed. A security review then noted that client-chosen ids with an unkeyed hash
+allow probe-cluster flooding (the old map had the same exposure). The fingerprint is
+SipHash-2-4 with a random key per instance. Placement depends on the key, but results never
+do: a test runs two machines with different keys in lockstep, and the state hashes are
+identical across all benchmark rows. Result: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196,
+p99 roughly halved, RSS −15 % (benchmarks.md). *Rejected:* `reserve()` (no effect on the
+misses), a plain `std::hash` fingerprint (floodable), and evicting old ids (would break
+idempotency across the session, which the spec requires).

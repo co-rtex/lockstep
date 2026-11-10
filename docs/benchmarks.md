@@ -166,6 +166,39 @@ engine. On the same commit, `--mode recovery --scenario mixed --orders 100000 --
 from 3.93 M records/s (std build) to 4.27 M (pool build), +8.5 %, with the same state hash
 (console values; not added to a CSV).
 
+## Core: the request-id index (idempotency history), measured by history size
+
+*Finding.* The core's per-command cost grew with the number of commands processed. On `mixed`
+(seed 42, medians of 3) it was 108 ns at 100 k, 153 at 300 k, 198 at 1 M and 296 at 3 M,
+while the book never held more than a few dozen orders. The cost was in the history kept for
+idempotent retries. Every accepted command lived in a node-based
+`unordered_map<string, CommandRecord>`. Checking a new `request_id` missed DRAM about twice
+(bucket, then node). Pre-reserving the map changed nothing (262 → 256 ns at 3 M, within
+noise), which ruled out rehashing. An isolated probe measured ≈ 75 ns per miss at 3 M entries
+against ≈ 23 ns for a flat table.
+
+*Change* (`676e392`, `6f655cd`; D31). Records live in a `std::deque` by sequence. A
+`request_id` maps to its record through an open-addressing table of 8-byte slots holding a
+32-bit fingerprint and the record index. The fingerprint is SipHash-2-4 with a random key per
+state machine, so clients cannot flood one probe cluster. A full string compare confirms
+every match. Results are unchanged: identical state hashes in every row below.
+
+Interleaved A/B, control `564a427` vs `6f655cd`
+([`core-request-index-ab-macos-m3.csv`](../benchmarks/results/core-request-index-ab-macos-m3.csv)):
+
+| commands (`mixed`) | ns/cmd before → after | p99 before → after | p99.9 before → after | peak RSS |
+|---:|---:|---:|---:|---:|
+| 100 k | 108 → 94 | 292 → 208 ns | 375 → 250 ns | 34 → 32 MiB |
+| 300 k | 153 → 105 | 458 → 250 ns | 584 → 333 ns | 95 → 82 MiB |
+| 1 M | 198 → 119 | 584 → 250 ns | 750 → 333 ns | 304 → 261 MiB |
+| 3 M | 296 → 196 | 834 → 292 ns | 3.3 → 1.1 µs | 903 → 767 MiB |
+
+The other five R1 scenarios at 100 k commands gain 12–25 % throughput with lower p99
+(same CSV). The cost still grows with history, as DRAM misses on the index and records
+must. History is now capped at 2³² − 2 commands, which are rejected as `LIMIT_EXCEEDED` like
+sequence exhaustion. The p99.9 and maximum are noisy on this shared laptop (load average
+≈ 4 during these runs), and only the medians above are claimed.
+
 ## R2 results: durable acknowledgment latency (measurement 2)
 
 Same machine, Release build at commit `ceefa9f037e4`, scenario `mixed`, seed 42, medians of 5
