@@ -136,6 +136,19 @@ generated messages run as asked; the sweep stops them after 20 s and lists them.
 such as `--max-clients` still accept any positive value: that is the operator's choice, not
 validated.
 
+### Repeated runs (non-determinism)
+
+The suite has real-socket tests that depend on scheduling. A flakiness audit ran the full
+`ctest -j8` five times back to back on the loaded laptop (load average ≈ 7).
+`MoldUdp.UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook` failed in four of them.
+A diagnostic line showed the cause: the receiver buffered exactly the library default of
+65 536 messages behind the first hole of a 100 010-message feed, then fail-stopped. That is
+the designed outcome when a starved receiver cannot be refilled in time, because it never
+skips. The test now uses the CLI's 2²⁰ bound (`aba4124`). The other UDP tests use feeds of
+at most 30 000 messages, which cannot reach the bound. Afterwards, 6 consecutive full runs
+passed at load average 8.8. An earlier flake of the same test, a sender that stopped
+lingering too soon, had been fixed by raising its timeouts.
+
 ## Test matrix (ITCH 5.0 market data)
 
 Full table in [itch.md § Verification](itch.md#verification): golden bytes for all 23 types,
