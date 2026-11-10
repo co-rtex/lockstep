@@ -196,6 +196,8 @@ TEST(MoldSequencer, BufferLimitFailsInsteadOfSkipping) {
     EXPECT_EQ(q.state(), Sequencer::State::Gap);
     q.on_packet(build_packet(kS, 5, {msg(5)}), out);  // would exceed the bound
     EXPECT_EQ(q.state(), Sequencer::State::Failed);
+    EXPECT_EQ(q.fail_reason(), Sequencer::FailReason::BufferedMessages);
+    EXPECT_EQ(to_string(q.fail_reason()), "buffered_messages_bound");
     q.on_packet(build_packet(kS, 1, {msg(1)}), out);  // too late: nothing is delivered
     EXPECT_TRUE(out.seqs.empty());
 }
@@ -262,6 +264,7 @@ TEST(MoldSequencer, PacketCopiesCountAgainstTheByteBound) {
         ++sent;
     }
     EXPECT_EQ(q.state(), Sequencer::State::Failed);
+    EXPECT_EQ(q.fail_reason(), Sequencer::FailReason::BufferedBytes);
     EXPECT_LE(sent, 100U);  // ≈ 1 MiB / 12 KB packets, not thousands
     EXPECT_LT(q.stats().buffered_bytes_peak, 20'000U);  // the payload alone stayed small
     EXPECT_TRUE(out.seqs.empty());
@@ -277,6 +280,7 @@ TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
     EXPECT_EQ(q.stats().buffered_bytes_peak, 6U);
     q.on_packet(build_packet(kS, 3, {msg(3, 5)}), out);  // 11 > 10
     EXPECT_EQ(q.state(), Sequencer::State::Failed);
+    EXPECT_EQ(q.fail_reason(), Sequencer::FailReason::BufferedBytes);
 
     Sequencer::Options far;
     far.max_ahead = 100;
@@ -285,8 +289,11 @@ TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
     r.on_packet(build_packet(kS, 1, {msg(1)}), o2);
     r.on_packet(build_packet(kS, 102, {msg(9)}), o2);  // 100 ahead of next (2): still allowed
     EXPECT_EQ(r.state(), Sequencer::State::Gap);
+    EXPECT_EQ(r.fail_reason(), Sequencer::FailReason::None);
     r.on_packet(build_control(kS, 1'000'000'000, kHeartbeat), o2);  // corrupt or huge loss
     EXPECT_EQ(r.state(), Sequencer::State::Failed);
+    EXPECT_EQ(r.fail_reason(), Sequencer::FailReason::TooFarAhead);
+    EXPECT_EQ(to_string(r.fail_reason()), "too_far_ahead");
     EXPECT_EQ(o2.seqs, (std::vector<std::uint64_t>{1}));
 }
 

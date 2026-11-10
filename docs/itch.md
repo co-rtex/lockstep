@@ -154,6 +154,36 @@ environment probably inflates them; that is a guess, not a measurement. Past the
 receiver falls behind, its socket overflows, and the reorder bound eventually trips. It then
 fail-stops (`failed`, in-order delivery up to the hole) and never skips.
 
+**Datagram size moves the bottleneck from the syscall to recovery.** The `recv()` cost is
+per call, not per byte. `enginex_udp_syscall_bench --bytes B` measured 13.1–14.9 µs from 64 B
+to 9 216 B, and above the host's datagram limit it reports no result. So messages per
+datagram decide the receive cost per message. Same real day, `tools/mold_udp_sweep.py` with
+`D:R:PPS:MTU` configurations
+([`mold-udp-mtu-macos-m3.csv`](../benchmarks/results/mold-udp-mtu-macos-m3.csv)):
+
+| packet size | loss (live / retransmit) | fastest exact rate tried | time | messages/s |
+|---|---|---|---:|---:|
+| 1 400 B (498 172 packets) | none | 50 k packets/s (`7c2ae17`) | 11.7 s | ≈ 1.8 M |
+| 8 192 B (83 268 packets) | none | 20 k packets/s | 5.6 s | ≈ 3.8 M |
+| 1 400 B | 5 % / 10 % | 50 k packets/s | 12.3 s | ≈ 1.7 M |
+| 8 192 B | 5 % / 10 % | 10 k packets/s | 9.8 s | ≈ 2.2 M |
+
+Without loss, larger datagrams halve the time. With loss the gain shrinks to ≈ 1.25×, because
+a lost 8 KB packet holds ≈ 257 messages. The receiver keeps buffering while each hole waits at
+least one 50 ms retry (more when the answer is lost too), and arrivals run past the
+sequencer's look-ahead window. The sequencer now reports *which* bound stopped it:
+`failure` in the `mold-recv` and `mold-sim` JSON, from `Sequencer::FailReason`, is one of
+`too_far_ahead`, `buffered_messages_bound` or `buffered_bytes_bound`.
+
+At 15 000 packets/s, 4 seeded runs gave 2 exact and 2 `too_far_ahead`, each failure at a
+reorder peak just under the 1 M window. A larger window (`--max-ahead 4000000`) turned one of
+those into an exact run. The other then stopped at the next bound, `buffered_bytes_bound`
+(64 MiB). Raw runs:
+[`mold-udp-mtu-failure-reasons-macos-m3.txt`](../benchmarks/results/mold-udp-mtu-failure-reasons-macos-m3.txt).
+These are loopback numbers on one laptop. Real MoldUDP64 runs on a network whose MTU is
+usually ≈ 1 500 B, so the 8 KB rows show where the costs are, not an achievable feed
+configuration.
+
 Tests (`itch_mold_udp_test.cpp`, threads on loopback):
 * 30 000 messages with 5 % live and 10 % retransmission loss arrive as the exact book.
 * Without recovery, the book stops exactly at the hole.

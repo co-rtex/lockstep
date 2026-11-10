@@ -167,6 +167,7 @@ struct ReceiverReport {
     std::uint64_t buffered_peak = 0;
     bool in_order = true;               // every delivery was the next sequence, exactly once
     std::string final_state;            // running | gap | ended | failed
+    std::string failure;                // when failed: which bound (Sequencer::FailReason)
     std::uint64_t next_expected = 0;
     bool timed_out = false;
     double seconds = 0;

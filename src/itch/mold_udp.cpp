@@ -420,6 +420,7 @@ ReceiverReport Receiver::run(
     r.gaps_closed = st.gaps_closed;
     r.buffered_peak = st.buffered_peak;
     r.final_state = state_name(q.state());
+    r.failure = std::string(to_string(q.fail_reason()));
     r.next_expected = q.next_expected();
     r.seconds = std::chrono::duration<double>(Clock::now() - start).count();
     return r;

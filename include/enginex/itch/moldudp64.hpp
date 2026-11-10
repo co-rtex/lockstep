@@ -134,6 +134,13 @@ private:
 class Sequencer {
 public:
     enum class State : std::uint8_t { Running, Gap, Ended, Failed };
+    // Why the sequencer entered Failed: which bound a gap outlasted.
+    enum class FailReason : std::uint8_t {
+        None,
+        TooFarAhead,       // a packet started more than max_ahead past the next expected sequence
+        BufferedMessages,  // max_buffered_messages reached behind a hole
+        BufferedBytes,     // the packet copies would exceed max_buffered_bytes
+    };
 
     struct Options {
         std::uint64_t first_sequence = 1;               // sequence numbers start at 1
@@ -178,6 +185,7 @@ public:
     }
 
     [[nodiscard]] State state() const noexcept { return state_; }
+    [[nodiscard]] FailReason fail_reason() const noexcept { return fail_reason_; }
     [[nodiscard]] std::uint64_t next_expected() const noexcept { return next_; }
     [[nodiscard]] const Stats& stats() const noexcept { return stats_; }
     [[nodiscard]] std::size_t buffered() const noexcept { return buffered_count_; }
@@ -216,6 +224,7 @@ private:
 
     Options o_;
     State state_ = State::Running;
+    FailReason fail_reason_ = FailReason::None;
     std::optional<Session> session_;
     std::uint64_t next_;
     std::uint64_t horizon_;
@@ -236,6 +245,9 @@ private:
     Stats stats_;
 };
 
+// "" for None, else too_far_ahead | buffered_messages_bound | buffered_bytes_bound.
+[[nodiscard]] std::string_view to_string(Sequencer::FailReason r) noexcept;
+
 template <typename Deliver>
 void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
     if (state_ == State::Failed) {
@@ -251,6 +263,7 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
     const PacketHeader& h = p.header;
     if (h.sequence > next_ && h.sequence - next_ > o_.max_ahead) {
         state_ = State::Failed;  // too far ahead to ever be filled by buffering
+        fail_reason_ = FailReason::TooFarAhead;
         return;
     }
     if (h.count == kHeartbeat || h.count == kEndOfSession) {
@@ -296,12 +309,16 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
             if (buffered_count_ >= o_.max_buffered_messages ||
                 p.messages[i].size() > o_.max_buffered_bytes - buffered_bytes_) {
                 state_ = State::Failed;  // unrecoverable: never skip messages
+                fail_reason_ = buffered_count_ >= o_.max_buffered_messages
+                                   ? FailReason::BufferedMessages
+                                   : FailReason::BufferedBytes;
                 return;
             }
             if (chunk == kNoChunk) {
                 chunk = copy_packet(p);
                 if (chunk == kNoChunk) {
                     state_ = State::Failed;  // the copy would exceed the byte bound
+                    fail_reason_ = FailReason::BufferedBytes;
                     return;
                 }
             }

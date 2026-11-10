@@ -1,0 +1,25 @@
+MoldUDP64 over loopback UDP, 2019-03-27 prefix (21 375 302 messages), MTU 8192 (83 268 packets),
+15 000 packets/s, 5 % live loss and 10 % retransmission loss (sender --seed N), receiver defaults
+unless stated. Receiver failure reason from Sequencer::FailReason (added for this diagnosis).
+Apple M3 MacBook Air, macOS 26.6, Release, code at 79e1b8f..37ab181 plus the uncommitted change
+that adds the failure field and --max-ahead (committed right after these runs).
+
+Default receiver (--max-ahead 1000000, --max-buffered-messages 1048576, 64 MiB byte bound):
+run 1 (seed 1): failed 'too_far_ahead'  reorder peak  994157  delivered 16228491  6.1 s
+run 2 (seed 2): ended                   reorder peak  541833  delivered 21375302  7.1 s  (exact)
+run 3 (seed 3): ended                   reorder peak  642710  delivered 21375302  7.1 s  (exact)
+run 4 (seed 4): failed 'too_far_ahead'  reorder peak  998193  delivered 12874910  5.1 s
+
+--max-ahead 4000000 --max-buffered-messages 4194304:
+seed 1: ended                           reorder peak 1784539  delivered 21375302  7.8 s  exact book
+seed 4: failed 'buffered_bytes_bound'   reorder peak 2194867  delivered 18198943  6.8 s
+
+Datagram size vs syscall cost (enginex_udp_syscall_bench --bytes B, 5 trials, medians, us/datagram):
+bytes   sendto  send(connected)  recv   recvfrom
+64      70.43   1.55             13.13  12.90
+512     71.86   1.74             14.25  13.94
+1400    70.05   1.89             13.48  13.85
+4096    70.52   1.95             14.06  13.21
+8192    70.60   2.13             14.62  13.45
+9216    71.34   2.18             14.88  14.32
+16000   no result: every send failed (above the host's UDP datagram limit); the bench refuses to report

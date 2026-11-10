@@ -135,7 +135,8 @@ Usage:
                         [--allow-remote]                                 (UDP, loopback)
   enginex itch mold-recv --port P --request-port P [--request-host H] [--no-recovery]
                         [--idle-timeout-ms MS] [--request-interval-ms MS]
-                        [--max-buffered-messages N] [--session NAME] [--allow-remote]
+                        [--max-buffered-messages N] [--max-ahead N] [--session NAME]
+                        [--allow-remote]
   enginex version
   enginex help
 

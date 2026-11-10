@@ -19,6 +19,16 @@ std::string_view to_string(PacketError e) noexcept {
     return "unknown";
 }
 
+std::string_view to_string(Sequencer::FailReason r) noexcept {
+    switch (r) {
+        case Sequencer::FailReason::None: return "";
+        case Sequencer::FailReason::TooFarAhead: return "too_far_ahead";
+        case Sequencer::FailReason::BufferedMessages: return "buffered_messages_bound";
+        case Sequencer::FailReason::BufferedBytes: return "buffered_bytes_bound";
+    }
+    return "unknown";
+}
+
 std::optional<PacketError> parse(std::span<const std::uint8_t> packet, ParsedPacket& out) {
     out.messages.clear();
     if (packet.size() < kHeaderSize) {

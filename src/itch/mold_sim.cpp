@@ -127,6 +127,7 @@ SimulationReport simulate(const std::vector<Message>& stream, const ChannelOptio
     r.gaps_closed = s.gaps_closed;
     r.buffered_peak = s.buffered_peak;
     r.final_state = state_name(q.state());
+    r.failure = std::string(to_string(q.fail_reason()));
     r.next_expected = q.next_expected();
     r.book_hash = book.state_hash();
     r.reference_hash = hash_of_prefix(stream, static_cast<std::size_t>(q.next_expected() - 1));

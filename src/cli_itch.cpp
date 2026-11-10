@@ -693,6 +693,7 @@ int cmd_mold_sim(const std::vector<std::string>& argv) {
                       {"reorder_buffer_peak", r.buffered_peak},
                       {"in_order_exactly_once", r.in_order},
                       {"final_state", r.final_state},
+                      {"failure", r.failure},
                       {"next_expected", r.next_expected},
                       {"book_matches_delivered_prefix", prefix_ok},
                       {"book_matches_full_replay", r.book_hash == r.full_hash},
@@ -817,7 +818,7 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
 int cmd_mold_recv(const std::vector<std::string>& argv) {
     const Args a(argv,
                  {"port", "request-host", "request-port", "session", "idle-timeout-ms",
-                  "request-interval-ms", "max-buffered-messages"},
+                  "request-interval-ms", "max-buffered-messages", "max-ahead"},
                  {"no-recovery", "allow-remote"});
     if (a.flag("allow-remote") && !a.get("session")) {
         throw UsageError("--allow-remote requires an explicit --session (the transport is unauthenticated)");
@@ -838,6 +839,13 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
     o.request_interval = a.get_ms("request-interval-ms", 5, 1, 1000);
     // Reorder buffer: bounded, but large enough to ride out a few request rounds at full rate.
     o.sequencer.max_buffered_messages = a.get_u64("max-buffered-messages", 1U << 20U);
+    // How far past the next expected sequence a packet may start before the gap is declared
+    // unrecoverable. It is also the reorder window's length (12 bytes per slot), hence the cap.
+    const std::uint64_t ahead = a.get_u64("max-ahead", 1'000'000);
+    if (ahead < 1000 || ahead > 16'000'000) {
+        throw UsageError("--max-ahead must be in [1000, 16000000]");
+    }
+    o.sequencer.max_ahead = ahead;
     o.sequencer.session = mold::make_session(session_arg(a));
     mold::udp::Receiver rx(o);
     std::cerr << "mold-recv: listening on " << o.bind.host << ":" << rx.port() << "\n";
@@ -853,6 +861,7 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
     });
     std::cout << Json{{"type", "mold_udp_receive"},
                       {"final_state", r.final_state},
+                      {"failure", r.failure},
                       {"delivered", r.delivered},
                       {"next_expected", r.next_expected},
                       {"in_order_exactly_once", r.in_order},

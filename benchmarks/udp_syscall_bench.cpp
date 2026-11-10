@@ -3,7 +3,7 @@
 // environment's floor for mold-send / mold-recv: a single receiver thread cannot take more
 // datagrams per second than 1 / (recv cost).
 //
-//   enginex_udp_syscall_bench [--datagrams N] [--trials T]
+//   enginex_udp_syscall_bench [--datagrams N] [--trials T] [--bytes B]
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -41,17 +41,22 @@ int positive_arg(const char* text, int max) {
 int main(int argc, char** argv) {
     int n = 4000;  // fits an 8 MiB receive buffer at 1400 bytes
     int trials = 5;
+    int bytes = 1400;  // datagram payload; the per-call cost vs size says what batching buys
     for (int i = 1; i < argc; i += 2) {
         const bool known = std::strcmp(argv[i], "--datagrams") == 0 ||
-                           std::strcmp(argv[i], "--trials") == 0;
+                           std::strcmp(argv[i], "--trials") == 0 ||
+                           std::strcmp(argv[i], "--bytes") == 0;
         if (!known || i + 1 >= argc) {
-            std::fprintf(stderr, "usage: enginex_udp_syscall_bench [--datagrams N] [--trials T]\n");
+            std::fprintf(stderr, "usage: enginex_udp_syscall_bench [--datagrams N] [--trials T] "
+                                 "[--bytes B]\n");
             return 2;
         }
-        int& target = std::strcmp(argv[i], "--datagrams") == 0 ? n : trials;
-        target = positive_arg(argv[i + 1], 1'000'000);
+        const bool is_bytes = std::strcmp(argv[i], "--bytes") == 0;
+        int& target = std::strcmp(argv[i], "--datagrams") == 0 ? n : is_bytes ? bytes : trials;
+        target = positive_arg(argv[i + 1], is_bytes ? 65'507 : 1'000'000);
         if (target < 0) {
-            std::fprintf(stderr, "enginex_udp_syscall_bench: %s must be in [1, 1000000]\n", argv[i]);
+            std::fprintf(stderr, "enginex_udp_syscall_bench: %s must be in [1, %d]\n", argv[i],
+                         is_bytes ? 65'507 : 1'000'000);
             return 2;
         }
     }
@@ -73,8 +78,8 @@ int main(int argc, char** argv) {
         std::perror("bind");
         return 1;
     }
-    std::vector<char> payload(1400, 'x');
-    std::vector<char> buf(2048);
+    std::vector<char> payload(static_cast<std::size_t>(bytes), 'x');
+    std::vector<char> buf(static_cast<std::size_t>(bytes) + 1024);
     auto drain = [&](bool with_addr) {
         int got = 0;
         sockaddr_in from{};
@@ -89,8 +94,8 @@ int main(int argc, char** argv) {
         return got;
     };
     namespace bi = enginex::build_info;
-    std::printf("enginex_udp_syscall_bench: git %s, %s, %d datagrams of 1400 bytes, %d trials\n",
-                bi::kGitSha, bi::kSystem, n, trials);
+    std::printf("enginex_udp_syscall_bench: git %s, %s, %d datagrams of %d bytes, %d trials\n",
+                bi::kGitSha, bi::kSystem, n, bytes, trials);
     std::vector<double> sendto_us, recv_us, send_us, recvfrom_us;
     int lost = 0;
     for (int t = 0; t < trials; ++t) {
