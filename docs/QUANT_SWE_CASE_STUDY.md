@@ -73,6 +73,11 @@ are in-process and single-threaded; none is a wire latency.
   validation, journal, the UDP request planner and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
+* **Hostile arguments.** A sweep over every CLI flag (`tools/cli_arg_sweep.py`, 1 302 runs)
+  found two capacity arguments that allocated until the OS killed the process. Reviewing which
+  hostile values `serve` accepted found a real hang: `--send-timeout-ms 0` disabled the send
+  timeout, so one subscriber that stopped reading blocked graceful shutdown indefinitely.
+  All three are fixed, with regression tests.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 50 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
