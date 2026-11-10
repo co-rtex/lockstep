@@ -67,7 +67,7 @@ README command verification, Linux verification (Docker if available), clean `gi
 A second phase after R1–R3, kept separate from the exchange's semantics. It has no spec
 acceptance criteria, so each item is closed by its own tests and measurements. The item list
 with evidence is in [PROGRESS.md](PROGRESS.md#market-data-sprint-2026-11-10-branch-enginex-quant-sprint-20261109);
-rationale is in DECISIONS.md D27–D32.
+rationale is in DECISIONS.md D19–D32.
 
 | # | Work item | Verified by | Status |
 |---|---|---|---|
