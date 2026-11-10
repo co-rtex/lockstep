@@ -139,7 +139,9 @@ Loopback envelope on the real 2019-03-27 prefix (21.4 M messages, 498 172 packet
 | 0 % / 0 % | exact, 26.7 s | exact, 11.7 s (kernel drops recovered: 53 gaps) | fail-stop | fail-stop |
 | 5 % / 10 % | exact, 26.7 s | exact, 11.9 s | fail-stop | fail-stop |
 
-50 k packets/s is ≈ 2.1 M messages/s. The ceiling is the environment, not the sequencer:
+At `bfd47a1`, all three sample days (21.1–21.4 M messages each) arrived as the exact book at
+50 k packets/s with 5 % / 10 % loss, in 11.6–12.0 s each (same CSV). 50 k packets/s is
+≈ 2.1 M messages/s. The ceiling is the environment, not the sequencer:
 `enginex_udp_syscall_bench` measures `recv()` at ≈ 12.8 µs per datagram here (unconnected
 `sendto()` ≈ 69 µs, connected `send()` ≈ 1.7 µs;
 [`udp-syscall-floor-macos-m3.txt`](../benchmarks/results/udp-syscall-floor-macos-m3.txt)). At

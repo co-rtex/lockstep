@@ -47,6 +47,7 @@ are in-process and single-threaded; none is a wire latency.
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
 | Durable ack | ≈ 3 ms p50 with `F_FULLFSYNC`; group commit 3.7× throughput with 8 clients | R2/R3 tables |
 | Loopback TCP round trip | ≈ 33 µs p50 (1 client, in-memory) | R3 table |
+| MoldUDP64 over loopback UDP, real data | all 3 sample days exact at 50 k packets/s with 5 % live / 10 % retransmission loss; reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv` |
 
 ## Correctness work that found real bugs
 
