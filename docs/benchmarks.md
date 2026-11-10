@@ -429,6 +429,7 @@ Raw rows (timings only, no market data):
 | `-DENGINEX_ITCH_HASH_INDEX=ON` | sorted vector | hash | 91.4 | 10.9 M | 1.2 GiB |
 | default | sorted vector | paged direct | **62.1** | **16.1 M** | 1.2 GiB |
 
+A later row for commit `8a40818` (chunked node pool, see below) is in the same CSV.
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 
