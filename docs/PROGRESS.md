@@ -193,16 +193,20 @@ pushed, so GitHub CI has not run on them.
 | MoldUDP64 over UDP on loopback (D29): sender with re-request answers, receiver, `RequestPlanner`, source filter, answer budget | done | `MoldUdp.*`, `MoldRequestPlanner.*`, `tests/cli_itch_smoke.py`, `scripts/mold_udp_demo.sh`, `mold-udp-loopback-macos-m3.csv` (3 real days exact at 50 k packets/s with 5 %/10 % loss); macOS only |
 | Reorder buffer redesign (D30) | done | `mold-sequencer-macos-m3.csv`: 121–147 → 20–21 ns/msg behind holes; set-model differential unchanged |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
-| R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows |
+| Exchange core request-id index (D31): deque of records + keyed flat index | done | `core-request-index-ab-macos-m3.csv`: 198 → 119 ns/cmd at 1 M, 296 → 196 at 3 M, identical state hashes; recovery of 1 M records 2.09 → 4.06 M rec/s |
+| Independent Python exchange model | done | `tools/exchange_pymodel.py`; ctest `exchange_pymodel_differential`, `exchange_pymodel_network_restart` (responses, feed events, restart) |
+| ITCH order nodes constructed on first use | done | `itch-node-chunk-ab-macos-m3.txt`: first-add sample 92–102 → 30–39 µs; percentiles unchanged |
+| R2 durable/recovery benchmark reproducibility | done | `r2-durable-macos-m3-rerun-20261110.csv` |
+| R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows (sync p99 −3 %) |
 
 Commands and results (latest):
 
 * `cmake --preset release && cmake --build --preset release && ctest --preset release`:
-  509/509 passed (commit `da59f3c`; 1 opt-in real-data test skips without its file). Debug
+  511/511 passed (commit `a02372f`; 1 opt-in real-data test skips without its file). Debug
   build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
   -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 509/509 at `da59f3c` (54 s). UBSan
-  (below): 509/509 at `da59f3c`, no runtime errors.
-* `python3 tools/mutation_check.py`: 55/55 mutants killed (≈ 4 min, release build, commit `8009ac7`).
+  (below): 509/509 at `da59f3c`, no runtime errors. (The two tests added since, `exchange_pymodel_*`, are Python tools driving the release binary.)
+* `python3 tools/mutation_check.py`: 55/55 mutants killed (≈ 5.5 min, release build, commit `8009ac7`).
 * UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
   `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
   at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.

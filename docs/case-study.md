@@ -182,7 +182,7 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
     * *Syscall costs.* `enginex_udp_syscall_bench` measured an unconnected `sendto()` at
       ≈ 69 µs against ≈ 1.7 µs for a connected `send()` here. The hot paths moved to connected
       sockets, with per-peer answer sockets sharing the request port. `recv()` costs
-      ≈ 12.8 µs, which bounds one receiver thread near 75 k datagrams/s.
+      ≈ 12.8 µs, which bounds one receiver thread near 78 k datagrams/s before any work.
     * *The reorder buffer was the cliff.* `enginex_mold_bench` showed 121–147 ns/msg behind a
       hole against 4 ns in order, because every buffered message cost a `std::map` node plus
       a vector. A receiver under steady loss is always behind a hole, so it fell behind the
@@ -193,8 +193,8 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
       copies now count against the byte bound by the capacity they hold.
 
     Result: all three real sample days arrive as the exact book at 50 k packets/s with 5 % live
-    and 10 % retransmission loss (`mold-udp-loopback-macos-m3.csv`). Faster than ≈ 70 k
-    packets/s the receiver falls behind and fail-stops, never skipping.
+    and 10 % retransmission loss (`mold-udp-loopback-macos-m3.csv`). At ≈ 70 k
+    packets/s and above, the receiver falls behind and fail-stops, never skipping.
 
 ## 7. Mistakes worth recording
 

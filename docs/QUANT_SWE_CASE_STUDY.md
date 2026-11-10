@@ -56,8 +56,8 @@ are in-process and single-threaded; none is a wire latency.
 * **Two server bugs, reproduced before fixing.** A subscriber whose snapshot was too large
   was registered with no baseline. A snapshot after an internal fail-stop could expose
   never-durable state.
-* **Five independent adversarial reviews**, each followed by fixes with regression tests.
-  Findings included:
+* **Six independent adversarial reviews**. Five led to fixes with regression tests; the
+  sixth, of the request-id index, found no defect. Findings included:
   * strict-replay counters drifting after a stop;
   * mirror exceptions escaping a session, and partial application of a malformed update;
   * unclamped directory growth in the paged index;
@@ -123,11 +123,14 @@ are in-process and single-threaded; none is a wire latency.
    * The reorder buffer cost 121–147 ns/msg behind a hole against 4 ns in order. A receiver
      under steady loss is always behind a hole, so it fell off a cliff. A window over packet
      copies brought that to 20 ns. The differential test proved the semantics unchanged,
-     and the remaining ceiling (≈ 50 k packets/s) matches the measured ≈ 12.8 µs per `recv()`.
+     and the remaining ceiling (≈ 50 k packets/s) is consistent with the measured ≈ 12.8 µs
+     per `recv()`.
 9. *"Your matching engine gets slower the longer it runs. Why?"* The engine keeps every
    request id so retries are idempotent. In a node-based hash map, each new id missed DRAM
    twice. Benchmarking at four history sizes exposed it (108 → 296 ns/cmd from 100 k to 3 M
-   commands). Reserving capacity was ruled out as a fix (no change). An isolated probe priced
+   commands). Rehashing was not the cause, since the benchmark already reserves capacity
+   before timing. (An audit caught that my extra reserve experiment had been redundant.)
+   An isolated probe priced
    the miss (≈ 75 vs 23 ns). The replacement is a flat fingerprint table over a record deque,
    keyed with SipHash because the ids come from clients. The rewrite only counts if the state
    hashes are identical, and they are.

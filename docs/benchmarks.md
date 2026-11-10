@@ -173,9 +173,11 @@ from 3.93 M records/s (std build) to 4.27 M (pool build), +8.5 %, with the same 
 while the book never held more than a few dozen orders. The cost was in the history kept for
 idempotent retries. Every accepted command lived in a node-based
 `unordered_map<string, CommandRecord>`. Checking a new `request_id` missed DRAM about twice
-(bucket, then node). Pre-reserving the map changed nothing (262 → 256 ns at 3 M, within
-noise), which ruled out rehashing. An isolated probe measured ≈ 75 ns per miss at 3 M entries
-against ≈ 23 ns for a flat table.
+(bucket, then node). Rehashing was not the cause: the harness already calls `reserve()`
+before timing, so the map never grew inside the measured region. (An extra reserve added as an
+experiment, 262 → 256 ns at 3 M, was redundant for that reason; an audit pointed this out.) An
+isolated probe (console) measured ≈ 75 ns per miss at 3 M entries against ≈ 23 ns for a flat
+table.
 
 *Change* (`676e392`, `6f655cd`; D31). Records live in a `std::deque` by sequence. A
 `request_id` maps to its record through an open-addressing table of 8-byte slots holding a
@@ -541,9 +543,9 @@ replaces 182 → 117, executions 109 → 79. The latency pass recorded maxima of
 then reported *where* the max occurred: at the same message (11 999 113) in repeated trials,
 so it was structural, not noise. The cause was the node pool, a `std::vector<Node>` that
 doubled past ≈ 1 M live orders and copied ≈ 50 MB in one message. A chunked pool (64 Ki
-nodes per chunk, never moved) removed it. The worst sample is now 97–168 µs at a different
-message in each trial (consistent with OS noise) and apply runs at 50.4 ns/msg (commit after
-`55b199d`).
+nodes per chunk, never moved) removed it. The worst sample was then 97–168 µs and apply ran at
+50.4 ns/msg (commit after `55b199d`). That remaining sample was later traced to chunk
+value-initialization on the day's first add (below).
 
 **Per-message latency on real data** (`dd78a8d`,
 [`itch-real-latency-macos-m3.csv`](../benchmarks/results/itch-real-latency-macos-m3.csv); book
@@ -554,7 +556,7 @@ trials):
 |---|---:|---:|---:|---:|---:|---:|
 | 2019-01-30 | 45.1 | 42 ns | 84 ns | 292 ns | 458 ns | 35 µs |
 | 2019-03-27 | 43.3 | 41 ns | 84 ns | 333 ns | 541 ns | 36 µs |
-| 2020-01-30 | 46.8 | 42 ns | 84 ns | 292 ns | 500 ns | 39 µs |
+| 2020-01-30 | 46.8 | 42 ns | 125 ns | 292 ns | 500 ns | 39 µs |
 
 The maximum is more sensitive than the percentiles: single trials still show 0.2–2 ms samples
 at varying messages (OS noise on a shared laptop; load average ≈ 4.5 during these runs).
@@ -568,8 +570,9 @@ constructed when handed out. Three interleaved rounds of 5 trials against a cont
 `.csv`) show:
 * That sample was 91.8–102.4 µs before and is 30.2–38.5 µs after. The remainder is first-use
   allocation of the other structures. Using 4 Ki-node chunks did not change it.
-* The control also showed 138–325 µs at message 20 386 914 in each process's first trial.
-  This never appeared with the change.
+* In two of the three recorded rounds, the control's first trial peaked at message
+  20 386 914 (139 and 185 µs). This never appeared with the change. (Earlier console rounds
+  showed up to 324 µs there; they are not in the file.)
 * Mean, p99 and p99.9 are unchanged.
 
 **How the data drove the changes.** The real per-type costs (adds ≈ 97 ns, deletes ≈ 79 ns,

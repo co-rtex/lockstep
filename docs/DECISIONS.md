@@ -321,8 +321,9 @@ interval logic in the duplicate check.
 ## D31. Exchange core: request-id index as a keyed flat table over a record deque
 Idempotency keeps every accepted command's record for the life of the process (retries must
 return the original result, also after a restart). Measured: the per-command cost of `mixed`
-grew from 108 ns at 100 k commands to 296 ns at 3 M, with a tiny book. Reserving capacity did
-not help, while an isolated probe put a miss in the node-based `unordered_map` at ≈ 75 ns
+grew from 108 ns at 100 k commands to 296 ns at 3 M, with a tiny book. The harness already
+reserves capacity before timing, so rehashing was never in the measured region. An isolated
+probe put a miss in the node-based `unordered_map` at ≈ 75 ns
 against ≈ 23 ns for a flat table. Records now sit in a `std::deque` indexed by sequence.
 Stable references remove the separate `by_sequence_` pointer vector and the duplicated key
 string. `request_id` → record is an open-addressing table of 8-byte slots
@@ -335,7 +336,8 @@ SipHash-2-4 with a random key per instance. Placement depends on the key, but re
 do: a test runs two machines with different keys in lockstep, and the state hashes are
 identical across all benchmark rows. Result: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196,
 p99 roughly halved, RSS −15 % (benchmarks.md). Index growth is a stop-the-world doubling
-inside one command, as the old map's rehash was. The benchmark does not pre-reserve, so its
-tails include those steps. *Rejected:* `reserve()` (no effect on the
-misses), a plain `std::hash` fingerprint (floodable), and evicting old ids (would break
-idempotency across the session, which the spec requires).
+inside one command, as the old map's rehash was. The core benchmark pre-reserves (harness
+`reserve()`), so its tails exclude growth in both builds. Recovery replay and the server do
+not reserve, so their timings include it. *Rejected:* a plain `std::hash` fingerprint
+(floodable), and evicting old ids (would break idempotency across the session, which the spec
+requires). `reserve()` was never an alternative: the benchmark already used it.
