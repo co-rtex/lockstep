@@ -40,6 +40,11 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/fault_injection.py
                      --enginex $<TARGET_FILE:enginex> --rounds 6 --seed 7)
     set_tests_properties(cli_fault_injection_kill9 PROPERTIES TIMEOUT 300 LABELS "recovery;cli")
+    # Independent Python model of matching and command rules vs `enginex simulate`.
+    add_test(NAME exchange_pymodel_differential
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/exchange_pymodel.py
+                     --seeds 10 --commands 2000 --enginex $<TARGET_FILE:enginex>)
+    set_tests_properties(exchange_pymodel_differential PROPERTIES TIMEOUT 120 LABELS "cli")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict
