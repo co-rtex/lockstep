@@ -379,9 +379,9 @@ ReceiverReport Receiver::run(
         if (::poll(fds, 2, static_cast<int>(o_.request_interval.count())) > 0) {
             bool got = false;
             if ((fds[0].revents & POLLIN) != 0) got = drain(sock_.fd()) || got;
-            if ((fds[1].revents & POLLIN) != 0) got = drain(req.fd()) || got;
+            if (req.valid() && (fds[1].revents & POLLIN) != 0) got = drain(req.fd()) || got;
             for (const pollfd& f : fds) {
-                if ((f.revents & (POLLERR | POLLIN)) == POLLERR) {
+                if (f.fd >= 0 && (f.revents & (POLLERR | POLLIN)) == POLLERR) {
                     clear_error(f.fd);  // e.g. ICMP port unreachable: else poll() spins
                 }
             }
