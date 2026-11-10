@@ -83,6 +83,23 @@ everything in its group-commit batch) has been written and synchronized.
 `SERVER_OVERLOADED` (not processed; safe to retry), `JOURNAL_IO_ERROR` (**outcome unknown**;
 retry with the same `request_id` after the server restarts), `INTERNAL_ERROR`.
 
+**Which code a command with several problems gets.** Validation is atomic (one code, no
+effect) and runs in two stages:
+1. **The parser.** A value that cannot be represented as a command is rejected first, with
+   that field's code: a missing or mistyped field, a non-integer, out-of-range or
+   string-valued price or quantity, or a `side` other than `"BUY"`/`"SELL"`. Examples:
+   `INVALID_SIDE`, `INVALID_PRICE`, or `INVALID_REQUEST` for a cancel without `order_id`.
+   This stage precedes idempotency. A retry whose body has `"side":"HOLD"` gets
+   `INVALID_SIDE`, not `DUPLICATE_REQUEST_ID_CONFLICT`. Either way it is rejected and
+   changes nothing.
+2. **The state machine.** Representable commands are checked in this order: the
+   `request_id` form (`INVALID_REQUEST`: empty, over 64 bytes or not UTF-8), idempotency
+   (a duplicate or `DUPLICATE_REQUEST_ID_CONFLICT`), symbol, side, price range, quantity
+   range, then the open-order limit. A cancel checks its target last.
+
+`tools/exchange_pymodel.py` implements both stages independently and checks them against the
+server on random multi-fault commands.
+
 ### `snapshot_response`
 `request_id`, `event_watermark`, `command_sequence`, `execution_sequence`, `depth`,
 `subscribed`, and `books`: `[{symbol, bids:[{price,quantity,order_count}], asks:[…]}]`,

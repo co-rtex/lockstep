@@ -40,6 +40,13 @@ class Model:
     def process(self, cmd):
         body = {k: v for k, v in cmd.items() if k != "request_id"}
         rid = cmd["request_id"]
+        # Stage 1, the parser: values that cannot be represented as a command are rejected
+        # first, ahead of idempotency (docs/protocol.md, "Which code ...").
+        if cmd["type"] == "new_limit" and cmd["side"] not in ("BUY", "SELL"):
+            return self.reject(cmd, "INVALID_SIDE")
+        # Stage 2, the state machine: request_id form, idempotency, then the fields.
+        if rid == "" or len(rid.encode()) > 64:
+            return self.reject(cmd, "INVALID_REQUEST")
         if rid in self.records:
             old_body, old = self.records[rid]
             if old_body != body:
@@ -50,8 +57,6 @@ class Model:
         if cmd["type"] == "new_limit":
             if cmd["symbol"] not in SYMBOLS:
                 return self.reject(cmd, "INVALID_SYMBOL")
-            if cmd["side"] not in ("BUY", "SELL"):
-                return self.reject(cmd, "INVALID_SIDE")
             if not 1 <= cmd["price"] <= 100_000_000:
                 return self.reject(cmd, "INVALID_PRICE")
             if not 1 <= cmd["quantity"] <= 1_000_000:
@@ -125,13 +130,17 @@ def workload(rng, n):
     cmds, used = [], []
     for i in range(n):
         r = rng.random()
-        if r < 0.05 and used:  # retry: identical body, or a conflicting one
+        if r < 0.05 and used:  # retry: identical body, a conflicting one, or an unparseable one
             old = dict(rng.choice(used))
             if rng.random() < 0.3 and old["type"] == "new_limit":
                 old["quantity"] = old["quantity"] % 1_000_000 + 1
+            elif rng.random() < 0.1 and old["type"] == "new_limit":
+                old["side"] = "HOLD"  # parser rejects it before the idempotency check
             cmds.append(old)
             continue
         rid = f"r{i}"
+        if rng.random() < 0.03:  # malformed request ids: empty or over 64 bytes
+            rid = rng.choice(["", "x" * 65, "é" * 33])
         if r < 0.30:  # cancel: mostly recent orders, sometimes nonsense
             k = rng.randint(max(1, i - 60), i + 1) if i else 1
             oid = rng.choice([f"ord-{k}", f"ord-{k}", f"ord-{k}", "ord-0", "bogus", f"ord-{10 * n}"])
@@ -139,7 +148,7 @@ def workload(rng, n):
         else:
             cmd = {"type": "new_limit", "request_id": rid,
                    "symbol": rng.choice(SYMBOLS) if rng.random() > 0.01 else "XXXX",
-                   "side": rng.choice(["BUY", "SELL"]),
+                   "side": rng.choice(["BUY", "SELL"]) if rng.random() > 0.01 else "HOLD",
                    "price": rng.randint(9_950, 10_050) if rng.random() > 0.01 else rng.choice([0, 100_000_001]),
                    "quantity": rng.randint(1, 100) if rng.random() > 0.01 else rng.choice([0, 1_000_001])}
         cmds.append(cmd)
