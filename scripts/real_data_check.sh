@@ -6,7 +6,8 @@
 # For each DATE (01302019, 01302020, 03272019), downloads ONLY the first 256 MiB of Nasdaq's
 # publicly posted sample file DATE.NASDAQ_ITCH50.gz (several GB each) with an HTTP range
 # request, checks its SHA-256, decompresses the valid prefix, and runs: a strict replay, the
-# reference-model differential test, and the in-memory benchmark. Data stay under
+# reference-model differential test, the independent Python decoder and book, and the
+# in-memory benchmark. Data stay under
 # build/realdata/ (git-ignored) and are not redistributed. Never run by CI or ctest: it needs
 # network access and ~1 GB of disk per date.
 set -euo pipefail
@@ -89,6 +90,10 @@ PY
         echo "differential test was skipped"
         exit 1
     fi
+
+    echo "== independent Python decoder (every field of every frame) and book (every level)"
+    python3 tools/itch_pydecode.py "$ITCH" --enginex "$BUILD/enginex"
+    python3 tools/itch_pybook.py "$ITCH" --enginex "$BUILD/enginex"
 
     echo "== in-memory benchmark (decode, replay)"
     for m in itch_decode itch_replay; do
