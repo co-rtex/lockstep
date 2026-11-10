@@ -88,10 +88,15 @@ SimulationReport simulate(const std::vector<Message>& stream, const ChannelOptio
     auto recover = [&] {
         ++r.rerequest_rounds;
         for (const auto& [first, count] : q.missing()) {
-            for (std::size_t i = 0; i < store.size(); ++i) {
-                const std::uint64_t pseq = store.first(i);
-                const std::uint64_t n = store.count(i);
-                if (pseq < first + count && pseq + n > first && rng.below(100) >= o.loss_percent) {
+            // Only the packets overlapping [first, first + count), found by binary search: a
+            // scan of the whole store per range made recovery O(packets x holes) per round.
+            // Same packets in the same order as the scan, so the same random draws.
+            const auto start = store.find(first);
+            if (!start) {
+                continue;
+            }
+            for (std::size_t i = *start; i < store.size() && store.first(i) < first + count; ++i) {
+                if (rng.below(100) >= o.loss_percent) {
                     ++r.retransmitted_packets;
                     q.on_packet(store.packet(i), deliver);
                 }
