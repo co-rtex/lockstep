@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "enginex/canonical.hpp"
 #include "enginex/siphash.hpp"
 #include "enginex/state.hpp"
 
@@ -48,6 +49,12 @@ TEST(SipHash, RandomIndexKeysDoNotChangeResults) {
         ASSERT_EQ(ra.accepted, rb.accepted);
         ASSERT_EQ(ra.duplicate, rb.duplicate);
         ASSERT_EQ(ra.command_sequence, rb.command_sequence);
+    }
+    // 1 500 distinct ids: the index grew through 16 -> 4096 slots on both machines.
+    EXPECT_EQ(state_hash(a), state_hash(b));
+    EXPECT_EQ(a.last_command_sequence(), 1500U);
+    for (int i = 0; i < 1500; ++i) {  // every id still found after all the growth
+        ASSERT_NE(a.find_request("id-" + std::to_string(i)), nullptr) << i;
     }
 }
 

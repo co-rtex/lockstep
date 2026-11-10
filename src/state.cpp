@@ -1,5 +1,8 @@
 #include "enginex/state.hpp"
 
+#include <chrono>
+#include <cstdint>
+#include <exception>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -43,9 +46,18 @@ ExchangeStateMachine::ExchangeStateMachine(StateConfig config)
     if (config_.symbols.size() > std::numeric_limits<SymbolId>::max()) {
         throw std::invalid_argument("too many symbols");
     }
-    std::random_device rd;  // secret index key: placement only, never results (see header)
-    auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
-    id_key_ = SipKey{word(), word()};
+    // Secret index key: placement only, never results (see header). If no entropy source is
+    // available, fall back to the clock and an address: weaker against flooding, never wrong.
+    try {
+        std::random_device rd;
+        auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
+        id_key_ = SipKey{word(), word()};
+    } catch (const std::exception&) {
+        const auto now = static_cast<std::uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        id_key_ = SipKey{now * 0x9E3779B97F4A7C15ULL,
+                         static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(this))};
+    }
 }
 
 std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbol) const noexcept {
@@ -209,7 +221,9 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
         throw InvariantViolation("command history capacity exceeded");
     }
     // Allocate first (index growth, then the record with its copy of the command), and only
-    // then index it, which cannot fail: no record is ever left unindexed or half built.
+    // then index it, which cannot fail: an allocation failure here never leaves a record
+    // unindexed. (As before this index existed, a failure later in this function, inside the
+    // engine or while recording executions, is not rolled back; see the commit contract.)
     grow_index(records_.size() + 1);
     CommandRecord& record = records_.emplace_back(CommandRecord{cmd, seq, decision.symbol});
     place(fp, static_cast<std::uint32_t>(records_.size()));

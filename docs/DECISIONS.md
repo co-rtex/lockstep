@@ -334,6 +334,8 @@ allow probe-cluster flooding (the old map had the same exposure). The fingerprin
 SipHash-2-4 with a random key per instance. Placement depends on the key, but results never
 do: a test runs two machines with different keys in lockstep, and the state hashes are
 identical across all benchmark rows. Result: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196,
-p99 roughly halved, RSS −15 % (benchmarks.md). *Rejected:* `reserve()` (no effect on the
+p99 roughly halved, RSS −15 % (benchmarks.md). Index growth is a stop-the-world doubling
+inside one command, as the old map's rehash was. The benchmark does not pre-reserve, so its
+tails include those steps. *Rejected:* `reserve()` (no effect on the
 misses), a plain `std::hash` fingerprint (floodable), and evicting old ids (would break
 idempotency across the session, which the spec requires).
