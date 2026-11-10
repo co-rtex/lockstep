@@ -136,7 +136,9 @@ public:
     struct Options {
         std::uint64_t first_sequence = 1;               // sequence numbers start at 1
         std::size_t max_buffered_messages = 65536;      // reorder buffer bound (messages)
-        std::size_t max_buffered_bytes = 64U << 20U;    // reorder buffer bound (payload bytes)
+        // Reorder buffer bound in bytes: buffered messages are held in copies of their packets,
+        // and those copies count (a copy can hold duplicates that came in the same packet).
+        std::size_t max_buffered_bytes = 64U << 20U;
         // A packet whose messages would start more than this far beyond the next expected
         // sequence is treated as unrecoverable (a huge loss and a corrupt header look alike).
         std::uint64_t max_ahead = 1'000'000;
@@ -205,6 +207,7 @@ private:
     void open_hole(std::uint64_t end);  // [horizon_, end) is missing; horizon_ = end
     [[nodiscard]] bool fill_hole(std::uint64_t seq);  // false if seq is not in a hole
     std::uint32_t copy_packet(const ParsedPacket& p);
+    void release_chunk(std::uint32_t id);
 
     Options o_;
     State state_ = State::Running;
@@ -222,7 +225,9 @@ private:
     // touched when a hole opens or a retransmission fills one, so missing() is O(holes).
     std::map<std::uint64_t, std::uint64_t> holes_;
     std::size_t buffered_count_ = 0;
-    std::size_t buffered_bytes_ = 0;
+    std::size_t buffered_bytes_ = 0;  // payload bytes of buffered messages (statistics)
+    std::size_t chunk_bytes_ = 0;     // bytes of live packet copies (≤ max_buffered_bytes)
+    std::size_t pooled_bytes_ = 0;    // capacity kept by free chunks (≤ max_buffered_bytes / 4)
     Stats stats_;
 };
 
@@ -287,6 +292,14 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
                 return;
             }
             if (chunk == kNoChunk) {
+                // The copy spans the packet's blocks, so it is what counts against the byte
+                // bound (one new message must not pin a large packet of duplicates for free).
+                const auto span = static_cast<std::size_t>(
+                    p.messages.back().data() + p.messages.back().size() - p.messages.front().data());
+                if (span > o_.max_buffered_bytes - chunk_bytes_) {
+                    state_ = State::Failed;
+                    return;
+                }
                 chunk = copy_packet(p);
             }
             const auto k = static_cast<std::size_t>(seq - next_);
@@ -315,7 +328,7 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
         buffered_bytes_ -= slot.length;
         --buffered_count_;
         if (--c.live == 0) {
-            free_chunks_.push_back(slot.chunk);
+            release_chunk(slot.chunk);
         }
     }
     const bool was_gap = state_ == State::Gap;

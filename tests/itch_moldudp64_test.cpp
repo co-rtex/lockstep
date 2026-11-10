@@ -229,6 +229,30 @@ TEST(MoldSequencer, ConfiguredSessionCannotBeClaimedByAStrayPacket) {
     EXPECT_EQ(fixed.stats().foreign_session_packets, 1U);
 }
 
+// Each packet brings one new message plus many already-buffered ones, so it is mostly
+// duplicates. Its copy still costs memory and must count against the byte bound: otherwise
+// a few-byte payload could pin a whole packet copy each time, far beyond the bound.
+TEST(MoldSequencer, PacketCopiesCountAgainstTheByteBound) {
+    Sequencer::Options o;
+    o.max_buffered_bytes = 1 << 20;
+    Sequencer q(o);
+    Sink out;
+    auto packet = [&](std::uint64_t first) {
+        std::vector<std::vector<std::uint8_t>> m(1000, std::vector<std::uint8_t>(10, 7));
+        return build_packet(kS, first, m);
+    };
+    q.on_packet(packet(10'000), out);  // 1 is missing: all buffered (≈ 12 KB copy)
+    std::size_t sent = 1;
+    for (std::uint64_t first = 9'999; q.state() != Sequencer::State::Failed && first > 1; --first) {
+        q.on_packet(packet(first), out);  // one new message, 999 duplicates, ≈ 12 KB copy
+        ++sent;
+    }
+    EXPECT_EQ(q.state(), Sequencer::State::Failed);
+    EXPECT_LE(sent, 100U);  // ≈ 1 MiB / 12 KB packets, not thousands
+    EXPECT_LT(q.stats().buffered_bytes_peak, 20'000U);  // the payload alone stayed small
+    EXPECT_TRUE(out.seqs.empty());
+}
+
 TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
     Sequencer::Options o;
     o.max_buffered_bytes = 10;

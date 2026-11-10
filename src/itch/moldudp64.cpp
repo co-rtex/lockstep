@@ -212,13 +212,27 @@ std::uint32_t Sequencer::copy_packet(const ParsedPacket& p) {
     if (!free_chunks_.empty()) {
         id = free_chunks_.back();
         free_chunks_.pop_back();
+        pooled_bytes_ -= chunks_[id].bytes.capacity();
     } else {
         id = static_cast<std::uint32_t>(chunks_.size());
         chunks_.emplace_back();
     }
     chunks_[id].bytes.assign(base, last);
     chunks_[id].live = 0;
+    chunk_bytes_ += chunks_[id].bytes.size();
     return id;
+}
+
+void Sequencer::release_chunk(std::uint32_t id) {
+    std::vector<std::uint8_t>& bytes = chunks_[id].bytes;
+    chunk_bytes_ -= bytes.size();
+    if (pooled_bytes_ + bytes.capacity() <= o_.max_buffered_bytes / 4) {
+        pooled_bytes_ += bytes.capacity();  // keep the capacity for the next packet copy
+        bytes.clear();
+    } else {
+        std::vector<std::uint8_t>().swap(bytes);  // keep the pool itself bounded
+    }
+    free_chunks_.push_back(id);
 }
 
 std::vector<std::pair<std::uint64_t, std::uint64_t>> Sequencer::missing() const {
