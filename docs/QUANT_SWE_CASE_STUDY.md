@@ -143,8 +143,9 @@ are in-process and single-threaded; none is a wire latency.
   a limit consistent with a measured ≈ 12.8 µs per `recv()` (the receiver was not profiled).
 * Real data covers the first ≈ 6.5 h of three days, not full sessions or closing crosses.
 * GCC, ASan, TSan and clang-format have not run on the sprint's code. The sandbox blocked
-  them locally, and the branch has not been pushed to CI. UBSan, coverage, fuzzing and leak
-  checks ran.
+  them locally, and the branch has not been pushed to CI. UBSan, a hardened-libc++ build
+  (bounds-checked containers and spans: whole suite, a real day, 160 k fuzz inputs), coverage,
+  fuzzing and leak checks ran.
 * The price-level structure is tuned for real books (≤ 3.8 k levels per side here). Its
   adversarial worst case was measured at 25 µs/msg and is now bounded (96 ns/msg, D32), but a
   monotone-improving 200 k-level side is slower than before (54 vs 17 ns/msg).

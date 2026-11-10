@@ -224,6 +224,14 @@ Commands and results (latest):
 * `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
   on the ITCH tests (UBSan build): passed.
 * `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
+* Hardened libc++ (`cmake --preset hardened`, `_LIBCPP_HARDENING_MODE_DEBUG`; a deliberate
+  out-of-range `span` index in a scratch program aborts with exit 134 under the same flag):
+  516/516 at `7a65a1a` plus the preset; one real day (21 051 558 messages) at level-vector
+  limits 8192 and 2: no assertion, Release state hash; `tools/exchange_pymodel.py` with the
+  hardened binary (4 × 50 000 simulate, 20 × 3 000 in a 5-tick band, 3 × 2 000 TCP + journal +
+  restart): agree; standalone fuzz: 4 seeds × 40 000 inputs, no invariant violated and no assertion. The preset was configured with
+  `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=… -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=…` pointing at
+  the Release build's downloaded sources (the sandbox blocks the download).
 
 * Fresh clone (`git clone` of this repository into a temporary directory, Release, pinned
   dependencies from the local download cache): 471/471 passed; `scripts/itch_demo.sh` exit 0.
