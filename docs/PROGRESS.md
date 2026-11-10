@@ -194,6 +194,21 @@ Commands and results (latest):
   on the ITCH tests (UBSan build): passed.
 * `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
 
+* Fresh clone (`git clone` of this repository into a temporary directory, Release, pinned
+  dependencies from the local download cache): 471/471 passed; `scripts/itch_demo.sh` exit 0.
+* `scripts/check.sh smoke build/release` (R1–R3 CLI smoke incl. kill -9 harness, serve/client,
+  network benchmark): `smoke OK`. `scripts/demo.sh`: exit 0 (crash recovery, retry idempotency,
+  corruption refusal, slow-consumer cut-off, graceful shutdown).
+
+Outstanding (needs the owner):
+
+* **clang-format.** CI's format job runs clang-format 19.1.7 with `--dry-run --Werror` over all
+  tracked C++ files. clang-format is not installed here, and running the downloaded binary was
+  refused by the sandbox ("Code from External"), so the sprint's new files have **not** been
+  formatted and that job will fail until someone runs
+  `pip install clang-format==19.1.7 && git ls-files '*.cpp' '*.hpp' | xargs clang-format -i`
+  and commits the result (formatting only; then re-run the test suite).
+
 Blocked in this environment (exact symptoms), so they are not claimed for the sprint commits:
 
 * ASan: even `int main(){}` built with `-fsanitize=address` hangs after

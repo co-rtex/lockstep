@@ -13,7 +13,7 @@ smoke() {
     local build=$1
     local bin="$build/enginex"
     local tmp
-    tmp=$(mktemp -d)
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/enginex-smoke.XXXXXX")
     trap 'rm -rf "$tmp"' RETURN
 
     echo "--- smoke: simulate demo matches expected output"
