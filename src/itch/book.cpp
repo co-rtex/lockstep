@@ -16,11 +16,13 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 #include "enginex/itch/byte_reader.hpp"
 #include "enginex/itch/order_index.hpp"
@@ -314,15 +316,18 @@ struct DirectoryEntry {
 
 // Order nodes in fixed-size chunks. Growth allocates a new chunk and never moves existing
 // nodes: a std::vector<Node> doubling at ~1 M live orders copied ~50 MB inside one message
-// (a deterministic ~10 ms stall, measured on the real sample).
+// (a deterministic ~10 ms stall, measured on the real sample). A chunk is raw storage and each
+// node is constructed when it is first handed out: value-initializing a whole chunk wrote
+// ~3 MB (and took its page faults) inside one add, a deterministic ~95 µs sample on real data.
 class NodePool {
 public:
     static constexpr unsigned kChunkBits = 16;
     static constexpr std::uint32_t kChunk = std::uint32_t{1} << kChunkBits;
+    static_assert(std::is_trivially_destructible_v<Node>, "chunks are freed without destructors");
 
-    Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits][i & (kChunk - 1)]; }
+    Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)]; }
     const Node& operator[](std::uint32_t i) const noexcept {
-        return chunks_[i >> kChunkBits][i & (kChunk - 1)];
+        return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)];
     }
     [[nodiscard]] std::size_t size() const noexcept { return size_; }
     // Appends a default node and returns its index.
@@ -331,18 +336,32 @@ public:
             if (size_ >= std::size_t{UINT32_MAX} - kChunk) {
                 throw std::length_error("ITCH book: too many live orders");
             }
-            chunks_.push_back(std::make_unique<Node[]>(kChunk));
+            add_chunk();
         }
+        Node* chunk = chunks_[size_ >> kChunkBits].get();
+        ::new (static_cast<void*>(chunk + (size_ & (kChunk - 1)))) Node{};
         return static_cast<std::uint32_t>(size_++);
     }
+    // Allocates (but does not touch) storage for n nodes.
     void reserve(std::size_t n) {
         while (chunks_.size() * std::size_t{kChunk} < n) {
-            chunks_.push_back(std::make_unique<Node[]>(kChunk));
+            add_chunk();
         }
     }
 
 private:
-    std::vector<std::unique_ptr<Node[]>> chunks_;
+    struct Free {
+        void operator()(Node* p) const noexcept {
+            ::operator delete(static_cast<void*>(p), std::align_val_t{alignof(Node)});
+        }
+    };
+    void add_chunk() {
+        std::unique_ptr<Node, Free> chunk(static_cast<Node*>(
+            ::operator new(sizeof(Node) * kChunk, std::align_val_t{alignof(Node)})));
+        chunks_.push_back(std::move(chunk));  // owned before push_back can throw
+    }
+
+    std::vector<std::unique_ptr<Node, Free>> chunks_;
     std::size_t size_ = 0;
 };
 
