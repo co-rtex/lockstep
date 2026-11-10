@@ -64,6 +64,11 @@ if(Python3_Interpreter_FOUND)
                      --clients 8 --journal --chaos 4 --seeds 2 --commands 5000
                      --enginex $<TARGET_FILE:enginex>)
     set_tests_properties(exchange_pymodel_chaos PROPERTIES TIMEOUT 240 LABELS "cli;net")
+    # The performance acceptance gate (tools/paired_ab.py) against fake benches: verdicts,
+    # minimum effect, pair minimum and the correctness refusal.
+    add_test(NAME paired_ab_gate
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/paired_ab_test.py)
+    set_tests_properties(paired_ab_gate PROPERTIES TIMEOUT 120 LABELS "tools")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict
