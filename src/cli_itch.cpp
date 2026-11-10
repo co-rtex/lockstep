@@ -12,6 +12,7 @@
 #include "cli.hpp"
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/byte_reader.hpp"
+#include "enginex/itch/mold_sim.hpp"
 #include "enginex/itch/replay.hpp"
 #include "enginex/itch/synthetic.hpp"
 #include "enginex/json_codec.hpp"
@@ -372,11 +373,74 @@ int cmd_dump(const std::vector<std::string>& argv) {
     return 0;
 }
 
+// SIMULATED MoldUDP64 delivery of a file's messages over a lossy channel (mold_sim.hpp).
+// Exit 0 only if the rebuilt book equals a direct replay of exactly the delivered prefix (never
+// silently wrong) and, with recovery, the session ended with every message delivered.
+int cmd_mold_sim(const std::vector<std::string>& argv) {
+    const Args a(argv, {"input", "seed", "loss-percent", "duplicate-percent", "reorder-window", "mtu"},
+                 {"no-recovery"});
+    const std::string input = a.require("input");
+    mold::ChannelOptions o;
+    o.seed = a.get_u64("seed", 1);
+    o.loss_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64("loss-percent", 3), 100));
+    o.duplicate_percent =
+        static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64("duplicate-percent", 5), 100));
+    o.reorder_window = a.get_u64("reorder-window", 8);
+    o.mtu = a.get_u64("mtu", 1400);
+    o.recovery = !a.flag("no-recovery");
+    if (o.mtu < 100 || o.mtu > 65535) {
+        throw UsageError("--mtu must be in [100, 65535]");
+    }
+    // Decode the whole file first (the simulation re-encodes messages into packets).
+    std::vector<Message> stream;
+    BookBuilder unused;
+    ReplayOptions ro;
+    ro.strict = true;
+    ro.on_message = [&](const Message& m, const ApplyOutcome&) { stream.push_back(m); };
+    auto in = open_input(input);
+    const ReplayResult rr = replay(*in, unused, ro);
+    if (!rr.ok()) {
+        throw std::runtime_error("input is not a clean ITCH file: " + *rr.stopped);
+    }
+    const mold::SimulationReport r = mold::simulate(stream, o);
+    const bool prefix_ok = r.book_hash == r.reference_hash;
+    const bool complete = r.final_state == "ended" && r.delivered == r.messages;
+    std::cout << Json{{"type", "mold_simulation"},
+                      {"note", "simulated channel; not network I/O"},
+                      {"input", input},
+                      {"seed", o.seed},
+                      {"loss_percent", o.loss_percent},
+                      {"duplicate_percent", o.duplicate_percent},
+                      {"reorder_window", o.reorder_window},
+                      {"recovery", o.recovery},
+                      {"messages", r.messages},
+                      {"packets", r.packets},
+                      {"packets_lost", r.packets_lost},
+                      {"packets_duplicated", r.packets_duplicated},
+                      {"rerequest_rounds", r.rerequest_rounds},
+                      {"retransmitted_packets", r.retransmitted_packets},
+                      {"delivered", r.delivered},
+                      {"duplicates_dropped", r.duplicates_dropped},
+                      {"gaps_opened", r.gaps_opened},
+                      {"gaps_closed", r.gaps_closed},
+                      {"reorder_buffer_peak", r.buffered_peak},
+                      {"in_order_exactly_once", r.in_order},
+                      {"final_state", r.final_state},
+                      {"next_expected", r.next_expected},
+                      {"book_matches_delivered_prefix", prefix_ok},
+                      {"book_matches_full_replay", r.book_hash == r.full_hash},
+                      {"book_hash", r.book_hash}}
+                     .dump()
+              << "\n";
+    const bool ok = r.in_order && prefix_ok && (!o.recovery || complete);
+    return ok ? 0 : kExitStopped;
+}
+
 }  // namespace
 
 int cmd_itch(const std::vector<std::string>& args) {
     if (args.empty()) {
-        throw UsageError("expected a subcommand: generate, replay or dump");
+        throw UsageError("expected a subcommand: generate, replay, dump or mold-sim");
     }
     const std::vector<std::string> rest(args.begin() + 1, args.end());
     if (args[0] == "generate") {
@@ -387,6 +451,9 @@ int cmd_itch(const std::vector<std::string>& args) {
     }
     if (args[0] == "dump") {
         return cmd_dump(rest);
+    }
+    if (args[0] == "mold-sim") {
+        return cmd_mold_sim(rest);
     }
     throw UsageError("unknown itch subcommand: " + args[0]);
 }

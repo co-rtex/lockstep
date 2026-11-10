@@ -55,6 +55,22 @@ import json, sys; r = json.load(sys.stdin)
 print("  strict: stopped at message", r["stopped_at_message"], "-", r["stopped"])'
 set -e
 
+step "MoldUDP64 over a SIMULATED lossy channel (3% loss, 5% duplicates, reordering)"
+"$BIN" itch mold-sim --input "$TMP/s.itch" --loss-percent 3 --seed 1 > "$TMP/sim.json"
+set +e
+"$BIN" itch mold-sim --input "$TMP/s.itch" --loss-percent 3 --seed 1 --no-recovery > "$TMP/sim0.json"
+set -e
+python3 - "$TMP/sim.json" "$TMP/sim0.json" <<'EOF'
+import json, sys
+r = json.load(open(sys.argv[1]))
+print(f"  {r['packets']} packets, {r['packets_lost']} lost, {r['gaps_opened']} gaps opened / "
+      f"{r['gaps_closed']} closed by re-request; in order exactly once: {r['in_order_exactly_once']}")
+print(f"  final state {r['final_state']}; book equals direct replay: {r['book_matches_full_replay']}")
+n = json.load(open(sys.argv[2]))
+print(f"  without recovery: stops at message {n['next_expected']} ({n['final_state']}); "
+      f"book equals the delivered prefix: {n['book_matches_delivered_prefix']}")
+EOF
+
 if [ -x "$BUILD/enginex_itch_bench" ]; then
     step "In-process benchmark (short run; see docs/benchmarks.md for the recorded results)"
     "$BUILD/enginex_itch_bench" --messages 200000 --trials 3 --reserve 65536 | sed 's/^/  /'

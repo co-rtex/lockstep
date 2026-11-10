@@ -129,6 +129,7 @@ twice, injected anomalies (lenient vs `--strict`) and a short benchmark. Individ
 ./build/release/enginex itch generate --out data/demo.itch --seed 42 --messages 200000 --symbols 4
 ./build/release/enginex itch replay --input data/demo.itch --depth 5 --json
 ./build/release/enginex itch dump --input tests/testdata/itch/lifecycle.itch --limit 5
+./build/release/enginex itch mold-sim --input data/demo.itch --loss-percent 3   # simulated channel
 ./build/release/enginex_itch_bench --seed 42 --messages 1000000 --trials 7
 ```
 

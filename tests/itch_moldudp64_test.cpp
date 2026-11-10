@@ -5,6 +5,7 @@
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/decoder.hpp"
+#include "enginex/itch/mold_sim.hpp"
 #include "enginex/itch/moldudp64.hpp"
 #include "enginex/itch/synthetic.hpp"
 #include "enginex/rng.hpp"
@@ -343,6 +344,31 @@ TEST(MoldEndToEnd, WithoutRecoveryTheBookStopsAtTheHoleNeverSkips) {
     EXPECT_EQ(q.missing().front().first, hole);
     // The book reflects exactly the messages before the hole.
     EXPECT_EQ(book.state_hash(), direct_hash(stream, hole - 1));
+}
+
+TEST(MoldSimulation, RecoversTheFullBookOrStopsExactlyAtTheHole) {
+    SyntheticOptions so;
+    so.seed = 12;
+    so.messages = 20'000;
+    so.symbols = 3;
+    const std::vector<Message> stream = generate(so);
+    ChannelOptions o;
+    o.seed = 5;
+    o.loss_percent = 5;
+    const SimulationReport rec = simulate(stream, o);
+    EXPECT_GT(rec.packets_lost, 0U);
+    EXPECT_GT(rec.gaps_opened, 0U);
+    EXPECT_TRUE(rec.in_order);
+    EXPECT_EQ(rec.final_state, "ended");
+    EXPECT_EQ(rec.delivered, stream.size());
+    EXPECT_EQ(rec.book_hash, rec.full_hash);
+
+    o.recovery = false;
+    const SimulationReport none = simulate(stream, o);
+    EXPECT_NE(none.final_state, "ended");
+    EXPECT_LT(none.delivered, stream.size());
+    EXPECT_EQ(none.book_hash, none.reference_hash);  // exactly the delivered prefix
+    EXPECT_NE(none.book_hash, none.full_hash);
 }
 
 }  // namespace

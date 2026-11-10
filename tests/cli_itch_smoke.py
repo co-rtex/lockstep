@@ -44,5 +44,11 @@ with tempfile.TemporaryDirectory() as d:
     assert "frame_error" in run("itch", "dump", "--input", t, expect=1)
     run("itch", "replay", "--input", f, "--symbol", "NOPE", expect=2)
     run("itch", "generate", "--out", f, "--anomalies-per-million", "2000000", expect=2)
+    sim = json.loads(run("itch", "mold-sim", "--input", f, "--loss-percent", "5", "--seed", "3"))
+    assert sim["final_state"] == "ended" and sim["book_matches_full_replay"], sim
+    assert sim["packets_lost"] > 0 and sim["gaps_opened"] > 0, sim
+    lossy = json.loads(run("itch", "mold-sim", "--input", f, "--loss-percent", "5",
+                           "--no-recovery"))  # exit 0: stopped at the hole, not wrong
+    assert lossy["book_matches_delivered_prefix"] and not lossy["book_matches_full_replay"], lossy
     run("itch", "bogus", expect=2)
 print("cli itch smoke: ok")

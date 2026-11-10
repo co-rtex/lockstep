@@ -115,6 +115,8 @@ Usage:
   enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]
                         [--metrics-out FILE.json] [--expected-orders N]
   enginex itch dump     --input FILE [--limit N]
+  enginex itch mold-sim --input FILE [--seed N] [--loss-percent P] [--duplicate-percent P]
+                        [--reorder-window N] [--mtu BYTES] [--no-recovery]   (simulation)
   enginex version
   enginex help
 
