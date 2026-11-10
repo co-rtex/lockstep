@@ -101,8 +101,10 @@ build). Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with the failing tests
 for each mutant, is in
-[`benchmarks/results/mutation-check-macos-m3.json`](../benchmarks/results/mutation-check-macos-m3.json). The mutants are chosen by hand to probe
-specific rules, so the score is not a measure of coverage. It complements
+[`benchmarks/results/mutation-check-macos-m3.json`](../benchmarks/results/mutation-check-macos-m3.json). Mutants are written into the source tree, so no other
+build may run at the same time: a UBSan build compiled concurrently once picked up a mutated
+`book.cpp` and failed 18 tests until rebuilt from clean sources. The mutants are chosen by
+hand to probe specific rules, so the score is not a measure of coverage. It complements
 `scripts/coverage.sh`.
 
 ## Test matrix (ITCH 5.0 market data)

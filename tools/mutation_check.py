@@ -5,6 +5,10 @@ A mutant is KILLED if the tests fail, SURVIVED if they pass (a test gap), INVALI
 not compile. Every source file is restored after each mutant (try/finally), and the script
 refuses to start with uncommitted changes in the files it mutates.
 
+WARNING: mutants are written into the source tree. Do not build any other build directory
+while this runs: it can compile a mutant (this happened once: a concurrent UBSan build
+picked up a mutated book.cpp and 18 tests failed until it was rebuilt from clean sources).
+
   python3 tools/mutation_check.py [BUILD_DIR] [--only SUBSTRING]
       BUILD_DIR defaults to build/release (configure and build it first); --only runs the
       mutants whose name contains SUBSTRING.
