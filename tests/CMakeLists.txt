@@ -47,6 +47,21 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME itch_fixtures_up_to_date
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_fixture.py --check)
     set_tests_properties(itch_fixtures_up_to_date PROPERTIES LABELS "itch")
+    # Independent Python decoder (tools/itch_pydecode.py) vs `itch dump --all-fields`: both
+    # fixtures, and 200 random messages of each of the 23 types with every field random.
+    add_test(NAME itch_pydecode_lifecycle
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_pydecode.py
+                     ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/lifecycle.itch
+                     --enginex $<TARGET_FILE:enginex>)
+    add_test(NAME itch_pydecode_malformed
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_pydecode.py
+                     ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/malformed.itch
+                     --enginex $<TARGET_FILE:enginex>)
+    add_test(NAME itch_pydecode_random_all_types
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_pydecode.py
+                     --random 200 --seed 11 --enginex $<TARGET_FILE:enginex>)
+    set_tests_properties(itch_pydecode_lifecycle itch_pydecode_malformed
+                         itch_pydecode_random_all_types PROPERTIES LABELS "itch;cli" TIMEOUT 120)
 endif()
 add_test(NAME cli_itch_replay_strict
          COMMAND enginex itch replay --strict --json

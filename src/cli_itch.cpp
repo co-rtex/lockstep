@@ -377,9 +377,154 @@ Json message_json(const Message& m) {
     return j;
 }
 
+// Every field of every message, under its struct member name; alpha fields full width (not
+// trimmed) through printable(). Used by tools/itch_pydecode.py for an independent field-level
+// differential check.
+template <std::size_t N>
+std::string alpha(const std::array<char, N>& a) {
+    return printable(std::string_view(a.data(), N));
+}
+
+Json full_message_json(const Message& m) {
+    const Header& h = header_of(m);
+    Json j;
+    j["type"] = printable(h.type);
+    j["stock_locate"] = h.stock_locate;
+    j["tracking_number"] = h.tracking_number;
+    j["timestamp_ns"] = h.timestamp_ns;
+    std::visit(
+        [&](const auto& x) {
+            using T = std::decay_t<decltype(x)>;
+            if constexpr (std::is_same_v<T, SystemEvent>) {
+                j["event_code"] = printable(x.event_code);
+            } else if constexpr (std::is_same_v<T, StockDirectory>) {
+                j["stock"] = alpha(x.stock);
+                j["market_category"] = printable(x.market_category);
+                j["financial_status"] = printable(x.financial_status);
+                j["round_lot_size"] = x.round_lot_size;
+                j["round_lots_only"] = printable(x.round_lots_only);
+                j["issue_classification"] = printable(x.issue_classification);
+                j["issue_subtype"] = alpha(x.issue_subtype);
+                j["authenticity"] = printable(x.authenticity);
+                j["short_sale_threshold"] = printable(x.short_sale_threshold);
+                j["ipo_flag"] = printable(x.ipo_flag);
+                j["luld_tier"] = printable(x.luld_tier);
+                j["etp_flag"] = printable(x.etp_flag);
+                j["etp_leverage_factor"] = x.etp_leverage_factor;
+                j["inverse_indicator"] = printable(x.inverse_indicator);
+            } else if constexpr (std::is_same_v<T, StockTradingAction>) {
+                j["stock"] = alpha(x.stock);
+                j["trading_state"] = printable(x.trading_state);
+                j["reserved"] = printable(x.reserved);
+                j["reason"] = alpha(x.reason);
+            } else if constexpr (std::is_same_v<T, RegShoRestriction>) {
+                j["stock"] = alpha(x.stock);
+                j["reg_sho_action"] = printable(x.reg_sho_action);
+            } else if constexpr (std::is_same_v<T, MarketParticipantPosition>) {
+                j["mpid"] = alpha(x.mpid);
+                j["stock"] = alpha(x.stock);
+                j["primary_market_maker"] = printable(x.primary_market_maker);
+                j["market_maker_mode"] = printable(x.market_maker_mode);
+                j["participant_state"] = printable(x.participant_state);
+            } else if constexpr (std::is_same_v<T, MwcbDeclineLevel>) {
+                j["level1"] = x.level1;
+                j["level2"] = x.level2;
+                j["level3"] = x.level3;
+            } else if constexpr (std::is_same_v<T, MwcbStatus>) {
+                j["breached_level"] = printable(x.breached_level);
+            } else if constexpr (std::is_same_v<T, IpoQuotingPeriod>) {
+                j["stock"] = alpha(x.stock);
+                j["release_time"] = x.release_time;
+                j["release_qualifier"] = printable(x.release_qualifier);
+                j["ipo_price"] = x.ipo_price;
+            } else if constexpr (std::is_same_v<T, LuldAuctionCollar>) {
+                j["stock"] = alpha(x.stock);
+                j["reference_price"] = x.reference_price;
+                j["upper_collar"] = x.upper_collar;
+                j["lower_collar"] = x.lower_collar;
+                j["extension"] = x.extension;
+            } else if constexpr (std::is_same_v<T, OperationalHalt>) {
+                j["stock"] = alpha(x.stock);
+                j["market_code"] = printable(x.market_code);
+                j["halt_action"] = printable(x.halt_action);
+            } else if constexpr (std::is_same_v<T, AddOrder>) {
+                j["order_ref"] = x.order_ref;
+                j["side"] = printable(static_cast<char>(x.side));
+                j["shares"] = x.shares;
+                j["stock"] = alpha(x.stock);
+                j["price"] = x.price;
+                if (x.attribution) {
+                    j["attribution"] = alpha(*x.attribution);
+                }
+            } else if constexpr (std::is_same_v<T, OrderExecuted>) {
+                j["order_ref"] = x.order_ref;
+                j["executed_shares"] = x.executed_shares;
+                j["match_number"] = x.match_number;
+            } else if constexpr (std::is_same_v<T, OrderExecutedWithPrice>) {
+                j["order_ref"] = x.order_ref;
+                j["executed_shares"] = x.executed_shares;
+                j["match_number"] = x.match_number;
+                j["printable"] = x.printable ? "Y" : "N";
+                j["execution_price"] = x.execution_price;
+            } else if constexpr (std::is_same_v<T, OrderCancel>) {
+                j["order_ref"] = x.order_ref;
+                j["canceled_shares"] = x.canceled_shares;
+            } else if constexpr (std::is_same_v<T, OrderDelete>) {
+                j["order_ref"] = x.order_ref;
+            } else if constexpr (std::is_same_v<T, OrderReplace>) {
+                j["original_ref"] = x.original_ref;
+                j["new_ref"] = x.new_ref;
+                j["shares"] = x.shares;
+                j["price"] = x.price;
+            } else if constexpr (std::is_same_v<T, Trade>) {
+                j["order_ref"] = x.order_ref;
+                j["side"] = printable(x.side);
+                j["shares"] = x.shares;
+                j["stock"] = alpha(x.stock);
+                j["price"] = x.price;
+                j["match_number"] = x.match_number;
+            } else if constexpr (std::is_same_v<T, CrossTrade>) {
+                j["shares"] = x.shares;
+                j["stock"] = alpha(x.stock);
+                j["cross_price"] = x.cross_price;
+                j["match_number"] = x.match_number;
+                j["cross_type"] = printable(x.cross_type);
+            } else if constexpr (std::is_same_v<T, BrokenTrade>) {
+                j["match_number"] = x.match_number;
+            } else if constexpr (std::is_same_v<T, Noii>) {
+                j["paired_shares"] = x.paired_shares;
+                j["imbalance_shares"] = x.imbalance_shares;
+                j["imbalance_direction"] = printable(x.imbalance_direction);
+                j["stock"] = alpha(x.stock);
+                j["far_price"] = x.far_price;
+                j["near_price"] = x.near_price;
+                j["current_reference_price"] = x.current_reference_price;
+                j["cross_type"] = printable(x.cross_type);
+                j["price_variation_indicator"] = printable(x.price_variation_indicator);
+            } else if constexpr (std::is_same_v<T, RetailInterest>) {
+                j["stock"] = alpha(x.stock);
+                j["interest_flag"] = printable(x.interest_flag);
+            } else if constexpr (std::is_same_v<T, DlcrPriceDiscovery>) {
+                j["stock"] = alpha(x.stock);
+                j["open_eligibility_status"] = printable(x.open_eligibility_status);
+                j["minimum_allowable_price"] = x.minimum_allowable_price;
+                j["maximum_allowable_price"] = x.maximum_allowable_price;
+                j["near_execution_price"] = x.near_execution_price;
+                j["near_execution_time"] = x.near_execution_time;
+                j["lower_price_range_collar"] = x.lower_price_range_collar;
+                j["upper_price_range_collar"] = x.upper_price_range_collar;
+            } else {
+                static_assert(sizeof(T) == 0, "every message type must be listed");
+            }
+        },
+        m);
+    return j;
+}
+
 int cmd_dump(const std::vector<std::string>& argv) {
-    const Args a(argv, {"input", "limit"}, {});
+    const Args a(argv, {"input", "limit"}, {"all-fields"});
     const std::uint64_t limit = a.get_u64("limit", 0);
+    const bool all_fields = a.flag("all-fields");
     auto in = open_input(a.require("input"));
     // Decode only (no book): every frame becomes one JSON line, errors included.
     StreamFramer framer;
@@ -408,7 +553,8 @@ int cmd_dump(const std::vector<std::string>& argv) {
                                      .dump()
                               << "\n";
                 } else {
-                    Json j = message_json(std::get<Message>(d));
+                    Json j = all_fields ? full_message_json(std::get<Message>(d))
+                                        : message_json(std::get<Message>(d));
                     j["frame"] = n;
                     std::cout << j.dump() << "\n";
                 }
