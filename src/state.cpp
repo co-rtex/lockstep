@@ -1,8 +1,6 @@
 #include "enginex/state.hpp"
 
-#include <chrono>
 #include <cstdint>
-#include <exception>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -46,18 +44,12 @@ ExchangeStateMachine::ExchangeStateMachine(StateConfig config)
     if (config_.symbols.size() > std::numeric_limits<SymbolId>::max()) {
         throw std::invalid_argument("too many symbols");
     }
-    // Secret index key: placement only, never results (see header). If no entropy source is
-    // available, fall back to the clock and an address: weaker against flooding, never wrong.
-    try {
-        std::random_device rd;
-        auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
-        id_key_ = SipKey{word(), word()};
-    } catch (const std::exception&) {
-        const auto now = static_cast<std::uint64_t>(
-            std::chrono::steady_clock::now().time_since_epoch().count());
-        id_key_ = SipKey{now * 0x9E3779B97F4A7C15ULL,
-                         static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(this))};
-    }
+    // Secret index key: placement only, never results (see header). Fails closed: if the OS
+    // entropy source is unavailable, std::random_device throws and construction fails loudly
+    // rather than running with a guessable key.
+    std::random_device rd;
+    auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
+    id_key_ = SipKey{word(), word()};
 }
 
 std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbol) const noexcept {
