@@ -71,6 +71,50 @@ struct ParsedPacket {
                                                       std::uint16_t count);
 [[nodiscard]] Session make_session(std::string_view text);
 
+// A request packet sent to a re-request server: exactly 20 bytes, count in 1..65534.
+struct Request {
+    Session session{};
+    std::uint64_t sequence = 0;
+    std::uint16_t count = 0;
+};
+[[nodiscard]] std::optional<Request> parse_request(std::span<const std::uint8_t> packet) noexcept;
+
+// A message stream cut into MTU-bounded downstream packets, numbered from sequence 1: what a
+// sender transmits and what a re-request server answers from. Packets are contiguous, so
+// find() is a binary search. Messages are copied into the packets.
+class PacketStore {
+public:
+    PacketStore(const Session& session, std::size_t mtu);
+
+    // Adds the next message. A message that does not fit an empty packet within the MTU is
+    // sent alone (the MTU is a target, not a hard limit); one over 65 535 bytes throws.
+    void append(std::span<const std::uint8_t> message);
+    // Closes the open packet. Call once after the last append().
+    void finish();
+
+    [[nodiscard]] std::size_t size() const noexcept { return packets_.size(); }
+    [[nodiscard]] const std::vector<std::uint8_t>& packet(std::size_t i) const { return packets_[i]; }
+    [[nodiscard]] std::uint64_t first(std::size_t i) const { return first_[i]; }
+    [[nodiscard]] std::uint16_t count(std::size_t i) const { return count_[i]; }
+    // Sequence number after the last message (the end-of-session packet carries it).
+    [[nodiscard]] std::uint64_t end_sequence() const noexcept { return next_; }
+    [[nodiscard]] const Session& session() const noexcept { return session_; }
+    // Index of the packet that holds message `sequence`, if any.
+    [[nodiscard]] std::optional<std::size_t> find(std::uint64_t sequence) const noexcept;
+
+private:
+    void flush();
+
+    Session session_;
+    std::size_t mtu_;
+    std::uint64_t next_ = 1;
+    std::vector<std::vector<std::uint8_t>> packets_;
+    std::vector<std::uint64_t> first_;
+    std::vector<std::uint16_t> count_;
+    std::vector<std::vector<std::uint8_t>> batch_;
+    std::size_t batch_bytes_ = kHeaderSize;
+};
+
 // Turns packets (possibly duplicated, reordered or lost) into the exact message sequence.
 //
 // * Messages are released strictly in sequence order, each exactly once.
@@ -82,8 +126,8 @@ struct ParsedPacket {
 //   `max_ahead` beyond the next expected sequence, the gap is declared unrecoverable: the sequencer
 //   stops releasing anything (Failed) instead of skipping messages. Consumers that maintain
 //   state (an order book) must then rebuild from a snapshot or the start of the session.
-// * Packets from a different session are rejected (counted); a session is fixed by the first
-//   packet seen.
+// * Packets from a different session are rejected (counted); the session is the configured
+//   one, or else is fixed by the first packet seen.
 class Sequencer {
 public:
     enum class State : std::uint8_t { Running, Gap, Ended, Failed };
@@ -95,6 +139,9 @@ public:
         // A packet whose messages would start more than this far beyond the next expected
         // sequence is treated as unrecoverable (a huge loss and a corrupt header look alike).
         std::uint64_t max_ahead = 1'000'000;
+        // Expected session. Without it the first packet seen fixes the session, so a stray
+        // packet from another session that arrives first would lock out the real feed.
+        std::optional<Session> session;
     };
 
     struct Stats {
@@ -133,6 +180,8 @@ public:
     [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>> missing() const;
     // Highest sequence seen so far + 1 (from data or control packets).
     [[nodiscard]] std::uint64_t horizon() const noexcept { return horizon_; }
+    // The session fixed by the first packet (none before any packet).
+    [[nodiscard]] const std::optional<Session>& session() const noexcept { return session_; }
 
 private:
     template <typename Deliver>

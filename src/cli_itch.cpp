@@ -13,6 +13,7 @@
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/byte_reader.hpp"
 #include "enginex/itch/mold_sim.hpp"
+#include "enginex/itch/mold_udp.hpp"
 #include "enginex/itch/replay.hpp"
 #include "enginex/itch/synthetic.hpp"
 #include "enginex/json_codec.hpp"
@@ -490,11 +491,161 @@ int cmd_mold_sim(const std::vector<std::string>& argv) {
     return ok ? 0 : kExitStopped;
 }
 
+std::uint16_t port_arg(const Args& a, const std::string& key, std::uint64_t fallback) {
+    const std::uint64_t v = a.get_u64(key, fallback);
+    if (v > 65535) {
+        throw UsageError("--" + key + " must be a port number");
+    }
+    return static_cast<std::uint16_t>(v);
+}
+
+std::string host_arg(const Args& a, const std::string& key) {
+    std::string host = a.get_or(key, "127.0.0.1");
+    if (!mold::udp::is_loopback(host) && !a.flag("allow-remote")) {
+        throw UsageError("--" + key + " " + host +
+                         " is not a loopback address (pass --allow-remote to use it)");
+    }
+    return host;
+}
+
+std::uint32_t percent_arg(const Args& a, const std::string& key) {
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64(key, 0), 100));
+}
+
+// MoldUDP64 over real UDP: sends a file's messages and answers re-requests (mold_udp.hpp).
+int cmd_mold_send(const std::vector<std::string>& argv) {
+    const Args a(argv,
+                 {"input", "port", "dest-host", "dest-port", "drop-percent",
+                  "retransmit-drop-percent", "seed", "mtu", "rate-pps", "linger-ms", "session"},
+                 {"allow-remote"});
+    const std::string input = a.require("input");
+    mold::udp::SenderOptions o;
+    o.bind.host = "0.0.0.0";
+    o.bind.port = port_arg(a, "port", 0);
+    if (!a.flag("allow-remote")) {
+        o.bind.host = "127.0.0.1";
+    }
+    o.dest.host = host_arg(a, "dest-host");
+    o.dest.port = port_arg(a, "dest-port", 0);
+    if (o.dest.port == 0) {
+        throw UsageError("--dest-port is required");
+    }
+    o.drop_percent = percent_arg(a, "drop-percent");
+    o.retransmit_drop_percent = percent_arg(a, "retransmit-drop-percent");
+    o.seed = a.get_u64("seed", 1);
+    o.packets_per_second = a.get_u64("rate-pps", 100'000);
+    o.linger = std::chrono::milliseconds(a.get_u64("linger-ms", 1000));
+    const std::size_t mtu = a.get_u64("mtu", 1400);
+    if (mtu < 100 || mtu > 65507) {
+        throw UsageError("--mtu must be in [100, 65507]");
+    }
+    // Frames are copied into packets as they are, without decoding (the sender is a transport).
+    mold::PacketStore store(mold::make_session(a.get_or("session", "ENGINEX")), mtu);
+    StreamFramer framer;
+    auto in = open_input(input);
+    std::vector<char> buf(1 << 20);
+    FrameError fe = FrameError::None;
+    while (fe == FrameError::None && *in) {
+        in->read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        const auto n = static_cast<std::size_t>(in->gcount());
+        fe = framer.feed(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(buf.data()), n),
+                         [&](std::span<const std::uint8_t> m) { store.append(m); });
+    }
+    if (fe == FrameError::None) {
+        fe = framer.finish();
+    }
+    if (fe != FrameError::None && fe != FrameError::TruncatedTail) {
+        throw std::runtime_error("input framing error: " + std::string(to_string(fe)));
+    }
+    store.finish();
+    mold::udp::Sender sender(store, o);
+    std::cerr << "mold-send: " << store.size() << " packets, " << store.end_sequence() - 1
+              << " messages, from port " << sender.port() << " to " << o.dest.host << ":"
+              << o.dest.port << "\n";
+    const mold::udp::SenderReport r = sender.run();
+    std::cout << Json{{"type", "mold_udp_send"},
+                      {"input", input},
+                      {"messages", store.end_sequence() - 1},
+                      {"input_truncated_tail", fe == FrameError::TruncatedTail},
+                      {"packets", r.packets},
+                      {"sent", r.sent},
+                      {"dropped_deliberately", r.dropped},
+                      {"requests_answered", r.requests},
+                      {"bad_requests", r.bad_requests},
+                      {"retransmitted_packets", r.retransmitted},
+                      {"retransmit_dropped_deliberately", r.retransmit_dropped},
+                      {"end_of_session_packets", r.end_packets},
+                      {"send_errors", r.send_errors}}
+                     .dump()
+              << "\n";
+    return 0;
+}
+
+// Receives MoldUDP64 over UDP, re-requests gaps, rebuilds the books. Exit 0 only if the session
+// ended with every message delivered in order, exactly once.
+int cmd_mold_recv(const std::vector<std::string>& argv) {
+    const Args a(argv,
+                 {"port", "request-host", "request-port", "session", "idle-timeout-ms",
+                  "request-interval-ms", "max-buffered-messages"},
+                 {"no-recovery", "allow-remote"});
+    mold::udp::ReceiverOptions o;
+    o.bind.host = a.flag("allow-remote") ? "0.0.0.0" : "127.0.0.1";
+    o.bind.port = port_arg(a, "port", 0);
+    if (o.bind.port == 0) {
+        throw UsageError("--port is required (the sender needs it)");
+    }
+    o.request_to.host = host_arg(a, "request-host");
+    o.request_to.port = port_arg(a, "request-port", 0);
+    o.recovery = !a.flag("no-recovery");
+    if (o.recovery && o.request_to.port == 0) {
+        throw UsageError("--request-port is required unless --no-recovery");
+    }
+    o.idle_timeout = std::chrono::milliseconds(a.get_u64("idle-timeout-ms", 5000));
+    o.request_interval = std::chrono::milliseconds(std::max<std::uint64_t>(1, a.get_u64("request-interval-ms", 5)));
+    // Reorder buffer: bounded, but large enough to ride out a few request rounds at full rate.
+    o.sequencer.max_buffered_messages = a.get_u64("max-buffered-messages", 1U << 20U);
+    o.sequencer.session = mold::make_session(a.get_or("session", "ENGINEX"));
+    mold::udp::Receiver rx(o);
+    std::cerr << "mold-recv: listening on " << o.bind.host << ":" << rx.port() << "\n";
+    BookBuilder book;
+    std::uint64_t decode_errors = 0;
+    const mold::udp::ReceiverReport r = rx.run([&](std::uint64_t, std::span<const std::uint8_t> m) {
+        const DecodeResult d = decode(m);
+        if (const auto* msg = std::get_if<Message>(&d)) {
+            (void)book.apply(*msg);
+        } else {
+            ++decode_errors;
+        }
+    });
+    std::cout << Json{{"type", "mold_udp_receive"},
+                      {"final_state", r.final_state},
+                      {"delivered", r.delivered},
+                      {"next_expected", r.next_expected},
+                      {"in_order_exactly_once", r.in_order},
+                      {"datagrams", r.packets},
+                      {"bytes", r.bytes},
+                      {"duplicates_dropped", r.duplicates},
+                      {"malformed_datagrams", r.malformed},
+                      {"foreign_session_datagrams", r.foreign_session},
+                      {"gaps_opened", r.gaps_opened},
+                      {"gaps_closed", r.gaps_closed},
+                      {"reorder_buffer_peak", r.buffered_peak},
+                      {"request_rounds", r.request_rounds},
+                      {"requests_sent", r.requests_sent},
+                      {"decode_errors", decode_errors},
+                      {"timed_out", r.timed_out},
+                      {"seconds", r.seconds},
+                      {"book_hash", book.state_hash()}}
+                     .dump()
+              << "\n";
+    return r.final_state == "ended" && r.in_order ? 0 : kExitStopped;
+}
+
 }  // namespace
 
 int cmd_itch(const std::vector<std::string>& args) {
     if (args.empty()) {
-        throw UsageError("expected a subcommand: generate, replay, dump or mold-sim");
+        throw UsageError("expected a subcommand: generate, replay, dump, mold-sim, mold-send or mold-recv");
     }
     const std::vector<std::string> rest(args.begin() + 1, args.end());
     if (args[0] == "generate") {
@@ -508,6 +659,12 @@ int cmd_itch(const std::vector<std::string>& args) {
     }
     if (args[0] == "mold-sim") {
         return cmd_mold_sim(rest);
+    }
+    if (args[0] == "mold-send") {
+        return cmd_mold_send(rest);
+    }
+    if (args[0] == "mold-recv") {
+        return cmd_mold_recv(rest);
     }
     throw UsageError("unknown itch subcommand: " + args[0]);
 }

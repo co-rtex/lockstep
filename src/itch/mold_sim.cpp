@@ -12,33 +12,12 @@ namespace enginex::itch::mold {
 
 namespace {
 
-struct Store {
-    std::vector<std::vector<std::uint8_t>> packets;     // data packets in send order
-    std::vector<std::pair<std::uint64_t, std::uint16_t>> range;  // first sequence, count
-};
-
-Store packetize(const std::vector<Message>& stream, std::size_t mtu, const Session& session) {
-    Store s;
-    std::uint64_t seq = 1;
-    std::vector<std::vector<std::uint8_t>> batch;
-    std::size_t bytes = kHeaderSize;
-    auto flush = [&] {
-        if (batch.empty()) return;
-        s.range.emplace_back(seq, static_cast<std::uint16_t>(batch.size()));
-        s.packets.push_back(build_packet(session, seq, batch));
-        seq += batch.size();
-        batch.clear();
-        bytes = kHeaderSize;
-    };
+PacketStore packetize(const std::vector<Message>& stream, std::size_t mtu, const Session& session) {
+    PacketStore s(session, mtu);
     for (const Message& m : stream) {
-        auto e = encode(m);
-        if (!batch.empty() && bytes + 2 + e.size() > mtu) {
-            flush();
-        }
-        bytes += 2 + e.size();
-        batch.push_back(std::move(e));
+        s.append(encode(m));
     }
-    flush();
+    s.finish();
     return s;
 }
 
@@ -64,19 +43,17 @@ std::string state_name(Sequencer::State s) {
 
 SimulationReport simulate(const std::vector<Message>& stream, const ChannelOptions& o) {
     const Session session = make_session("SIMULATED");
-    const Store store = packetize(stream, o.mtu, session);
-    const std::uint64_t end_seq = store.range.empty()
-                                      ? 1
-                                      : store.range.back().first + store.range.back().second;
-    const auto end_packet = build_control(session, end_seq, kEndOfSession);
+    const PacketStore store = packetize(stream, o.mtu, session);
+    const auto end_packet = build_control(session, store.end_sequence(), kEndOfSession);
     Rng rng(o.seed);
     SimulationReport r;
     r.messages = stream.size();
-    r.packets = store.packets.size();
+    r.packets = store.size();
 
     // Live feed: loss, duplication, bounded reordering.
     std::vector<const std::vector<std::uint8_t>*> wire;
-    for (const auto& p : store.packets) {
+    for (std::size_t i = 0; i < store.size(); ++i) {
+        const auto& p = store.packet(i);
         if (rng.below(100) < o.loss_percent) {
             ++r.packets_lost;
             continue;
@@ -111,11 +88,12 @@ SimulationReport simulate(const std::vector<Message>& stream, const ChannelOptio
     auto recover = [&] {
         ++r.rerequest_rounds;
         for (const auto& [first, count] : q.missing()) {
-            for (std::size_t i = 0; i < store.range.size(); ++i) {
-                const auto [pseq, n] = store.range[i];
+            for (std::size_t i = 0; i < store.size(); ++i) {
+                const std::uint64_t pseq = store.first(i);
+                const std::uint64_t n = store.count(i);
                 if (pseq < first + count && pseq + n > first && rng.below(100) >= o.loss_percent) {
                     ++r.retransmitted_packets;
-                    q.on_packet(store.packets[i], deliver);
+                    q.on_packet(store.packet(i), deliver);
                 }
             }
         }

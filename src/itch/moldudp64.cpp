@@ -109,8 +109,64 @@ Session make_session(std::string_view text) {
     return s;
 }
 
+std::optional<Request> parse_request(std::span<const std::uint8_t> packet) noexcept {
+    if (packet.size() != kHeaderSize) {
+        return std::nullopt;
+    }
+    const ByteReader r(packet);
+    Request q;
+    q.session = r.alpha<10>(0);
+    q.sequence = r.u64(10);
+    q.count = r.u16(18);
+    if (q.count == 0 || q.count == kEndOfSession || q.sequence == 0 ||
+        q.sequence > UINT64_MAX - q.count) {
+        return std::nullopt;
+    }
+    return q;
+}
+
+PacketStore::PacketStore(const Session& session, std::size_t mtu) : session_(session), mtu_(mtu) {}
+
+void PacketStore::append(std::span<const std::uint8_t> message) {
+    if (message.size() > 0xFFFF) {
+        throw std::invalid_argument("MoldUDP64 message longer than 65535 bytes");
+    }
+    if (!batch_.empty() &&
+        (batch_bytes_ + 2 + message.size() > mtu_ || batch_.size() + 1 >= kEndOfSession)) {
+        flush();
+    }
+    batch_bytes_ += 2 + message.size();
+    batch_.emplace_back(message.begin(), message.end());
+}
+
+void PacketStore::finish() { flush(); }
+
+void PacketStore::flush() {
+    if (batch_.empty()) {
+        return;
+    }
+    packets_.push_back(build_packet(session_, next_, batch_));
+    first_.push_back(next_);
+    count_.push_back(static_cast<std::uint16_t>(batch_.size()));
+    next_ += batch_.size();
+    batch_.clear();
+    batch_bytes_ = kHeaderSize;
+}
+
+std::optional<std::size_t> PacketStore::find(std::uint64_t sequence) const noexcept {
+    if (first_.empty() || sequence < first_.front() || sequence >= next_) {
+        return std::nullopt;
+    }
+    // The last packet whose first sequence is <= `sequence`.
+    const auto it = std::upper_bound(first_.begin(), first_.end(), sequence);
+    return static_cast<std::size_t>(std::distance(first_.begin(), it) - 1);
+}
+
 Sequencer::Sequencer(Options options)
-    : o_(options), next_(options.first_sequence), horizon_(options.first_sequence) {}
+    : o_(options),
+      session_(options.session),
+      next_(options.first_sequence),
+      horizon_(options.first_sequence) {}
 
 void Sequencer::note_horizon(std::uint64_t end) { horizon_ = std::max(horizon_, end); }
 

@@ -114,6 +114,11 @@ if(ENGINEX_ITCH_STD_LEVEL_ALLOC)
     target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_LEVEL_ALLOC)
 endif()
 
+# enginex_itch_udp: MoldUDP64 over real UDP sockets (sender with re-request answers, receiver).
+add_library(enginex_itch_udp src/itch/mold_udp.cpp)
+target_link_libraries(enginex_itch_udp PUBLIC enginex_itch enginex_net)
+enginex_set_warnings(enginex_itch_udp)
+
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
 target_include_directories(enginex_bench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
@@ -125,7 +130,7 @@ enginex_set_warnings(enginex_bench_lib)
 # ---------------------------------------------------------------------------
 add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp
     src/cli_net.cpp src/cli_itch.cpp)
-target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib enginex_itch)
+target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib enginex_itch enginex_itch_udp)
 enginex_set_warnings(enginex)
 
 add_executable(enginex_bench benchmarks/bench_main.cpp)

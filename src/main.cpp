@@ -117,6 +117,11 @@ Usage:
   enginex itch dump     --input FILE [--limit N]
   enginex itch mold-sim --input FILE [--seed N] [--loss-percent P] [--duplicate-percent P]
                         [--reorder-window N] [--mtu BYTES] [--no-recovery]   (simulation)
+  enginex itch mold-send --input FILE --dest-port P [--port P] [--drop-percent P]
+                        [--retransmit-drop-percent P] [--rate-pps N] [--linger-ms MS]
+                        [--mtu BYTES] [--seed N] [--session NAME]       (UDP, loopback)
+  enginex itch mold-recv --port P --request-port P [--no-recovery] [--idle-timeout-ms MS]
+                        [--session NAME]                                 (UDP, loopback)
   enginex version
   enginex help
 
@@ -134,6 +139,10 @@ itch:   Nasdaq TotalView-ITCH 5.0 market-data tools (outbound market data, not o
         Input files use the 2-byte big-endian length-prefixed convention. `generate` writes
         a seeded synthetic fixture. `replay` rebuilds per-symbol order books; exit 1 on a
         framing error or (with --strict) the first decode error or book anomaly.
+        `mold-sim` is a simulated channel. `mold-send`/`mold-recv` carry MoldUDP64 over real
+        UDP sockets (loopback unless --allow-remote): the sender answers re-requests, the
+        receiver re-requests gaps and exits 0 only if the session ended with every message
+        delivered in order.
 )";
 }
 

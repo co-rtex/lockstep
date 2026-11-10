@@ -210,6 +210,25 @@ TEST(MoldSequencer, DuplicatesOfBufferedMessagesUseNoCapacity) {
     EXPECT_EQ(q.state(), Sequencer::State::Running);
 }
 
+TEST(MoldSequencer, ConfiguredSessionCannotBeClaimedByAStrayPacket) {
+    const auto stray = build_packet(make_session("INTRUDER"), 1, {msg(9)});
+    const auto real = build_packet(kS, 1, {msg(1), msg(2)});
+    Sequencer open;  // no configured session: the first packet seen fixes it
+    Sink a;
+    open.on_packet(stray, a);
+    open.on_packet(real, a);
+    EXPECT_EQ(a.tags, (std::vector<std::uint8_t>{9}));  // the stray packet won
+    EXPECT_EQ(open.stats().foreign_session_packets, 1U);
+    Sequencer::Options o;
+    o.session = kS;
+    Sequencer fixed(o);
+    Sink b;
+    fixed.on_packet(stray, b);
+    fixed.on_packet(real, b);
+    EXPECT_EQ(b.tags, (std::vector<std::uint8_t>{1, 2}));
+    EXPECT_EQ(fixed.stats().foreign_session_packets, 1U);
+}
+
 TEST(MoldSequencer, ByteBoundAndFarAheadPacketsFailInsteadOfGrowing) {
     Sequencer::Options o;
     o.max_buffered_bytes = 10;
