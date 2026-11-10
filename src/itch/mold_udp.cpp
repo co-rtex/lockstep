@@ -93,6 +93,9 @@ Sender::Sender(const PacketStore& store, SenderOptions options)
     if (::connect(feed_.fd(), reinterpret_cast<const sockaddr*>(&dest), sizeof dest) != 0) {
         throw std::runtime_error(std::string("connect: ") + std::strerror(errno));
     }
+    receiver_ip_ = dest.sin_addr;
+    answer_tokens_ = static_cast<double>(o_.max_answer_packets_per_second) / 10;  // 100 ms burst
+    tokens_at_ = Clock::now();
 }
 
 std::uint16_t Sender::port() const { return bound_port(sock_.fd()); }
@@ -126,6 +129,10 @@ Sender::Peer* Sender::peer_for(const sockaddr_in& from) {
 
 void Sender::answer(std::span<const std::uint8_t> datagram, const sockaddr_in& from, int via_fd,
                     SenderReport& r) {
+    if (!o_.answer_any_source && from.sin_addr.s_addr != receiver_ip_.s_addr) {
+        ++r.foreign_requests;  // never reflect answers toward an unexpected (maybe spoofed) source
+        return;
+    }
     const auto req = parse_request(datagram);
     const auto first = req ? store_.find(req->sequence) : std::nullopt;
     if (!req || req->session != store_.session() || !first) {
@@ -141,6 +148,15 @@ void Sender::answer(std::span<const std::uint8_t> datagram, const sockaddr_in& f
     const std::uint64_t count = std::min<std::uint64_t>(req->count, o_.max_request_messages);
     const std::uint64_t end = req->sequence + count;  // exclusive
     for (std::size_t i = *first; i < store_.size() && store_.first(i) < end; ++i) {
+        const auto now = Clock::now();
+        const double rate = static_cast<double>(o_.max_answer_packets_per_second);
+        answer_tokens_ = std::min(rate / 10, answer_tokens_ + rate * std::chrono::duration<double>(now - tokens_at_).count());
+        tokens_at_ = now;
+        if (answer_tokens_ < 1) {
+            r.answers_rate_limited += 1;  // the receiver will ask again after retry_after
+            continue;
+        }
+        answer_tokens_ -= 1;
         if (rng_.below(100) < o_.retransmit_drop_percent) {
             ++r.retransmit_dropped;
             continue;
@@ -274,12 +290,24 @@ ReceiverReport Receiver::run(
     const auto start = Clock::now();
     auto last_packet = start;
     auto last_round = start - o_.request_interval;
+    in_addr feed_ip{};
+    const std::string feed_host = o_.feed_from.empty() ? o_.request_to.host : o_.feed_from;
+    if (::inet_pton(AF_INET, feed_host.c_str(), &feed_ip) != 1) {
+        throw std::runtime_error("not an IPv4 address: " + feed_host);
+    }
     auto drain = [&](int fd) {
         bool got = false;
         for (int budget = 256; budget > 0; --budget) {
-            const ssize_t n = ::recv(fd, buf.data(), buf.size(), MSG_DONTWAIT);
+            sockaddr_in from{};
+            socklen_t from_len = sizeof from;
+            const ssize_t n = ::recvfrom(fd, buf.data(), buf.size(), MSG_DONTWAIT,
+                                         reinterpret_cast<sockaddr*>(&from), &from_len);
             if (n < 0) {
                 break;
+            }
+            if (!o_.accept_any_source && from.sin_addr.s_addr != feed_ip.s_addr) {
+                ++r.foreign_source;
+                continue;
             }
             got = true;
             ++r.packets;

@@ -215,6 +215,22 @@ TEST(MoldUdp, UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook) {
     EXPECT_EQ(o.book_hash, f.full_hash);
 }
 
+// The receiver accepts feed datagrams only from the expected address: with the feed expected
+// from 127.0.0.2, everything the real sender (127.0.0.1) sends is rejected before sequencing.
+TEST(MoldUdp, DatagramsFromAnUnexpectedSourceAreRejected) {
+    const Feed f = make_feed(2'000);
+    udp::SenderOptions so;
+    so.linger = 100ms;
+    udp::ReceiverOptions ro;
+    ro.feed_from = "127.0.0.2";
+    ro.recovery = false;
+    ro.idle_timeout = 300ms;
+    const Outcome o = transfer(f, so, ro);
+    EXPECT_GT(o.received.foreign_source, 0U);
+    EXPECT_EQ(o.received.delivered, 0U);
+    EXPECT_TRUE(o.received.timed_out);
+}
+
 TEST(MoldUdp, LoopbackCheck) {
     EXPECT_TRUE(udp::is_loopback("127.0.0.1"));
     EXPECT_TRUE(udp::is_loopback("127.1.2.3"));

@@ -46,6 +46,11 @@ struct SenderOptions {
     // After the live feed, keep answering requests until none has arrived for this long.
     std::chrono::milliseconds linger{1000};
     std::uint32_t max_request_messages = 4096;   // cap per request
+    // Anti-reflection: answer only requests from the receiver's IP address (`dest.host`), and
+    // send at most this many answer packets per second overall (token bucket). A 20-byte
+    // request can otherwise trigger ~95 answer packets to a spoofed source.
+    bool answer_any_source = false;
+    std::uint64_t max_answer_packets_per_second = 50'000;
 };
 
 struct SenderReport {
@@ -54,6 +59,8 @@ struct SenderReport {
     std::uint64_t dropped = 0;           // live-feed packets deliberately not sent
     std::uint64_t requests = 0;          // valid requests answered
     std::uint64_t bad_requests = 0;      // malformed, foreign session or out of range
+    std::uint64_t foreign_requests = 0;  // from an address other than the receiver's
+    std::uint64_t answers_rate_limited = 0;  // packets not sent: answer budget exhausted
     std::uint64_t retransmitted = 0;     // packets sent in answers
     std::uint64_t retransmit_dropped = 0;
     std::uint64_t end_packets = 0;
@@ -89,11 +96,18 @@ private:
     Rng rng_;
     std::chrono::steady_clock::time_point last_request_;
     std::vector<Peer> peers_;  // append-only: indices stay valid while one poll round runs
+    in_addr receiver_ip_{};
+    double answer_tokens_ = 0;
+    std::chrono::steady_clock::time_point tokens_at_;
 };
 
 struct ReceiverOptions {
     Endpoint bind;
     Endpoint request_to;                          // the sender's address (set its port later)
+    // Feed datagrams are accepted only from this IP (default: request_to.host). This is a
+    // filter, not authentication: the transport has none (as MoldUDP64 itself has none).
+    std::string feed_from;
+    bool accept_any_source = false;
     bool recovery = true;                         // send re-requests for missing() ranges
     // At most one request round per interval, each for up to `max_ranges_per_round` holes.
     // Recovery keeps up only if ranges/interval exceeds the rate at which holes open (live
@@ -118,6 +132,7 @@ struct ReceiverReport {
     std::uint64_t duplicates = 0;
     std::uint64_t malformed = 0;
     std::uint64_t foreign_session = 0;
+    std::uint64_t foreign_source = 0;   // datagrams from an address other than the feed's
     std::uint64_t gaps_opened = 0;
     std::uint64_t gaps_closed = 0;
     std::uint64_t buffered_peak = 0;

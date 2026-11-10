@@ -519,6 +519,9 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
                   "retransmit-drop-percent", "seed", "mtu", "rate-pps", "linger-ms", "session"},
                  {"allow-remote"});
     const std::string input = a.require("input");
+    if (a.flag("allow-remote") && !a.get("session")) {
+        throw UsageError("--allow-remote requires an explicit --session (the transport is unauthenticated)");
+    }
     mold::udp::SenderOptions o;
     o.bind.host = "0.0.0.0";
     o.bind.port = port_arg(a, "port", 0);
@@ -572,6 +575,8 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
                       {"dropped_deliberately", r.dropped},
                       {"requests_answered", r.requests},
                       {"bad_requests", r.bad_requests},
+                      {"foreign_requests", r.foreign_requests},
+                      {"answers_rate_limited", r.answers_rate_limited},
                       {"retransmitted_packets", r.retransmitted},
                       {"retransmit_dropped_deliberately", r.retransmit_dropped},
                       {"end_of_session_packets", r.end_packets},
@@ -588,6 +593,9 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
                  {"port", "request-host", "request-port", "session", "idle-timeout-ms",
                   "request-interval-ms", "max-buffered-messages"},
                  {"no-recovery", "allow-remote"});
+    if (a.flag("allow-remote") && !a.get("session")) {
+        throw UsageError("--allow-remote requires an explicit --session (the transport is unauthenticated)");
+    }
     mold::udp::ReceiverOptions o;
     o.bind.host = a.flag("allow-remote") ? "0.0.0.0" : "127.0.0.1";
     o.bind.port = port_arg(a, "port", 0);
@@ -627,6 +635,7 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
                       {"duplicates_dropped", r.duplicates},
                       {"malformed_datagrams", r.malformed},
                       {"foreign_session_datagrams", r.foreign_session},
+                      {"foreign_source_datagrams", r.foreign_source},
                       {"gaps_opened", r.gaps_opened},
                       {"gaps_closed", r.gaps_closed},
                       {"reorder_buffer_peak", r.buffered_peak},
