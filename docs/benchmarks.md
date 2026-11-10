@@ -192,6 +192,7 @@ Commands:
 
 *Reproduction after the sprint* (`94ee2d0`, which includes the R4 pool;
 [`r2-durable-macos-m3-rerun-20261110.csv`](../benchmarks/results/r2-durable-macos-m3-rerun-20261110.csv)):
+
 | mode | throughput | p50 ack |
 |---|---:|---:|
 | sync (`F_FULLFSYNC`) | 364 cmd/s (was 315) | 2.99 ms (was 3.12) |
