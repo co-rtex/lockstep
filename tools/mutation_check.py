@@ -62,6 +62,8 @@ MUTANTS = [
      "if (--dir_[p]->live == 0) {", "if (--dir_[p]->live <= 1) {", 0, ITCH),
     ("codec: timestamp read one byte early", "src/itch/codec.cpp",
      "h.timestamp_ns = r.u48(5);", "h.timestamp_ns = r.u48(4);", 0, ITCH),
+    ("codec: stock directory IPO flag read one byte early", "src/itch/codec.cpp",
+     "m.ipo_flag = r.alpha(31);", "m.ipo_flag = r.alpha(30);", 0, ITCH + "|ctest:itch_pydecode"),
     ("codec: add-order side not validated", "src/itch/codec.cpp",
      "if (side != 'B' && side != 'S') {", "if (false) {", 0, ITCH),
     ("codec: add-order price read one byte early", "src/itch/codec.cpp",
@@ -190,12 +192,21 @@ def main():
         t0 = time.time()
         try:
             path.write_text(mutated)
-            rc, out = run(["cmake", "--build", str(BUILD), "--target", "enginex_tests"], 900)
+            # A filter may end in "|ctest:REGEX": ctest tests (e.g. the Python differential
+            # decoder) that run when the gtest filter alone does not kill the mutant.
+            gfilt, _, ctest_re = filt.partition("|ctest:")
+            targets = ["enginex_tests"] + (["enginex"] if ctest_re else [])
+            rc, out = run(["cmake", "--build", str(BUILD), "--target", *targets], 900)
             if rc != 0:
                 verdict = "INVALID"
             else:
-                rc, out = run([str(TESTS), f"--gtest_filter={filt}", "--gtest_brief=1"], 900)
+                rc, out = run([str(TESTS), f"--gtest_filter={gfilt}", "--gtest_brief=1"], 900)
                 verdict = "SURVIVED" if rc == 0 else "KILLED"
+                if verdict == "SURVIVED" and ctest_re:
+                    rc, cout = run(["ctest", "--test-dir", str(BUILD), "-R", ctest_re], 900)
+                    if rc != 0:
+                        verdict = "KILLED"
+                        out = f"[  FAILED  ] ctest -R {ctest_re}"
         finally:
             path.write_text(original)
         failed = sorted({l.split()[3] for l in out.splitlines()
