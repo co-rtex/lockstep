@@ -95,5 +95,37 @@ with tempfile.TemporaryDirectory() as d:
                 sys.exit(f"{args} crashed on a mutant (exit {p.returncode}): {p.stderr}")
             for line in p.stdout.splitlines():
                 json.loads(line)
+    # MoldUDP64 over real UDP (loopback), two processes, with deliberate loss both ways.
+    import socket
+    import time
+
+    def free_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.bind(("127.0.0.1", 0))
+            return sk.getsockname()[1]
+
+    rport, sport = free_port(), free_port()
+    recv = subprocess.Popen([exe, "itch", "mold-recv", "--port", str(rport), "--request-port",
+                             str(sport), "--idle-timeout-ms", "3000"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(0.3)
+    sent = json.loads(run("itch", "mold-send", "--input", f, "--port", str(sport), "--dest-port",
+                          str(rport), "--drop-percent", "5", "--retransmit-drop-percent", "10",
+                          "--linger-ms", "300", "--seed", "4"))
+    out, err = recv.communicate(timeout=60)
+    assert recv.returncode == 0, (recv.returncode, out, err)
+    got = json.loads(out)
+    assert got["final_state"] == "ended" and got["in_order_exactly_once"], got
+    assert got["delivered"] == sent["messages"] and got["book_hash"] == r1["state_hash"], got
+    assert sent["dropped_deliberately"] > 0 and sent["requests_answered"] > 0, sent
+    # Usage errors (exit 2): no destination, non-loopback without --allow-remote, --allow-remote
+    # without an explicit session, an over-long session, an out-of-range request interval.
+    run("itch", "mold-send", "--input", f, expect=2)
+    run("itch", "mold-send", "--input", f, "--dest-port", "9", "--dest-host", "10.0.0.1", expect=2)
+    run("itch", "mold-send", "--input", f, "--dest-port", "9", "--allow-remote", expect=2)
+    run("itch", "mold-send", "--input", f, "--dest-port", "9", "--session", "ELEVENCHARS", expect=2)
+    run("itch", "mold-recv", "--port", str(rport), "--request-port", "9",
+        "--request-interval-ms", "0", expect=2)
+    run("itch", "mold-recv", "--port", str(rport), expect=2)  # recovery needs --request-port
     run("itch", "bogus", expect=2)
 print("cli itch smoke: ok")

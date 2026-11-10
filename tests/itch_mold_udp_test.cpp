@@ -161,6 +161,21 @@ TEST(MoldUdp, LossyLoopbackRebuildsTheExactBook) {
     EXPECT_EQ(o.book_hash, f.full_hash);
 }
 
+// The answer budget (anti-amplification) can starve recovery for a while; the receiver's
+// retries must still complete the book once tokens come back.
+TEST(MoldUdp, RateLimitedAnswersStillCompleteTheBook) {
+    const Feed f = make_feed(30'000);
+    udp::SenderOptions so;
+    so.drop_percent = 5;
+    so.seed = 8;
+    so.linger = 300ms;
+    so.max_answer_packets_per_second = 100;  // 10-packet burst, then 1 per 10 ms
+    const Outcome o = transfer(f, so, udp::ReceiverOptions{});
+    EXPECT_GT(o.sent.answers_rate_limited, 0U);
+    EXPECT_EQ(o.received.final_state, "ended");
+    EXPECT_EQ(o.book_hash, f.full_hash);
+}
+
 TEST(MoldUdp, WithoutRecoveryTheBookStopsExactlyAtTheHole) {
     const Feed f = make_feed(10'000);
     udp::SenderOptions so;
