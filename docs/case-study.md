@@ -138,6 +138,17 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
    start. The useful question was a *large* book going cold. Timing the 2 000 messages after
    a flush on a book of ≈ 89 k orders gave 2.6–2.9× the warm mean and 3× the warm p99.
 
+9. **Real data overturned the synthetic conclusions.** A 256 MiB range download of a public
+   Nasdaq sample gave 21.26 M real messages. All decoded, the book saw zero anomalies under
+   `--strict`, and the reference model agreed on all 1.54 M live orders. It also showed that
+   the synthetic workload had misled the optimization. Real adds open a new price level 43 %
+   of the time (synthetic: 1.6 %), books are thousands of levels deep, and with 1.5 M live
+   orders the hash index cost a DRAM miss per lookup. A throwaway flat-array experiment cut
+   replay from 91 to 60 ns/msg, which proved the index was the bottleneck. The production
+   version is a paged direct index (pages on demand, freed when empty, budget-capped, hash
+   fallback) together with sorted-vector price levels. Real-data replay went from 99.3 to
+   62.1 ns/msg (−37 %), and the rehash spike disappeared without any capacity hint.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every
@@ -151,7 +162,8 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
 
 ## 8. Limits and next steps
 
-* No historical Nasdaq data was used. Behavior on real full-day files is untested.
+* Real data: one public sample day, its first 256 MiB only (through 09:37 ET). Full days,
+  other dates, closing crosses and halts in volume remain untested.
 * There is no UDP receiver, wire re-request protocol or SoupBinTCP. The MoldUDP64 sequencer
   is exercised on simulated channels only.
 * The synthetic book grows over a run (≈ 89 k live orders after 1 M messages). Compare

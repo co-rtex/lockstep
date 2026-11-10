@@ -243,3 +243,21 @@ default target here (the build host's SDK, macOS 26) is fine, but setting
 `CMAKE_OSX_DEPLOYMENT_TARGET` much lower would fail to link. An independent review of this
 change (lifetime, uses-allocator construction, iterator stability, determinism, exception
 safety) found no defects.
+
+## D27. ITCH book layout chosen on real data: sorted-vector levels, paged direct index
+The synthetic workload had suggested the book was close to done. A 256 MiB prefix of a public
+Nasdaq sample showed otherwise (docs/itch.md § Real Nasdaq sample). (1) 43 % of adds and
+replaces open a new level (synthetic: 1.6 %) in books thousands of levels deep. Price levels
+became a contiguous vector per side, sorted with the best price at the back, with Levels in a
+stable deque pool. This is fast to search and cheap to modify near the top. (2) With 1.5 M
+live orders, the hash index (64 MiB) costs a DRAM miss per lookup. A flat-array experiment
+(not shipped) proved this: replay went 91 → 60 ns/msg. Order references are dense and mostly
+increasing, so the shipped index pages them directly. Each page covers 4 096 references
+(16 KiB), pages are created on demand and freed when empty, the page count is capped
+(256 MiB), and an open-addressing table handles references ≥ 2³² or arriving over budget.
+*Rejected:* a flat array (unbounded memory for large or adversarial references); a larger
+hash load factor (still random DRAM access). Result on real data: replay 99.3 → 62.1 ns/msg
+with an identical book. The earlier variants stay behind `-DENGINEX_ITCH_MAP_LEVELS=ON` and
+`-DENGINEX_ITCH_HASH_INDEX=ON`. *Data handling:* the sample is used locally only, never
+committed, and no build or test requires it (the real-data test skips unless
+`ENGINEX_ITCH_REAL_FILE` is set).

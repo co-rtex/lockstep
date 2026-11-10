@@ -47,7 +47,8 @@ specification, not Nasdaq data.
 | ITCH order-book reconstruction: add/execute/cancel/delete/replace, FIFO priority, depth, anomaly policy, deterministic state hash | ITCH | **Implemented, tested** (differential vs. a naive reference model, corrupted-file fuzzing) |
 | `enginex itch generate / replay / dump`, ITCH decode/reconstruction benchmark with allocation counts | ITCH | **Implemented, measured** |
 | MoldUDP64 packet parsing and sequencing: duplicates, overlap, bounded reordering, gap detection with re-request ranges, fail-stop instead of skipping | ITCH | **Implemented, tested** on simulated lossy/reordering channels (no socket receiver) |
-| UDP multicast receiver, live retransmission, SoupBinTCP, real historical data | — | **Not implemented** (no such claim is made) |
+| Validation on real Nasdaq data: 21.26 M messages from a public sample (pre-market to 09:37), zero decode errors, zero book anomalies, every live order matching the reference model | ITCH | **Verified locally** (data not redistributed; see docs/itch.md) |
+| UDP multicast receiver, live retransmission, SoupBinTCP, full-day or multi-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
 The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
 *ITCH* and *Sprint* have been verified locally only: macOS, Apple clang 17, release suite,
@@ -291,6 +292,8 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 | book apply, open addressing + capacity hint (max latency 613 µs → 1.6 µs) | 26.8 | 37.4 M | 0.008 |
 | full replay (framing + decoding + book), open addressing + hint | 37.8 | 26.4 M | 0.008 |
 | book apply, 5000 symbols / 2 M msgs, `std::allocator` level nodes → free-list arena | 70.6 → 56.1 | 14.2 M → 17.8 M | 0.304 → 0.003 |
+| **real Nasdaq sample** (21.26 M msgs, 8 713 symbols): replay, map + hash → sorted-vector levels + paged direct index | 99.3 → **62.1** | 10.1 M → **16.1 M** | ≈ 0 |
+| book apply, 1 M msgs / 8 symbols, same change (no capacity hint) | 31.7 → 22.4 | 31.5 M → 44.6 M | ≈ 0 |
 
 ## Testing strategy
 

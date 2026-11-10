@@ -182,6 +182,8 @@ pushed, so GitHub CI has not run on them.
 | Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
 | Source-based coverage | done | `scripts/coverage.sh`: 94.7 % lines over ITCH/mirror/server/CLI-ITCH |
 | Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (3.0 → 1.0 allocs/cmd); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
+| Real-data validation (public Nasdaq sample prefix, local only): 21.26 M msgs decode, 0 anomalies under --strict, reference model agrees on all 1.54 M live orders | done | `ENGINEX_ITCH_REAL_FILE=… ctest`-style run of `ItchRealData.*`; docs/itch.md |
+| Real-data-driven layout: sorted-vector levels + paged direct index (replay 99.3 → 62.1 ns/msg) | done | `benchmarks/results/itch-real-sample-macos-m3.csv`, `itch-structures-macos-m3.csv` |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
 
 Commands and results (latest):

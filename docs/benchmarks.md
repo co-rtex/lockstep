@@ -413,6 +413,48 @@ measurable reason latency-sensitive systems keep hot data warm (for example by t
 during idle time). Nothing like that is implemented here; this only quantifies the cost on
 this machine.
 
+### Real Nasdaq sample, and the layout changes it drove
+
+Input: the first 256 MiB (compressed) of Nasdaq's public sample `01302019.NASDAQ_ITCH50.gz`,
+decompressed to 676 MB. That is 21 255 695 messages, 03:03 to 09:37 ET, 8 713 symbols and
+1.54 M live orders at the end; see [itch.md § Real Nasdaq sample](itch.md#real-nasdaq-sample-local-validation)
+for provenance. The file is held in memory, and every trial replays it into a fresh book.
+Commit `bbd4ff64a0aa`, three builds of that commit, 5 trials, medians, no capacity hint.
+Raw rows (timings only, no market data):
+[`itch-real-sample-macos-m3.csv`](../benchmarks/results/itch-real-sample-macos-m3.csv).
+
+| build | price levels | order index | replay ns/msg | msgs/s | peak RSS |
+|---|---|---|---:|---:|---:|
+| `-DENGINEX_ITCH_MAP_LEVELS=ON -DENGINEX_ITCH_HASH_INDEX=ON` | `std::map` + arena | hash | 99.3 | 10.1 M | 1.0 GiB |
+| `-DENGINEX_ITCH_HASH_INDEX=ON` | sorted vector | hash | 91.4 | 10.9 M | 1.2 GiB |
+| default | sorted vector | paged direct | **62.1** | **16.1 M** | 1.2 GiB |
+
+Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
+676 MB file held in memory.
+
+**How the data drove the changes.** The real per-type costs (adds ≈ 97 ns, deletes ≈ 79 ns,
+replaces ≈ 182 ns, timer included) were 3–4× the synthetic ones. New level counters showed
+43 % of adds and replaces opening a level, against 1.6 % in the synthetic stream, with books
+thousands of levels deep. That motivated the sorted vector (−8 %). An experiment then showed
+where the rest of the time went: a flat array indexed by order reference, valid only for
+this file, replaced the hash index and cut replay to 59.9 ns/msg. With 1.5 M live orders the
+hash table needs 64 MiB, and every lookup is a DRAM miss. Nasdaq references are dense and
+mostly increasing, so the production *paged* direct index (bounded memory, hash fallback)
+keeps nearly all of that gain.
+
+The same three builds on the synthetic workloads (commit `bbd4ff6`, no hint; raw rows:
+[`itch-structures-macos-m3.csv`](../benchmarks/results/itch-structures-macos-m3.csv)):
+
+| workload | measurement | map + hash | vector + hash | vector + paged | max latency map+hash → paged |
+|---|---|---:|---:|---:|---:|
+| 1 M msgs, 8 symbols | book apply | 31.7 | 28.0 | **22.4** ns/msg | 609 µs → 30 µs |
+| 1 M msgs, 8 symbols | replay | 43.8 | 40.1 | **35.0** ns/msg | |
+| 2 M msgs, 5000 symbols | book apply | 60.4 | 53.8 | **44.8** ns/msg | 1.25 ms → 79 µs |
+| 2 M msgs, 5000 symbols | replay | 78.2 | 77.0 | **59.6** ns/msg | |
+
+The paged index has no rehash, so the one-off growth spike disappears without a capacity
+hint. State hashes are identical across builds for each workload.
+
 **Workload caveat.** The generator's book grows over the session (≈ 89 k live orders after
 1 M messages, ≈ 178 k after 2 M). Compare per-message costs only at equal message counts.
 

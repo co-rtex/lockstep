@@ -24,8 +24,11 @@ compiler rejects mixing them (this caught one ambiguity in `cli_itch.cpp`).
   (`J` 2017, `h` 2018, `O` 2023) and does not move fields in older ones.
 * The PDFs are not redistributed in this repository.
 * All test fixtures are **synthetic**: produced from the public format by
-  `tools/itch_fixture.py` (hand-scripted) or the seeded generator. No Nasdaq data, licensed
-  or otherwise, is in the repository or needed to build and test.
+  `tools/itch_fixture.py` (hand-scripted) or the seeded generator. No Nasdaq data is in the
+  repository or needed to build and test.
+* **Validation on real data** (local only): a prefix of one of Nasdaq's publicly posted
+  historical sample files. See *Real Nasdaq sample* below. The data were downloaded for local
+  validation and are not redistributed: they stay under the git-ignored `build/`.
 
 ## Layers
 
@@ -192,15 +195,23 @@ synthetic streams do.
 
 * Orders live in one pool (`std::vector<Node>`) with a free list. Each price level holds an
   intrusive doubly linked FIFO of 32-bit pool indices.
-* The order index is an open-addressing table (`order_index.hpp`): Fibonacci hashing, linear
-  probing, backward-shift deletion (no tombstones), load factor ≤ ½, no allocation per
-  operation. It replaced `std::unordered_map`; see *Performance*. The old index remains
-  available as `-DENGINEX_ITCH_STD_INDEX=ON` for same-commit comparisons.
-* Each side of each book is a `std::map<price, Level>`. `Node::level` points into the map
-  node, which `std::map` keeps stable; a level is erased only after its last order is
-  unlinked. Map nodes come from a per-builder free-list arena, so level churn makes no heap
-  calls (≈ 0.30 → 0.003 allocations/msg at 5000 symbols). `-DENGINEX_ITCH_STD_LEVEL_ALLOC=ON`
-  restores `std::allocator` for comparison.
+* The order index is a **paged direct index** (`paged_index.hpp`, D27). Nasdaq order
+  references are dense and mostly increasing. On the real sample, 73 % of adds carry a larger
+  reference than the previous add, and there are ≈ 20 M distinct references in 21 M
+  messages. So references below 2³² index 4 096-entry pages directly: two dependent loads, no
+  hashing or probing. Pages are created on demand and freed when empty, and the page count
+  is capped (256 MiB). References above the direct range, and any arriving when the budget is
+  spent, go to an open-addressing hash table (`order_index.hpp`: Fibonacci hashing, linear
+  probing, backward-shift deletion, load ≤ ½). The history is `std::unordered_map`, then that
+  hash table alone, then this; `-DENGINEX_ITCH_STD_INDEX=ON` and
+  `-DENGINEX_ITCH_HASH_INDEX=ON` rebuild the earlier variants.
+* Each side of each book is a **contiguous vector of (rank, Level\*) sorted so that the best
+  price is at the back**. Rank is the price for bids and `UINT32_MAX − price` for asks.
+  Lookups are binary searches over contiguous memory. Inserting or removing a level near the
+  top moves only the few entries behind it, which matters because 43 % of real adds open a
+  new level. `Level` objects live in a deque pool (stable addresses, free list), so
+  `Node::level` stays valid until the level's last order is unlinked. The earlier
+  `std::map` levels (with a node arena) stay available as `-DENGINEX_ITCH_MAP_LEVELS=ON`.
 * Containers that hash are never iterated for output. All output (depth, canonical state,
   JSON) comes from ordered structures, so results are deterministic.
 
@@ -257,10 +268,51 @@ which follow the specification text, and by the hand-derived fixture.
 ./build/release/enginex itch dump --input tests/testdata/itch/lifecycle.itch --limit 10
 ```
 
-If you have a licensed historical file in this framing, `enginex itch replay --input FILE`
-works the same way. No such file was used in developing or measuring this code.
+Any ITCH 5.0 file in this framing works the same way (see *Real Nasdaq sample*).
+
+## Real Nasdaq sample (local validation)
+
+Nasdaq posts historical TotalView-ITCH 5.0 sample files (gzip) at `emi.nasdaq.com/ITCH/`.
+The full 2019-01-30 file (`01302019.NASDAQ_ITCH50.gz`) is 4.76 GB. Only its first 256 MiB
+were downloaded, with an HTTP range request (SHA-256 of those bytes
+`e917b2fb0ebb3234a13e1837bae0fb73a89b14bbc9377a8cd0c3cdd9f4e56ea5`), and the valid prefix was
+decompressed locally (676 MB). It is used for validation and measurement on this machine
+only; it is not committed, redistributed, or required by any build or test.
+
+```bash
+curl -r 0-268435455 -o prefix.gz https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz
+python3 -c "import zlib,sys; d=zlib.decompressobj(31); sys.stdout.buffer.write(d.decompress(open('prefix.gz','rb').read()))" > prefix.itch
+enginex itch replay --input prefix.itch --strict --json        # exit 1 only for the cut-off last message
+ENGINEX_ITCH_REAL_FILE=prefix.itch build/release/tests/enginex_tests --gtest_filter='ItchRealData*'
+```
+
+Results (21 255 695 messages, 03:03:59 to 09:37:05 ET, through the opening cross):
+
+* **Framing and decoding:** every frame decodes, with 0 unknown types, 0 length mismatches
+  and 0 invalid fields. The 2-byte length-prefixed file convention holds. The only framing
+  error is the truncated final message where the download was cut.
+* **Message mix** (all 16 types present): A 8.56 M, D 7.60 M, U 1.48 M, X 1.21 M, I 1.05 M,
+  F 0.79 M, E 268 k, L 194 k, P 62 k, Y/H/R ≈ 8.7 k each, Q 8 713 (the opening cross),
+  C 5 974, S 3, V 1.
+* **Book semantics:** **zero anomalies in `--strict` mode**. Every execute, cancel, delete and
+  replace referred to a live order with enough shares, so the semantics hold on a real
+  session. There were no timestamp regressions, and none of the 8 713 books was crossed or
+  locked at 09:37:05. AAPL at that time: best bid 162.16 × 100, best ask 162.20 × 32,
+  2 723 / 2 656 levels.
+* **Independent check:** `ItchRealData.MatchesReferenceModelIfAvailable` also replays the file
+  through the naive reference model. All 1 539 130 live orders in 17 384 books, and every
+  per-message anomaly verdict, agree.
+* **What real data showed that synthetic data hid:** 43 % of adds and replaces open a new
+  price level (synthetic stream: 1.6 %). Books are deep (thousands of levels). With 1.5 M live
+  orders, a hash index no longer fits in cache. Both findings changed the data layout below.
+
+Not covered by this sample: the rest of the trading day (≈ 95 % of the file), the closing
+cross, halts and LULD collars in volume, and other days.
 
 ## Performance
+
+On the real sample: decode 13.0 ns/msg (≈ 2.3 GiB/s), full replay 99.3 → 62.1 ns/msg after the
+layout changes driven by that data. Synthetic results follow.
 
 See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). In summary, on
 1 M synthetic messages over 8 symbols: decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s), book apply
@@ -274,9 +326,10 @@ are not wire-to-wire latencies.
 * Files: only the 2-byte length-prefixed framing (no gap detection possible). Transport:
   MoldUDP64 packet parsing and sequencing are implemented and tested on simulated channels.
   There is no socket receiver, no live retransmission and no SoupBinTCP.
-* No historical data was available. The behavior on real full-day files (message mix,
-  anomaly rates, peak order counts) is untested. The synthetic workload's mix is documented
-  in `synthetic.hpp` and is not a model of Nasdaq traffic.
+* Real data: only the first 6.5 hours (pre-market through 09:37) of one day's sample were
+  used, not a full day or several days. The synthetic workload is *not* a model of Nasdaq
+  traffic. It creates new levels 30× less often than the real sample, and its books are
+  shallower.
 * The reconstructed book is the **displayed** Nasdaq book only. Non-displayed liquidity
   (`P`), auction state (`I`, `Q`), and halts (`H`, `h`) are recorded as statistics or state
   but do not alter the book.
