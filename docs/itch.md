@@ -230,7 +230,8 @@ synthetic streams do.
 `canonical_state()` writes every locate (all 8 symbol bytes, non-printables escaped), every
 level, and every order in priority order. `state_hash()` is its SHA-256. Tests check that the
 same bytes give the same hash across runs, across read chunk sizes (1, 2, 3, 7, 64, 4096
-bytes and the whole buffer) and across both index implementations (benchmark rows).
+bytes and the whole buffer) and across every index and level variant (benchmark rows of the
+same workload carry identical hashes).
 
 ## Error policy (`replay`)
 
@@ -257,7 +258,7 @@ bytes and the whole buffer) and across both index implementations (benchmark row
 | Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted) | recorded in the commit log |
 | Corrupted files | 300 randomly corrupted/truncated files: no crash, invariants hold, deterministic | `ItchReplay.CorruptedFilesNeverBreakInvariants` |
 | Fuzzing | `fuzz/itch_fuzz.cpp` (libFuzzer entry point: ITCH replay lenient+strict, and MoldUDP64 sequencing → decode → book) checks invariants, frame accounting, determinism and in-order exactly-once delivery. The standalone seeded mutation driver (not coverage-guided; Apple clang has no libFuzzer) ran **5 000 000 inputs (2.3 GB) with no violation** in a Release build (seed 7, 13 min), and 300 000 inputs under UBSan (Debug, seed 20261110, 41 min) with no violation and no UBSan report. After the sorted-vector/paged-index change (`bbd4ff6`): 2 000 000 more inputs (Release, seed 11), no violation. ctest runs 20 000 inputs. The coverage-guided build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) is for Linux and has not been run here | `fuzz/README.md` |
-| Order index | vs `std::unordered_map` under random operations; deletion inside wrapping collision chains | `OrderIndex.*` |
+| Order index | `OrderIndex` and `PagedIndex` vs `std::unordered_map` under random operations; wrapping collision chains; boundary keys (2³²−1, 2³², 2³²+4095); fallback keys behind pages that appear and are freed; a 2-page budget forcing fallback | `OrderIndex.*`, `PagedIndex.*` |
 | Coverage | `scripts/coverage.sh` (clang source-based, whole ctest suite incl. CLI subprocesses). Latest run (commit `9c98867`): lines 94.2 %, branches 86.4 %, regions 91.8 % over `src/itch`, `include/enginex/itch`, `mirror.cpp`, `cli_itch.cpp`, `server.cpp`. `paged_index.hpp` 100 %, `order_index.hpp` 99 %, `book.cpp` 92.7 %, `moldudp64.cpp` 86.5 %. Uncovered code is mostly `to_string` defaults, accessors and the `-DENGINEX_ITCH_STD_INDEX` A/B index | |
 | Leaks | macOS `leaks --atExit` over the test binary (466 tests; the fork-based crash tests are excluded because they hang under the tool), the real-data CLI replay, 20 000 fuzz inputs and `mold-sim`: 0 leaks | |
 | Sanitizers | UBSan: whole suite. MallocScribble/GuardEdges: ITCH tests. ASan and TSan cannot start in this sandboxed macOS environment (exact errors in `docs/PROGRESS.md`); they run in Linux CI | |
@@ -328,12 +329,14 @@ cross, halts and LULD collars in volume, and other days.
 On the real sample: decode 13.0 ns/msg (≈ 2.3 GiB/s), full replay 99.3 → 62.1 ns/msg after the
 layout changes driven by that data. Synthetic results follow.
 
-See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). In summary, on
-1 M synthetic messages over 8 symbols: decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s), book apply
-52.5 → 32.2 ns/msg after replacing the order index (26.8 ns/msg with a capacity hint), and
-full replay 67.4 → 43.9 ns/msg. At 5000 symbols (2 M messages), apply costs 56.1 ns/msg
-with the level-node arena, versus 70.6 ns/msg without. All in-process, single thread. These
-are not wire-to-wire latencies.
+See [benchmarks.md § ITCH](benchmarks.md#itch-50-decoding-and-reconstruction). The
+synthetic history, 1 M messages over 8 symbols, in the order the changes were made:
+decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s) throughout. Book apply went from 52.5 ns/msg
+(`std::unordered_map` index) to 32.2 (open-addressing hash), to 22.4 (sorted-vector levels +
+paged direct index), and to ≈ 24 with the chunked node pool (which removes a 10 ms stall).
+At 5000 symbols and 2 M messages, apply went 70.6 → 56.1 (level-node arena) → 44.8 (current
+layout). Every number was measured at the commit recorded in its CSV. All in-process,
+single thread. These are not wire-to-wire latencies.
 
 ## Limitations
 
