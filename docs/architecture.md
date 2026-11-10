@@ -114,7 +114,10 @@ not move-assignable.
 * `order_id = "ord-<command_sequence of its new_limit>"`; `execution_id = "exe-<n>"` with one
   global execution sequence across symbols.
 * No wall-clock time, random value, address or hash-iteration order influences matching. FIFO
-  priority is acceptance order.
+  priority is acceptance order. The one random value in the core is the SipHash key of the
+  request-id index. It decides only where an id sits in the table. Every lookup ends in an
+  exact string comparison and the table is never iterated, so results and `state_hash` do not
+  depend on it (a test runs two machines with different keys in lockstep).
 * The canonical state (spec §8.2) is a fixed-order JSON document containing watermarks, books
   (bids descending, asks ascending, FIFO within a level), every accepted command with its
   outcome (this is the idempotency map) and every execution. `state_hash` is its SHA-256.
@@ -127,6 +130,13 @@ and returns the original response (`duplicate: true`) without touching the book.
 body under the same id returns `DUPLICATE_REQUEST_ID_CONFLICT`. Rejected requests are not
 remembered (DECISIONS.md D4): they are never journaled, so remembering them could not survive
 a restart.
+
+Storage (D31). Records live in a `std::deque<CommandRecord>` indexed by command sequence, so
+references stay stable and memory is allocated in blocks. The `request_id` lookup is an
+open-addressing table of 8-byte slots `{32-bit SipHash fingerprint, record index}` at load
+≤ ½, so a new id usually costs one cache miss. It replaced a node-based `unordered_map`
+whose two misses per new id made per-command cost grow from 108 to 296 ns between 100 k and
+3 M commands.
 
 ## Validation and numeric safety
 
