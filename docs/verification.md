@@ -88,6 +88,16 @@ naive reference book, corrupted-file fuzzing, and `OrderIndex` against `std::uno
 The P0 server regressions (`Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber`,
 `Server.SnapshotRefusedAfterInternalFailStop`) are in `networking_test.cpp`.
 
+Two adversarial tests were also added in the sprint:
+
+* `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` (`protocol_fuzz_test.cpp`): 200 k
+  hostile client requests (random bytes, random JSON, damaged and corrupted requests) go
+  through `parse_client_message` into a real `ExchangeStateMachine`. Nothing throws, every
+  error serializes, invariants hold, and identical inputs reproduce identical state.
+* `FeedMirror.RandomMessagesNeverBreakTheRules` (`mirror_test.cpp`): 200 k random server
+  messages. The mirror applies an update only when live and contiguous, and is stale after
+  every failure verdict. Making it accept forward gaps fails this test.
+
 ## Where suites have run
 
 | Environment | Compiler | Build | Result |
