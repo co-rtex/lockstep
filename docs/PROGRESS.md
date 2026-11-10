@@ -181,6 +181,7 @@ pushed, so GitHub CI has not run on them.
 | Second independent review (mirror, order index, arena, server P0, bench) | done | fixed in `799e7c4`; server ordering guarantee and index/arena correctness confirmed by the reviewer |
 | Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
 | Source-based coverage | done | `scripts/coverage.sh`: 94.7 % lines over ITCH/mirror/server/CLI-ITCH |
+| Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (3.0 → 1.0 allocs/cmd); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
 
 Commands and results (latest):
@@ -231,5 +232,5 @@ Blocked in this environment (exact symptoms), so they are not claimed for the sp
 
 1. Push the sprint branch and confirm CI (ASan/UBSan/TSan on Linux) covers the ITCH and P0
    changes; this needs the owner (pushing was out of scope for the sprint).
-2. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
+2. ~~Optional R4: allocation/layout experiment on the order book~~. Done in the sprint (D26).
 3. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.

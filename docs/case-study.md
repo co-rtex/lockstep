@@ -123,6 +123,16 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
    The rest of the growth is cache misses. Optimizing that would require real symbol and
    price distributions, which this project does not have, so it was not attempted.
 
+7. **The same lens on the exchange core (optional R4).** An allocation probe found the
+   matching core making 2.0–3.5 heap calls per command. Each resting order cost a list node,
+   an index node and sometimes a level node, all freed again on fill or cancel. Moving the
+   book's containers to `std::pmr` on one pool per engine gave +14–28 % throughput in the
+   scenarios that recycle nodes and no change in the one that never frees (`no-cross`), with
+   identical state hashes. The subtle part was lifetime, not speed. A defaulted move
+   assignment would have destroyed the pool under live containers. Making the engine
+   non-move-assignable turned that into a compile error, and the compiler then flagged the
+   state machine's unused move assignment.
+
 ## 7. Mistakes worth recording
 
 * The first synthetic generator executed random orders and let crossing adds rest, so every
