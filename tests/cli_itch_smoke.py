@@ -75,5 +75,25 @@ with tempfile.TemporaryDirectory() as d:
     run("itch", "replay", "--input", hostile)  # text mode
     for line in run("itch", "dump", "--input", hostile).splitlines():
         json.loads(line)
+    # CLI-level fuzz: mutated fixtures must always yield valid JSON (exit 0 or 1, never a
+    # crash). The library fuzzer cannot see JSON rendering, which is where review 4 found a bug.
+    import random
+    rng = random.Random(20261110)
+    base = [open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata", "itch", n),
+                 "rb").read() for n in ("lifecycle.itch", "malformed.itch")]
+    mutant = os.path.join(d, "mutant.itch")
+    for _ in range(150):
+        data = bytearray(rng.choice(base))
+        for _ in range(rng.randint(1, 12)):
+            data[rng.randrange(len(data))] = rng.randrange(256)
+        with open(mutant, "wb") as fh:
+            fh.write(data)
+        for args in (("replay", "--json"), ("dump",)):
+            p = subprocess.run([exe, "itch", *args, "--input", mutant], capture_output=True,
+                               text=True)
+            if p.returncode not in (0, 1) or "fatal" in p.stderr:
+                sys.exit(f"{args} crashed on a mutant (exit {p.returncode}): {p.stderr}")
+            for line in p.stdout.splitlines():
+                json.loads(line)
     run("itch", "bogus", expect=2)
 print("cli itch smoke: ok")
