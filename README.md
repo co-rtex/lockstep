@@ -330,7 +330,10 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 * Unit tests cover every matching, cancellation, validation and idempotency rule in spec
   §11.1.
 * Property tests run 100 seeds against a naive, independent reference book and check every
-  invariant after every command.
+  invariant after every command. A second model in Python (`tools/exchange_pymodel.py`)
+  implements the matching and command rules from the spec. On 1 M random commands (valid
+  orders, cancels, invalid fields, identical and conflicting retries) it agrees with
+  `enginex simulate` on every response line and on the final books.
 * Fixtures: TradeGrid's published matching examples and fixtures, translated with attribution
   (`tests/testdata/tradegrid/`), plus EngineX-specific cases. `tools/compare_go_fixtures.py`
   runs a differential check against a local TradeGrid checkout.

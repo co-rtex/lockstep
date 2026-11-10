@@ -72,13 +72,22 @@ are in-process and single-threaded; none is a wire latency.
   validation, journal, the UDP request planner and server. It found two real test gaps, both now covered. One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
   The other was a `book_update` published although its journal flush had failed.
-* **Fuzzing:** a libFuzzer-compatible harness, more than 28 M inputs without a violation (UBSan
+* **Fuzzing:** a libFuzzer-compatible harness, more than 29 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
   over 100 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
   journals (recovery yields an exact prefix or refuses, never a divergent state). Each test asserts
   that its generator actually reaches the interesting paths; that assertion caught three
   generators that were too weak to mean anything.
+* **Second implementations in another language.** Three checks are written in Python from the
+  specs and compared output for output:
+  * an ITCH decoder (every field of 63.7 M real messages);
+  * an ITCH book (every price level of three real days);
+  * an exchange model (every response of 1 M random commands).
+
+  Writing the exchange model was itself a spec check. It first reported a retry's *current*
+  order status; the spec says a retry returns the original result, which is what the C++
+  does.
 
 ## Talking points (questions this project answers)
 
