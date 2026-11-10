@@ -150,6 +150,12 @@ class Model:
         return [{"price": p, "quantity": agg[p][0], "order_count": agg[p][1]} for p in prices]
 
 
+# Workload regime (set from --price-band LO:HI and --max-qty): a narrow band crosses often; a
+# wide band builds deep books; large quantities make orders sweep many levels.
+PRICE_BAND = (9_950, 10_050)
+MAX_QTY = 100
+
+
 def workload(rng, n):
     cmds, used = [], []
     for i in range(n):
@@ -173,8 +179,8 @@ def workload(rng, n):
             cmd = {"type": "new_limit", "request_id": rid,
                    "symbol": rng.choice(SYMBOLS) if rng.random() > 0.01 else "XXXX",
                    "side": rng.choice(["BUY", "SELL"]) if rng.random() > 0.01 else "HOLD",
-                   "price": rng.randint(9_950, 10_050) if rng.random() > 0.01 else rng.choice([0, 100_000_001]),
-                   "quantity": rng.randint(1, 100) if rng.random() > 0.01 else rng.choice([0, 1_000_001])}
+                   "price": rng.randint(*PRICE_BAND) if rng.random() > 0.01 else rng.choice([0, 100_000_001]),
+                   "quantity": rng.randint(1, MAX_QTY) if rng.random() > 0.01 else rng.choice([0, 1_000_001])}
         cmds.append(cmd)
         used.append(cmd)
     return cmds
@@ -340,10 +346,14 @@ def main():
     network = "--network" in args or restart
     journal = "--journal" in args or restart
     args = [a for a in args if a not in ("--network", "--journal", "--restart")]
-    opts = {"--seeds": "20", "--commands": "3000", "--enginex": str(ROOT / "build" / "release" / "enginex")}
+    opts = {"--seeds": "20", "--commands": "3000", "--enginex": str(ROOT / "build" / "release" / "enginex"),
+            "--price-band": "9950:10050", "--max-qty": "100"}
     for k in list(opts):
         if k in args:
             i = args.index(k); opts[k] = args[i + 1]; del args[i:i + 2]
+    global PRICE_BAND, MAX_QTY
+    lo, hi = (int(x) for x in opts["--price-band"].split(":"))
+    PRICE_BAND, MAX_QTY = (lo, hi), int(opts["--max-qty"])
     total = {}
     with tempfile.TemporaryDirectory() as jdir:
         for seed in range(1, int(opts["--seeds"]) + 1):
