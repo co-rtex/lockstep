@@ -112,6 +112,8 @@ struct BookStats {
 
 // Which order-index implementation this build uses ("open_addressing" or "std_unordered_map").
 extern const char* const kOrderIndexName;
+// Price-level map node allocation ("node_arena" or "std_allocator").
+extern const char* const kLevelAllocName;
 
 class BookBuilder {
 public:

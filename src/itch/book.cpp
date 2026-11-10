@@ -7,7 +7,8 @@
 //     never iterated, so it cannot affect output order;
 //   * each locate's book keeps one std::map<price, Level> per side. Node::level points at its
 //     map node, which std::map keeps stable until that level is erased; a level is erased only
-//     after its last order is unlinked.
+//     after its last order is unlinked. Map nodes come from a per-builder free-list arena
+//     (NodeArena), so level churn does not call malloc/free.
 #include "enginex/itch/book.hpp"
 
 #include <algorithm>
@@ -34,9 +35,91 @@ struct Level {
     std::uint32_t head = kNil;
     std::uint32_t tail = kNil;
 };
+// Fixed-size block arena for std::map nodes: freed nodes go on a free list and are reused, so
+// creating and removing price levels does not call malloc/free in steady state. The block
+// size is fixed by the first allocation (the map's node type); any other size falls back to
+// operator new. Memory is returned when the BookBuilder is destroyed.
+class NodeArena {
+public:
+    NodeArena() = default;
+    NodeArena(const NodeArena&) = delete;
+    NodeArena& operator=(const NodeArena&) = delete;
+
+    void* allocate(std::size_t size) {
+        if (block_ == 0) {
+            block_ = std::max(size, sizeof(void*));
+        }
+        if (size != block_) {
+            return ::operator new(size);
+        }
+        if (free_ != nullptr) {
+            void* p = free_;
+            free_ = *static_cast<void**>(p);
+            return p;
+        }
+        if (chunks_.empty() || used_ == kPerChunk) {
+            chunks_.push_back(std::make_unique<std::byte[]>(block_ * kPerChunk));
+            used_ = 0;
+        }
+        return chunks_.back().get() + block_ * used_++;
+    }
+    void deallocate(void* p, std::size_t size) noexcept {
+        if (size != block_) {
+            ::operator delete(p);
+            return;
+        }
+        *static_cast<void**>(p) = free_;
+        free_ = p;
+    }
+
+private:
+    static constexpr std::size_t kPerChunk = 4096;
+    std::size_t block_ = 0;
+    void* free_ = nullptr;
+    std::size_t used_ = 0;
+    std::vector<std::unique_ptr<std::byte[]>> chunks_;
+};
+
+template <typename T>
+struct ArenaAllocator {
+    using value_type = T;
+    NodeArena* arena;
+    explicit ArenaAllocator(NodeArena* a) noexcept : arena(a) {}
+    template <typename U>
+    ArenaAllocator(const ArenaAllocator<U>& o) noexcept : arena(o.arena) {}  // NOLINT
+    T* allocate(std::size_t n) {
+        if (n != 1) {
+            return static_cast<T*>(::operator new(n * sizeof(T)));
+        }
+        return static_cast<T*>(arena->allocate(sizeof(T)));
+    }
+    void deallocate(T* p, std::size_t n) noexcept {
+        if (n != 1) {
+            ::operator delete(p);
+            return;
+        }
+        arena->deallocate(p, sizeof(T));
+    }
+    template <typename U>
+    bool operator==(const ArenaAllocator<U>& o) const noexcept {
+        return arena == o.arena;
+    }
+};
+
+#ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
 using LevelMap = std::map<Price4, Level>;
+#else
+using LevelMap = std::map<Price4, Level, std::less<>,
+                          ArenaAllocator<std::pair<const Price4, Level>>>;
+#endif
 
 struct Book {
+#ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
+    explicit Book(NodeArena*) {}
+#else
+    explicit Book(NodeArena* arena) : bids(LevelMap::allocator_type(arena)),
+                                      asks(LevelMap::allocator_type(arena)) {}
+#endif
     LevelMap bids;  // ascending; best bid = last
     LevelMap asks;  // ascending; best ask = first
     LevelMap& side(Side s) noexcept { return s == Side::Buy ? bids : asks; }
@@ -88,6 +171,7 @@ struct DirectoryEntry {
 }  // namespace
 
 struct BookBuilder::Impl {
+    NodeArena level_arena;  // declared first: destroyed after the books that use it
     std::vector<Node> pool;
     std::vector<std::uint32_t> free_slots;
     Index index;
@@ -97,7 +181,7 @@ struct BookBuilder::Impl {
     Book& book(std::uint16_t locate) {
         auto& b = books[locate];
         if (!b) {
-            b = std::make_unique<Book>();
+            b = std::make_unique<Book>(&level_arena);
         }
         return *b;
     }
@@ -181,6 +265,11 @@ struct BookBuilder::Impl {
 const char* const kOrderIndexName = "std_unordered_map";
 #else
 const char* const kOrderIndexName = "open_addressing";
+#endif
+#ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
+const char* const kLevelAllocName = "std_allocator";
+#else
+const char* const kLevelAllocName = "node_arena";
 #endif
 
 std::string_view to_string(Anomaly a) noexcept {

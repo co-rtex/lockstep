@@ -95,6 +95,10 @@ option(ENGINEX_ITCH_STD_INDEX "Benchmark baseline: std::unordered_map order inde
 if(ENGINEX_ITCH_STD_INDEX)
     target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_INDEX)
 endif()
+option(ENGINEX_ITCH_STD_LEVEL_ALLOC "Benchmark baseline: price-level maps use std::allocator" OFF)
+if(ENGINEX_ITCH_STD_LEVEL_ALLOC)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_LEVEL_ALLOC)
+endif()
 
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
