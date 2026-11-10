@@ -95,6 +95,12 @@ with tempfile.TemporaryDirectory() as d:
                 sys.exit(f"{args} crashed on a mutant (exit {p.returncode}): {p.stderr}")
             for line in p.stdout.splitlines():
                 json.loads(line)
+    # Independent Python decoder + book (tools/itch_pybook.py) must reproduce every level of
+    # every final book of the generated file.
+    tools = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
+    pb = subprocess.run([sys.executable, os.path.join(tools, "itch_pybook.py"), f,
+                         "--enginex", exe], capture_output=True, text=True)
+    assert pb.returncode == 0 and "identical" in pb.stdout, (pb.stdout, pb.stderr)
     # MoldUDP64 over real UDP (loopback), two processes, with deliberate loss both ways.
     import socket
     import time

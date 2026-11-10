@@ -42,7 +42,7 @@ are in-process and single-threaded; none is a wire latency.
 | ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
 | ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs) | `itch-real-sample-macos-m3.csv` |
 | Book memory (real data) | ≈ 188–211 bytes per live order, whole process, at 1.5–1.65 M live orders | `itch-real-memory-macos-m3.csv` |
-| Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder | `scripts/real_data_check.sh`, `tools/itch_pydecode.py` |
+| Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder, and every price level equal to an independent Python book | `scripts/real_data_check.sh`, `tools/itch_pydecode.py` |
 | Worst single message on real data | ≈ 10 ms → ≈ 0.1–0.17 ms (vector growth removed) | benchmarks.md |
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
 | Durable ack | ≈ 3 ms p50 with `F_FULLFSYNC`; group commit 3.7× throughput with 8 clients | R2/R3 tables |

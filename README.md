@@ -337,7 +337,8 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 * ITCH: hand-written golden bytes for all 23 message types, fixtures packed independently in
   Python, every wrong length and unknown type, framing split at every offset, a message-by-message
   differential test against a naive reference book (mutation-checked), an independent Python decoder
-  that agrees field by field with the C++ one on all 23 types and on 63.7 M real messages, and 300 randomly
+  that agrees field by field with the C++ one on all 23 types and on 63.7 M real messages, a
+  Python book that reproduces every price level of the C++ books on three real days, and 300 randomly
   corrupted files. MoldUDP64 sequencing is tested end to end over a simulated lossy,
   duplicating and reordering channel, where the rebuilt book must hash-match a direct replay.
   A libFuzzer-compatible harness (`fuzz/`) also runs as a seeded standalone mutation fuzzer.
