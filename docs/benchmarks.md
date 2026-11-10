@@ -454,6 +454,14 @@ and spilled references into the hash fallback, and at 2⁸ replay slowed to 82�
 4 096-reference pages stay. A budget in bytes rather than in pages would be the precondition
 for revisiting this.
 
+*Rejected: software prefetch.* While applying message *i*, the index slot of message *i + 8*
+was prefetched (book apply on pre-decoded real messages, 2019-03-27, 3 interleaved rounds
+of 5 trials). The result was 42.6–43.6 ns/msg without and 40.4–43.3 ns/msg with: at most a
+5 % gain, inconsistent between rounds. One earlier noisy round had suggested 12 %, which is
+why rounds are interleaved and repeated. It was not adopted: an API that only hints is not
+worth an unreliable few percent. The remaining misses are on order nodes and levels, which a
+one-stage index prefetch cannot reach.
+
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 
