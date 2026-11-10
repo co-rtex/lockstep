@@ -79,7 +79,7 @@ Deliberate mutations, each reverted after the check:
 * (Sprint, ITCH) Letting a same-price replace keep queue priority failed 2 scenario tests and
   all 12 `ItchDifferential` seeds.
 
-**Scripted mutation check.** `tools/mutation_check.py` applies 44 hand-chosen bugs one at a
+**Scripted mutation check.** `tools/mutation_check.py` applies 48 hand-chosen bugs one at a
 time across the ITCH decoder, book builder, order indexes, framer, MoldUDP64 sequencer,
 mirror, matching engine (price-time priority, marketability), idempotency, journal (CRC,
 torn-tail classification, truncation), request validation bounds and server
@@ -96,7 +96,7 @@ failed, no test noticed, and subscribers would have seen an event that a restart
 lose. `Server.JournalFailureNeverPublishesTheUndurableEvent` now kills it. One mutant
 was equivalent and is excluded with a comment in the script: dropping the event-watermark
 rollback after a failed commit cannot be observed, because both failure modes are permanent
-fail-stops. The current score is **44/44** (≈ 150 s on the M3 with an incremental release
+fail-stops. The current score is **48/48** (≈ 4 min on the M3 with an incremental release
 build). Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with the failing tests
