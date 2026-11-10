@@ -41,7 +41,7 @@ are in-process and single-threaded; none is a wire latency.
 |---|---|---|
 | ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
 | ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–58 ns/msg after data-driven layout changes (3 days) | `itch-real-sample-macos-m3.csv` |
-| Book memory (real data) | ≈ 190–210 bytes per live order, whole process, at 1.5–1.65 M live orders | benchmarks.md |
+| Book memory (real data) | ≈ 188–211 bytes per live order, whole process, at 1.5–1.65 M live orders | `itch-real-memory-macos-m3.csv` |
 | Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model | `scripts/real_data_check.sh` |
 | Worst single message on real data | ≈ 10 ms → ≈ 0.1–0.17 ms (vector growth removed) | benchmarks.md |
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
@@ -53,10 +53,10 @@ are in-process and single-threaded; none is a wire latency.
 * **Two server bugs, reproduced before fixing.** A subscriber whose snapshot was too large
   was registered with no baseline. A snapshot after an internal fail-stop could expose
   never-durable state.
-* **Three independent adversarial reviews**, each followed by fixes with regression tests.
+* **Four independent adversarial reviews**, each followed by fixes with regression tests.
   Findings included strict-replay counters drifting after a stop, mirror exceptions escaping
-  a session, partial application of a malformed update, and unclamped memory in the paged
-  index.
+  a session, partial application of a malformed update, unclamped directory growth in the
+  paged index, and a JSON-output crash on non-ASCII bytes in ITCH alpha fields.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
   kills 41/41 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
   validation, journal and server. It found two real test gaps, both now covered. One was a
@@ -65,7 +65,7 @@ are in-process and single-threaded; none is a wire latency.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 8 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
-  over 200 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
+  over 100 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
   journals (recovery yields an exact prefix or refuses, never a divergent state). Each test asserts
   that its generator actually reaches the interesting paths; that assertion caught three
   generators that were too weak to mean anything.

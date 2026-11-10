@@ -180,11 +180,12 @@ pushed, so GitHub CI has not run on them.
 | MoldUDP64 packet parsing + sequencing (duplicates, reordering, gaps, re-request ranges, fail-stop) | done | `tests/itch_moldudp64_test.cpp` (lossy-channel end-to-end book hash equality; mutation check) |
 | Second independent review (mirror, order index, arena, server P0, bench) | done | fixed in `799e7c4`; server ordering guarantee and index/arena correctness confirmed by the reviewer |
 | Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
-| Source-based coverage | done | `scripts/coverage.sh`: 94.7 % lines over ITCH/mirror/server/CLI-ITCH |
-| Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (3.0 → 1.0 allocs/cmd); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
+| Source-based coverage | done | `scripts/coverage.sh`: 94.2 % lines, 86.4 % branches over ITCH/mirror/server/CLI-ITCH (commit `9c98867`) |
+| Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (2.0–3.5 → ≈ 1.0 allocs/cmd); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
 | Real-data validation (public Nasdaq sample prefix, local only): 21.26 M msgs decode, 0 anomalies under --strict, reference model agrees on all 1.54 M live orders | done | `ENGINEX_ITCH_REAL_FILE=… ctest`-style run of `ItchRealData.*`; docs/itch.md |
 | Real-data-driven layout: sorted-vector levels + paged direct index (replay 99.3 → 62.1 ns/msg) | done | `benchmarks/results/itch-real-sample-macos-m3.csv`, `itch-structures-macos-m3.csv` |
 | Real data on three sample days (2019-01-30, 2019-03-27, 2020-01-30): 0 decode errors, 0 anomalies, reference model agrees; all crossed books halted/paused | done | `scripts/real_data_check.sh` (all three dates) |
+| Third independent review (sorted-vector levels, paged index) | done | no correctness bug in the new layout; directory growth clamped, spare page, memory bound documented in `deb39c3` |
 | Fourth independent review (latest changes): confirmed JSON crash on non-ASCII wire bytes | fixed | `f6f2ffe`; hostile-bytes regression + CLI-level mutation fuzz in `tests/cli_itch_smoke.py` |
 | Layout variants reconstruct identical books | done | ctest `itch_layout_variants_agree` |
 | R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |

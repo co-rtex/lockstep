@@ -139,7 +139,7 @@ ITCH 5.0 market-data replay (independent of the exchange). `scripts/itch_demo.sh
 whole walkthrough in one command: golden fixture, malformed input, deterministic replay
 twice, injected anomalies (lenient vs `--strict`), MoldUDP64 gap recovery on a simulated
 lossy channel, and a short benchmark. `scripts/real_data_check.sh` (opt-in; it downloads
-256 MiB) repeats the real Nasdaq sample validation. Individually:
+256 MiB per day, 768 MiB for all three) repeats the real Nasdaq sample validation. Individually:
 
 ```bash
 ./build/release/enginex itch replay --input tests/testdata/itch/lifecycle.itch --strict

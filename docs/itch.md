@@ -26,8 +26,8 @@ compiler rejects mixing them (this caught one ambiguity in `cli_itch.cpp`).
 * All test fixtures are **synthetic**: produced from the public format by
   `tools/itch_fixture.py` (hand-scripted) or the seeded generator. No Nasdaq data is in the
   repository or needed to build and test.
-* **Validation on real data** (local only): a prefix of one of Nasdaq's publicly posted
-  historical sample files. See *Real Nasdaq sample* below. The data were downloaded for local
+* **Validation on real data** (local only): the first 256 MiB of three of Nasdaq's publicly
+  posted historical sample files. See *Real Nasdaq sample* below. The data were downloaded for local
   validation and are not redistributed: they stay under the git-ignored `build/`.
 
 ## Layers
@@ -88,7 +88,7 @@ of the specification and the Wireshark dissector, which agree.
   ranges from the sender (over a channel that is itself lossy), and requires the rebuilt book
   hash to equal a direct replay, for three channel seeds. Without recovery, the book stops
   exactly at the hole. Mutation check: letting the sequencer skip over gaps fails 5 of the 13
-  tests, including both end-to-end tests.
+  tests that existed at the time, including both end-to-end tests.
 * `enginex itch mold-sim --input FILE [--loss-percent P] [--no-recovery]` runs the same
   experiment from the command line, on a **simulated** channel. It reports packets lost and
   duplicated, gaps opened and closed, and whether the rebuilt book equals a direct replay.
@@ -204,7 +204,9 @@ synthetic streams do.
   ≈ 0.7 ns per message (≈ 3 %) and was removed. The chunked pool itself costs ≈ 1–1.6 ns per
   message on the hot synthetic path, against the ≈ 10 ms stall it removes. A same-day
   interleaved A/B against `bbd4ff6` measured 22.3 → 23.9 ns/msg (synthetic, 8 symbols),
-  and real-data replay is unchanged within noise (62.1 → 62.7 ns/msg).
+  and real-data replay was unchanged within noise in a console-only interleaved A/B
+  (62.1 → 62.7 ns/msg). The recorded run at `8a40818` in `itch-real-sample-macos-m3.csv`
+  has a median of 64.1 ns/msg.
 * The order index is a **paged direct index** (`paged_index.hpp`, D27). Nasdaq order
   references are dense and mostly increasing. On the real sample, 73 % of adds carry a larger
   reference than the previous add, and there are ≈ 20 M distinct references in 21 M
@@ -257,10 +259,10 @@ and benchmark rows of the same workload carry identical hashes.
 | Book semantics | scenario tests per rule (priority on E/X, loss on U, aggregation, P/Q/B no-ops, crossed/locked, per-locate isolation, attribution) | `ItchBook.*` |
 | Anomalies | every kind, book hash unchanged after each rejected message | `ItchBook.AnomaliesAreRejected…` |
 | Differential | naive reference model (`std::map`, arrival counters, brute-force levels) compared message by message over 12 seeds, half with 2 % injected anomalies | `ItchDifferential.*` |
-| Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted) | recorded in the commit log |
+| Mutation check | making U keep priority at the same price fails 2 scenario tests and all 12 differential seeds (run manually, then reverted). `tools/mutation_check.py` scripts 41 mutants across both systems, all killed | [verification.md](verification.md#do-the-tests-catch-bugs) |
 | Corrupted files | 300 randomly corrupted/truncated files: no crash, invariants hold, deterministic | `ItchReplay.CorruptedFilesNeverBreakInvariants` |
 | Layout variants | the book compiled twice (current layout; `std::map` levels + hash index) into separate executables; identical state hashes on 5 seeded workloads incl. injected anomalies | ctest `itch_layout_variants_agree` |
-| Fuzzing | `fuzz/itch_fuzz.cpp` (libFuzzer entry point: ITCH replay lenient+strict, and MoldUDP64 sequencing → decode → book) checks invariants, frame accounting, determinism and in-order exactly-once delivery. The standalone seeded mutation driver (not coverage-guided; Apple clang has no libFuzzer) ran **5 000 000 inputs (2.3 GB) with no violation** in a Release build (seed 7, 13 min), and 300 000 inputs under UBSan (Debug, seed 20261110, 41 min) with no violation and no UBSan report. After the sorted-vector/paged-index change (`bbd4ff6`): 2 000 000 more inputs (Release, seed 11), no violation. ctest runs 20 000 inputs. The coverage-guided build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) is for Linux and has not been run here | `fuzz/README.md` |
+| Fuzzing | `fuzz/itch_fuzz.cpp` (libFuzzer entry point: ITCH replay lenient+strict, and MoldUDP64 sequencing → decode → book) checks invariants, frame accounting, determinism and in-order exactly-once delivery. The standalone seeded mutation driver (not coverage-guided; Apple clang has no libFuzzer) ran **5 000 000 inputs (2.3 GB) with no violation** in a Release build (seed 7, 13 min), and 300 000 inputs under UBSan (Debug, seed 20261110, 41 min) with no violation and no UBSan report. After the sorted-vector/paged-index change (`bbd4ff6`): 2 000 000 more inputs (Release, seed 11), no violation. After the chunked node pool (`8a40818`): 1 000 000 more inputs, no violation (8.3 M in total). ctest runs 20 000 inputs. The coverage-guided build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) is for Linux and has not been run here | `fuzz/README.md` |
 | Order index | `OrderIndex` and `PagedIndex` vs `std::unordered_map` under random operations; wrapping collision chains; boundary keys (2³²−1, 2³², 2³²+4095); fallback keys behind pages that appear and are freed; a 2-page budget forcing fallback | `OrderIndex.*`, `PagedIndex.*` |
 | Coverage | `scripts/coverage.sh` (clang source-based, whole ctest suite incl. CLI subprocesses). Latest run (commit `9c98867`): lines 94.2 %, branches 86.4 %, regions 91.8 % over `src/itch`, `include/enginex/itch`, `mirror.cpp`, `cli_itch.cpp`, `server.cpp`. `paged_index.hpp` 100 %, `order_index.hpp` 99 %, `book.cpp` 92.7 %, `moldudp64.cpp` 86.5 %. Uncovered code is mostly `to_string` defaults, accessors and the `-DENGINEX_ITCH_STD_INDEX` A/B index | |
 | Leaks | macOS `leaks --atExit` over the test binary (466 tests; the fork-based crash tests are excluded because they hang under the tool), the real-data CLI replay, 20 000 fuzz inputs and `mold-sim`: 0 leaks | |
@@ -358,8 +360,8 @@ synthetic history, 1 M messages over 8 symbols, in the order the changes were ma
 decode ≈ 14.6 ns/msg (≈ 2.1 GiB/s) throughout. Book apply went from 52.5 ns/msg
 (`std::unordered_map` index) to 32.2 (open-addressing hash), to 22.4 (sorted-vector levels +
 paged direct index), and to ≈ 24 with the chunked node pool (which removes a 10 ms stall).
-At 5000 symbols and 2 M messages, apply went 70.6 → 56.1 (level-node arena) → 44.8 (current
-layout). Every number was measured at the commit recorded in its CSV. All in-process,
+At 5000 symbols and 2 M messages, apply went 70.6 → 56.1 (level-node arena) → 44.8 (sorted-vector
+levels + paged index at `bbd4ff6`, before the chunked pool). Every number was measured at the commit recorded in its CSV. All in-process,
 single thread. These are not wire-to-wire latencies.
 
 ## Limitations

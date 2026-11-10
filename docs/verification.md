@@ -112,10 +112,10 @@ naive reference book, corrupted-file fuzzing, and `OrderIndex` against `std::uno
 The P0 server regressions (`Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber`,
 `Server.SnapshotRefusedAfterInternalFailStop`) are in `networking_test.cpp`.
 
-Two adversarial tests were also added in the sprint:
+Three adversarial property tests were also added in the sprint:
 
-* `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` (`protocol_fuzz_test.cpp`): 200 k
-  hostile client requests (random bytes, random JSON, damaged and corrupted requests) go
+* `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` (`protocol_fuzz_test.cpp`): 100 k
+  hostile client requests (20 seeds × 5 000, each sequence replayed twice) (random bytes, random JSON, damaged and corrupted requests) go
   through `parse_client_message` into a real `ExchangeStateMachine`. Nothing throws, every
   error serializes, invariants hold, and identical inputs reproduce identical state.
 * `Recovery.RandomDamageNeverYieldsAStateOutsideThePrefixes` (`recovery_test.cpp`): 400 random

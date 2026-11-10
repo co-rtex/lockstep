@@ -438,9 +438,13 @@ the previous commit measured 59.1 → 54.2 ns/msg (2019-03-27) and 63.3 → 57.9
 Current replay on the three days: 56.0, 58.1 and 54.8 ns/msg.
 
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
-records peak RSS. With `--depth 1`, so the JSON stays small, the whole process peaked at
-298 / 328 / 286 MiB on the three days. That is 1.54 / 1.65 / 1.58 M live orders at peak, or
-**≈ 190–210 bytes per live order** for everything. A rough breakdown: ≈ 48 B per order
+records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
+process peaked at 296 / 327–332 / 282–302 MiB (2019-01-30 / 2020-01-30 / 2019-03-27, two
+runs each). That is 1.54 / 1.65 / 1.58 M live orders at peak, or **≈ 188–211 bytes per live
+order** for everything
+([`itch-real-memory-macos-m3.csv`](../benchmarks/results/itch-real-memory-macos-m3.csv),
+which also records 0 decode errors, 0 anomalies and the state hash of each day). RSS varies
+by up to 7 % between identical runs. A rough breakdown: ≈ 48 B per order
 node, up to ≈ 80 MB of index pages for the ≈ 20 M reference range, and ≈ 650 k live levels
 at ≈ 48 B each (vector entry + `Level`), plus allocator and chunk slack (commit `37e41f2`
 plus the RSS field).
@@ -503,7 +507,7 @@ hint. State hashes are identical across builds for each workload.
 
 **Not shown / not claimed.** File I/O and cold page cache (a cache cannot be dropped without
 root on macOS; the "first pass" column in the CSV is only the first touch of freshly generated
-data in a warm process), multi-day or real Nasdaq files, and any network delivery. Decoding
+data in a warm process), full-day real Nasdaq files, and any network delivery. Decoding
 at ≈2.1 GiB/s on one core is an in-memory number and says nothing about a feed handler's
 wire-to-book latency.
 

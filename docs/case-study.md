@@ -4,8 +4,9 @@ This is the engineering story of the November 2026 sprint on EngineX. EngineX al
 deterministic matching engine, a durable journal and a TCP order-entry/market-data service
 (R1–R3). The sprint added a **historical binary market-data path**: Nasdaq TotalView-ITCH 5.0
 decoding, order-book reconstruction and MoldUDP64 sequencing. It also hardened the existing
-service. Every number below comes from a run recorded in `benchmarks/results/`. Every
-correctness claim points at a test.
+service. Every number below comes from a run recorded in `benchmarks/results/` or from a
+console-only A/B that [benchmarks.md](benchmarks.md) labels as such. Every correctness claim
+points at a test.
 
 ## 1. Two systems, one repository, no confusion
 
@@ -56,10 +57,13 @@ The tests are designed so that the code and the tests cannot share one mistake:
   message by message over 12 seeds, half with injected anomalies. It shares no data
   structures with the implementation. It does share the reading of the spec, so scenario
   tests pin the interpretation separately.
-* **Mutation checks**: three deliberately wrong versions were run and then reverted. A
-  replace that keeps priority fails 2 scenario tests and all 12 differential seeds. A
-  sequencer that skips gaps fails 5 of 13 transport tests. A snapshot path without the
-  fail-stop check exposes a never-durable bid.
+* **Mutation checks**: three deliberately wrong versions were first run by hand and then
+  reverted. A replace that keeps priority fails 2 scenario tests and all 12 differential
+  seeds. A sequencer that skips gaps fails 5 of the 13 transport tests that existed at the
+  time. A snapshot path without the fail-stop check exposes a never-durable bid. Later,
+  `tools/mutation_check.py` scripted 41 such mutants across both systems. All are killed,
+  after two real test gaps it exposed were closed (see
+  [verification.md](verification.md#do-the-tests-catch-bugs)).
 * **Adversarial reviews** by a separate agent, which read code only and was told to assume it
   was wrong. The first found a real defect: strict replay kept counting frames after it had
   stopped and could overwrite the stop reason. The second found mirror robustness gaps:
@@ -68,8 +72,8 @@ The tests are designed so that the code and the tests cannot share one mistake:
   relies on. Every finding was turned into a regression test.
 * **Coverage** (clang source-based, `scripts/coverage.sh`) was used to find untested code, not
   as a target. It showed the CLI `generate`/`dump` paths, the stream read-error path and the
-  capacity hint were never executed. All are tested now: 94.7 % lines, 86.5 % branches over
-  the new code.
+  capacity hint were never executed. All are tested now. The latest run (commit `9c98867`)
+  measured 94.2 % lines and 86.4 % branches over the new code.
 * **Fault injection** over real sockets: a TCP relay that silently drops one `book_update`
   (the mirror reports exactly one gap, applies nothing after it, resubscribes and verifies);
   a consumer stalled until the server cuts it off; a baseline larger than the frame limit;
@@ -180,8 +184,9 @@ All numbers are in-process, single thread, Apple M3 laptop, Release build, from 
 
 ## 8. Limits and next steps
 
-* Real data: one public sample day, its first 256 MiB only (through 09:37 ET). Full days,
-  other dates, closing crosses and halts in volume remain untested.
+* Real data: the first 256 MiB of three public sample days (2019-01-30, 2019-03-27,
+  2020-01-30), through ≈ 09:33–09:37 ET. Full days, closing crosses and halts in volume
+  remain untested.
 * There is no UDP receiver, wire re-request protocol or SoupBinTCP. The MoldUDP64 sequencer
   is exercised on simulated channels only.
 * The synthetic book grows over a run (≈ 89 k live orders after 1 M messages). Compare
