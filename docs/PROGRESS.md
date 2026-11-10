@@ -180,7 +180,7 @@ pushed, so GitHub CI has not run on them.
 | MoldUDP64 packet parsing + sequencing (duplicates, reordering, gaps, re-request ranges, fail-stop) | done | `tests/itch_moldudp64_test.cpp` (lossy-channel end-to-end book hash equality; mutation check) |
 | Second independent review (mirror, order index, arena, server P0, bench) | done | fixed in `799e7c4`; server ordering guarantee and index/arena correctness confirmed by the reviewer |
 | Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
-| Source-based coverage | done | `scripts/coverage.sh`: 94.8 % lines, 85.6 % branches over ITCH/mirror/server/CLI-ITCH (commit `2881634`) |
+| Source-based coverage | done | `scripts/coverage.sh`: 94.8 % lines, 85.6 % branches over ITCH/mirror/server/CLI-ITCH (commit `2881634`); 94.7 % lines, 86.0 % branches at `8aaac44` |
 | Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (2.0–3.5 → ≈ 1.0 allocs/cmd; 0.03 after D31); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
 | Real-data validation (public Nasdaq sample prefix, local only): 21.26 M msgs decode, 0 anomalies under --strict, reference model agrees on all 1.54 M live orders | done | `ENGINEX_ITCH_REAL_FILE=… ctest`-style run of `ItchRealData.*`; docs/itch.md |
 | Real-data-driven layout: sorted-vector levels + paged direct index (replay 99.3 → 62.1 ns/msg) | done | `benchmarks/results/itch-real-sample-macos-m3.csv`, `itch-structures-macos-m3.csv` |
