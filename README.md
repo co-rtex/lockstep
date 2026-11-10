@@ -152,8 +152,9 @@ scripts/mold_udp_demo.sh                        # MoldUDP64 over real UDP (loopb
 ./build/release/enginex_itch_bench --seed 42 --messages 1000000 --trials 7
 ```
 
-Actual output of the first command, on the hand-scripted fixture (Python-packed bytes; the
-expected book is derived by hand in `tools/itch_fixture.py`):
+Output of the first command, on the hand-scripted fixture (Python-packed bytes; the
+expected book is derived by hand in `tools/itch_fixture.py`). It is abbreviated here: the
+decode-error and state-hash lines are left out and the anomaly counters are shortened.
 
 ```text
 ITCH 5.0 replay of tests/testdata/itch/lifecycle.itch
