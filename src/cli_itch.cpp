@@ -158,6 +158,8 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
                            {"replaces", s.replaces},
                            {"levels_created", s.levels_created},
                            {"levels_removed", s.levels_removed},
+                           {"index_pages", s.index_pages},
+                           {"peak_index_pages", s.peak_index_pages},
                            {"non_displayed_trade_shares", s.non_displayed_trade_shares},
                            {"cross_shares", s.cross_shares},
                            {"broken_trades", s.broken_trades},

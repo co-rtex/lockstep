@@ -445,6 +445,15 @@ node, up to ≈ 80 MB of index pages for the ≈ 20 M reference range, and ≈ 6
 at ≈ 48 B each (vector entry + `Level`), plus allocator and chunk slack (commit `37e41f2`
 plus the RSS field).
 
+*Index pages are mostly empty.* The new `peak_index_pages` statistic shows 4 899 / 5 896 /
+4 992 pages (77–92 MiB) at only ≈ 7 % slot occupancy. A few old resting orders keep each
+page alive. Smaller pages were tried (2¹⁰ and 2⁸ references per page; console runs, not in a
+CSV). 2¹⁰ saved only ≈ 3 % of RSS (293 → 284 MiB on 2019-01-30) and was slightly slower
+(57.4 → 59.9 ns/msg). Both smaller sizes also reached the page-count budget (16 384 pages)
+and spilled references into the hash fallback, and at 2⁸ replay slowed to 82–85 ns/msg.
+4 096-reference pages stay. A budget in bytes rather than in pages would be the precondition
+for revisiting this.
+
 Decoding alone runs at 13.0 ns/msg (77 M msgs/s, 2.3 GiB/s) on this data. RSS includes the
 676 MB file held in memory.
 

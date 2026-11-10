@@ -293,6 +293,16 @@ using Index = OrderIndex;  // A/B: open-addressing hash table only
 using Index = PagedIndex;  // default (D27)
 #endif
 
+// Pages held by the paged index (0 for the hash-only variants).
+template <typename I>
+std::uint64_t index_pages(const I& index) noexcept {
+    if constexpr (requires { index.pages(); }) {
+        return index.pages();
+    } else {
+        return 0;
+    }
+}
+
 struct DirectoryEntry {
     std::optional<Symbol> symbol;
     char trading_state = 0;
@@ -500,6 +510,8 @@ ApplyOutcome BookBuilder::apply(const Message& m) {
         stats_.live_orders = im.index.size();
         stats_.levels_created = im.levels_created;
         stats_.levels_removed = im.levels_removed;
+        stats_.index_pages = index_pages(im.index);
+        stats_.peak_index_pages = std::max(stats_.peak_index_pages, stats_.index_pages);
         stats_.peak_live_orders = std::max(stats_.peak_live_orders, stats_.live_orders);
         return ApplyOutcome{ApplyStatus::Applied, info};
     };

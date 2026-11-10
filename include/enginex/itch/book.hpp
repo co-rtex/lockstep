@@ -104,6 +104,8 @@ struct BookStats {
     std::uint64_t replaces = 0;
     std::uint64_t levels_created = 0;  // adds/replaces that opened a new price level
     std::uint64_t levels_removed = 0;
+    std::uint64_t index_pages = 0;       // paged index only: pages currently allocated
+    std::uint64_t peak_index_pages = 0;
     std::uint64_t live_orders = 0;
     std::uint64_t peak_live_orders = 0;
     std::uint64_t timestamp_regressions = 0;  // informational: timestamps are not sequence numbers
