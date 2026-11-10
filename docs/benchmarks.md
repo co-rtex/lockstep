@@ -148,7 +148,10 @@ reference model, TradeGrid fixtures, journal recovery) passes on both builds. `n
 only adds resting orders and never frees, so there is nothing for the pool to reuse, and it
 does not change. The cost is memory: the pool keeps freed blocks for reuse and returns
 nothing to the OS until the engine is destroyed (+5–6 MiB at 100 k commands). The R1 table
-above still shows the original measurements.
+above still shows the original measurements. A spot check of the network round trip with the pooled core
+(1 client, in-memory, 20 000 requests, 5 trials, `c9b300a`) gave 27 632 req/s with p50
+33.4 µs, against the recorded 27 915 req/s and 33.1 µs. That is unchanged within noise, as
+expected for a socket- and JSON-dominated path.
 
 ## R2 results: durable acknowledgment latency (measurement 2)
 
