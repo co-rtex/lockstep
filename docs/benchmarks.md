@@ -587,6 +587,44 @@ earlier, and the spread is ±25 %. A quiet machine and the same command would se
 pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-replay-regression-gate-macos-m3.csv),
 [`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
 
+**It was settled in a quieter window, and the regression is real.** At load ≈ 3, the same
+20-pair apply gate gave:
+* a median ratio of **1.0695** (IQR 1.04–1.13);
+* the current code slower in 18 of 20 pairs, sign test p = 0.0004;
+* 44.0 → 47.4 ns/msg, with an identical state hash.
+
+That passes the gate: **book apply is about 7 % slower on real data than at `562c56d`**.
+
+Bisecting with the same gate (load ≈ 3–5):
+
+| step | pairs | median ratio | IQR | slower in | p |
+|---|---:|---:|---:|---:|---:|
+| lazy node construction (`dd78a8d`) | 12 | 0.983 | 0.87–1.17 | 4 of 12 | 0.39 |
+| D32 bounded level vector, and commits between (`b7f750e`) | 20 | 1.031 | 1.00–1.08 | 14 of 20 | 0.12 |
+| everything after D32, up to `a505d51` | 20 | 1.033 | 0.99–1.08 | 12 of 20 | 0.50 |
+
+The cost splits roughly evenly between D32 and the later commits. Neither half is
+significant on its own. The two halves multiply to ≈ 1.065, consistent with the end-to-end
+1.0695.
+
+One hypothesis was tested and rejected. D32 put a `std::map` header inline in every book
+side, growing a `Book` from ≈ 80 to 128 bytes, although the map is empty on real data. Moving
+it behind a `unique_ptr` (allocated on the first spill) gave a median ratio of 0.998 against
+HEAD (20 pairs, p = 1.0), so it was reverted.
+
+The D32 share is the price of the worst-case bound: the hostile pattern costs 96 ns/msg instead
+of 25 µs/msg, and the vector's own worst case is 1.6 µs/msg (churn). That price is accepted
+deliberately. The other ≈ 3 % is not attributed. The post-D32 commits on this path are small:
+the capacity check, the keyed fallback index (D34, which is never consulted on real data),
+memory-accounting accessors and the checkpoint hook. Telling them apart needs a quieter host
+than this one.
+
+Raw pairs:
+[`itch-apply-regression-quiet-macos-m3.csv`](../benchmarks/results/itch-apply-regression-quiet-macos-m3.csv),
+[`itch-apply-bisect-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-d32-macos-m3.csv),
+[`itch-apply-bisect-after-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-after-d32-macos-m3.csv),
+[`itch-apply-deep-map-pointer-macos-m3.csv`](../benchmarks/results/itch-apply-deep-map-pointer-macos-m3.csv).
+
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
 process peaked at 296 / 327–332 / 282–302 MiB (2019-01-30 / 2020-01-30 / 2019-03-27, two

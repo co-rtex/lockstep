@@ -352,8 +352,12 @@ deepest side in the real samples has 3 831). Worse levels live in a `std::map`. 
 is below every vector rank, so best-first iteration is the vector, then the map. Overflow
 moves the vector's worst half to the map in one batch; an emptied vector takes back the map's
 best half. Any operation is O(limit + log n), amortized. Hostile pattern 25 130 → 96 ns/msg; a
-200 k-level monotone-improving book 17 → 54 ns/msg (it keeps spilling); real data unchanged
-within noise. The bound's own worst case was found and measured later. 8 191 levels with an
+200 k-level monotone-improving book 17 → 54 ns/msg (it keeps spilling). On real data the
+change measured as "unchanged within noise" at first. A later 20-pair gate (benchmarks.md) put
+it at ≈ 3 % slower in book apply, with median ratio 1.031, slower in 14 of 20 pairs, p = 0.12:
+not significant alone, but consistent with the ≈ 7 % end-to-end regression found since
+`562c56d`. That cost is accepted for the bound. Moving the map behind a pointer did not
+recover it. The bound's own worst case was found and measured later. 8 191 levels with an
 empty map, then alternating add and delete just below the worst level, moves the whole
 vector on every message: 1 583 ns/msg (`itch_adversarial.py N churn`). That is O(limit) per
 message, as designed. Correctness: the reference-model differential at limits 2, 3 and 8 (constant
