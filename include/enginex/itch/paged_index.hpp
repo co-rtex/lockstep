@@ -31,6 +31,13 @@
 
 #include "enginex/itch/order_index.hpp"
 
+// Keeps a rarely taken path out of line and out of the hot code (GCC and Clang).
+#if defined(__GNUC__) || defined(__clang__)
+#define ENGINEX_ITCH_COLD [[gnu::noinline, gnu::cold]]
+#else
+#define ENGINEX_ITCH_COLD
+#endif
+
 namespace enginex::itch {
 
 class PagedIndex {
@@ -54,7 +61,7 @@ public:
                 return kEmpty;
             }
         }
-        return far_.find(key);
+        return far_find(key);
     }
     [[nodiscard]] bool contains(std::uint64_t key) const noexcept { return find(key) != kEmpty; }
 
@@ -69,7 +76,7 @@ public:
             page->slots[offset_of(key)] = value;
             ++page->live;
         } else {
-            (void)far_.insert(key, value);
+            (void)far_insert(key, value);
         }
         ++size_;
         return true;
@@ -97,7 +104,7 @@ public:
                 }
             }
         }
-        if (far_.erase(key)) {
+        if (far_erase(key)) {
             --size_;
             return true;
         }
@@ -116,6 +123,17 @@ public:
     [[nodiscard]] std::size_t fallback_bytes() const noexcept { return far_.allocated_bytes(); }
 
 private:
+    // The hash fallback, out of line. Real data never reaches it, yet inlining its SipHash
+    // bucket (D34) into find/insert/erase made real-day book apply ≈ 2.7 % slower (paired
+    // gate, two runs) without the code ever running: the hot paths grew.
+    ENGINEX_ITCH_COLD std::uint32_t far_find(std::uint64_t key) const noexcept {
+        return far_.find(key);
+    }
+    ENGINEX_ITCH_COLD bool far_insert(std::uint64_t key, std::uint32_t value) {
+        return far_.insert(key, value);
+    }
+    ENGINEX_ITCH_COLD bool far_erase(std::uint64_t key) noexcept { return far_.erase(key); }
+
     struct Page {
         Page() { slots.fill(kEmpty); }
         std::array<std::uint32_t, kPageSlots> slots;

@@ -429,3 +429,50 @@ linear probing needs more independence than a 2-universal family gives, so struc
 sets could still cluster. *Not changed:* the `-DENGINEX_ITCH_STD_INDEX` A/B baseline
 (`std::unordered_map` with the identity hash) is still floodable. It is a benchmark
 comparison build, not the default.
+
+*Correction (2026-11-11).* "Real data never pays for it" was wrong. On a quiet host (load
+≈ 2), the 20-pair apply gate on 2019-03-27 put D34 alone (`eb2442f` → `9c8f48a`) at a median
+ratio of 1.028 (p = 0.04), and 1.027 on a repeat (p = 0.012). The SipHash code never runs on
+real data, but it was inlined into the paged index's hot paths. D35 removes that cost.
+
+## D35. The hash fallback is out of line (cold)
+
+**Problem.** A quiet-host bisect of the ≈ 5 % real-data apply regression since `562c56d` (all
+binaries built the same way from `git archive` exports, 20 pairs per step, identical state
+hashes) attributed it as follows:
+
+| step | median ratio | slower in | p |
+|---|---:|---:|---:|
+| total, `562c56d` → `12c661a` | 1.050 | 19/20 | 4e-5 |
+| lazy node construction (`dd78a8d`) | 1.001 | 11/20 | 0.82 |
+| D32 bounded level vector (`b7f750e`) | 1.021 | 17/20 | 0.003 |
+| bounds commits up to `eb2442f` | 0.997 | 4/20 | 0.01 (effect below 2 %) |
+| D34 keyed fallback (`9c8f48a`), two runs | 1.028 / 1.027 | 15/20, 16/20 | 0.04 / 0.012 |
+| memory accounting and later, up to `12c661a` | 1.006 | 14/20 | 0.12 |
+
+The steps multiply to ≈ 1.05. D34's share is surprising, because real data never reaches
+the fallback: `find` returns before consulting an empty fallback. The cost came from inlining
+SipHash into `PagedIndex::find`, `insert` and `erase`. That made the hot paths bigger, though
+the branch is never taken.
+
+**Decision.** The three fallback calls go through private helpers marked
+`[[gnu::noinline, gnu::cold]]` (a macro, empty on other compilers). Same semantics, same hash.
+Paired gates against the `12c661a` archive build (20 pairs each):
+
+| workload | median ratio | IQR | candidate faster in | ns/msg |
+|---|---:|---:|---:|---|
+| apply, 2019-03-27 | 0.969 | 0.961–0.992 | 17/20 | 43.2 → 41.9 |
+| apply, 2019-03-27, repeat | 0.964 | 0.956–0.966 | 19/20 | 43.3 → 41.7 |
+| apply, 2020-01-30 | 0.970 | 0.952–0.975 | 20/20 | 46.2 → 44.7 |
+| full replay, 2019-03-27 | 0.969 | 0.966–0.976 | 19/20 | 55.7 → 54.1 |
+| adversarial `hashflood-lifecycle` 200 k (fallback in use) | **1.045** | 1.042–1.054 | 0/20 | 69.6 → 72.7 |
+
+Net, against the `562c56d` archive build (apply, 2019-03-27): median ratio 1.012, IQR
+0.991–1.026, slower in 14 of 20, p = 0.12. That is **no measurable difference**: the
+regression that remains is below what the gate resolves, consistent with D32's ≈ 2 %.
+
+*Tradeoff accepted:* the attack input, whose cost D34 bounded, is now ≈ 4.5 % slower, because
+the fallback is a real call. It stays O(1) per message at ≈ 73 ns, against 5.4–43 µs before
+D34. Real data is the workload that matters, and it gains ≈ 3 %, recovering D34's cost.
+*Not done:* recovering D32's 2 %. That is the price of its worst-case bound (D32), and no
+measured mechanism suggests a cheap fix.
