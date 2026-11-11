@@ -80,6 +80,16 @@ These are the riskiest places, from the portability review and from what is new 
     two candidate patterns: `std::optional<Session>` in `Sequencer::Options`, and the sized
     `std::vector` plus insert in MoldUDP64 packet building. If they fire, demote just that
     warning for GCC Release.
+* **UDP tests added on 2026-11-11, macOS only so far.**
+  * `MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` sets the receiver to
+    `0.0.0.0`. It relies on a UDP `connect()` there reaching the local host. Linux and macOS
+    both do this, and the test was checked on macOS. Linux can bind 127.0.0.2, so if this
+    fails there, switch that platform to a receiver at 127.0.0.2.
+  * `MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered` sends 900 ms of heartbeats
+    against a 500 ms idle timeout, then expects a re-request within 1 s. Under TSan, if the
+    receiver thread is starved past 1 s, raise the `wait(1000ms)`.
+  * `MoldUdp.AGapThatCanNeverBeFilledEndsTheRunInsteadOfWaitingForever` uses a 15 s watchdog
+    against a run that ends in ≈ 1.4 s.
 * **Timing-sensitive tests under sanitizers.** The TSan build is several times slower. Socket
   tests with timeouts (`MoldUdp.*`, `Server.*Timeout*`, `FeedMirrorSession.*`) are the
   candidates. `ctest -R 'MoldUdp|Server\.|FeedMirrorSession|exchange_pymodel'` reruns just
