@@ -153,7 +153,10 @@ TEST(MoldUdp, LossyLoopbackRebuildsTheExactBook) {
     so.drop_percent = 5;
     so.retransmit_drop_percent = 10;
     so.seed = 3;
-    so.linger = 300ms;
+    // Recovery needs the sender to still be answering. 300 ms was too short for a starved
+    // receiver in a loaded UBSan -j8 run (it ended in "gap" at 14 090 of 30 010 messages);
+    // the same reason the unpaced-burst test lingers 2 s.
+    so.linger = 2000ms;
     const Outcome o = transfer(f, so, udp::ReceiverOptions{});
     EXPECT_GT(o.sent.dropped, 0U);
     EXPECT_GT(o.sent.requests, 0U);
@@ -173,7 +176,7 @@ TEST(MoldUdp, RateLimitedAnswersStillCompleteTheBook) {
     udp::SenderOptions so;
     so.drop_percent = 5;
     so.seed = 8;
-    so.linger = 300ms;
+    so.linger = 2000ms;  // recovery needs a sender that is still answering (see above)
     so.max_answer_packets_per_second = 100;  // 10-packet burst, then 1 per 10 ms
     const Outcome o = transfer(f, so, udp::ReceiverOptions{});
     EXPECT_GT(o.sent.answers_rate_limited, 0U);
