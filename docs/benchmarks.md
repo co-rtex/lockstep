@@ -587,6 +587,23 @@ earlier, and the spread is ±25 %. A quiet machine and the same command would se
 pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-replay-regression-gate-macos-m3.csv),
 [`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
 
+*Current numbers (`8253653`, the code after every sprint change).* Measured with
+`enginex_itch_bench --input DAY --trials 5`, 2026-11-10 21:16–21:18 EST, load average 3.3
+rising to 7.4 during the run. The numbers are ns/msg, as median (best–worst) of the 5 trials;
+latency is from the per-message timing pass, timer included:
+
+| day | decode | book apply | replay | apply p50 / p99 / p99.9 |
+|---|---:|---:|---:|---:|
+| 2019-01-30 | 12.9 (12.9–12.9) | 48.8 (46.3–65.2) | 75.2 (67.0–93.6) | 42 / 292 / 666 |
+| 2020-01-30 | 13.8 (13.5–14.4) | 65.7 (49.1–70.6) | 62.7 (61.2–62.9) | 42 / 334 / 792 |
+| 2019-03-27 | 13.3 (13.2–13.4) | 47.5 (45.3–75.8) | 60.5 (59.5–78.6) | 42 / 375 / 3 000 |
+
+The state hashes are identical across trials and match the earlier runs. Decoding is
+stable. Apply and replay vary by up to 50 % between trials of one binary because of the
+load. So the medians here are not comparable with the quieter-host rows above. The paired
+gate below is the like-for-like comparison. Raw rows:
+[`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-current-macos-m3.csv).
+
 **It was settled in a quieter window, and the regression is real.** At load ≈ 3, the same
 20-pair apply gate gave:
 * a median ratio of **1.0695** (IQR 1.04–1.13);
