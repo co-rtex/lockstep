@@ -127,7 +127,14 @@ message, counted from the later of the last accepted message and the moment the 
 It then ends in `gap` with `"gap_stalled": true` and exits 1. The second clause matters: a
 heartbeat may reveal a lost tail after a quiet spell longer than the timeout. That gap gets
 its own recovery time. An independent review caught the first version, which gave up on
-such a gap at once (`MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered`). Before that rule, a gap that
+such a gap at once (`MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered`).
+
+The rule bounds the wait, so extreme loss can now end a run that would once have recovered
+eventually. Measured with `scripts/mold_udp_demo.sh` (200 000 messages, loopback): every run
+ended exact at 90 and 95 % retransmission loss (live loss 5 and 20 %; up to 17 519 requests,
+9.4 s). At 98 %, 1 of 2 runs ended in `gap_stalled`: one hole went 5 s without a single answer
+getting through. Each retry then succeeds with 2 % probability, about every 50 ms, so about
+13 % of holes see no success in 5 s. On links that lossy, raise `--idle-timeout-ms`. Before that rule, a gap that
 could never be filled (for example, every retransmission lost) kept both processes running
 forever. The sender's repeated end-of-session packets reset the receiver's idle timer, and
 the receiver's requests extended the sender's linger.
