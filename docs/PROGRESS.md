@@ -224,7 +224,11 @@ Commands and results (latest):
 * UBSan after the real-data layout change (`83bb670`): 476/476, and the opt-in real-data
   differential under UBSan (21.26 M messages, 65 s): passed, no runtime errors. After the
   chunked node pool (`8a40818`): UBSan 479/479, plus 1 000 000 standalone fuzz inputs with
-  no violation.
+  no violation. At `033e3f9` (after D32, lazy nodes, D34 and the sequencer failure reasons):
+  the UBSan binary replayed 2019-03-27 strictly (21 375 302 messages) at level-vector limits
+  8192 and 2, with 0 runtime errors and the Release state hash. `mold-sim` on the 2.87 M-message
+  real prefix (5 % loss, 3 % duplicates, reorder window 16) ended exact, also with 0 runtime
+  errors.
 * Leak checks with macOS `leaks --atExit` (LeakSanitizer cannot run here). The full test
   binary minus the fork-based crash-point tests (their `_exit` children hang under the tool):
   466 tests passed, **0 leaks**. Also 0 leaks for `enginex itch replay` of the real sample
