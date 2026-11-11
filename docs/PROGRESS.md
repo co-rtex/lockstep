@@ -256,6 +256,7 @@ Commands and results (latest):
   dependencies from the local download cache): 471/471 passed; `scripts/itch_demo.sh` exit 0.
   Again at `c565469`: 520/520, and the binary reports `git c565469badf4` (not dirty).
   Again at `db24e67` (2026-11-11): 532/532, binary reports `git db24e67a0114` (not dirty).
+  Again at `6d93043` (2026-11-11, final): 533/533.
 * `scripts/check.sh smoke build/release` (R1–R3 CLI smoke incl. kill -9 harness, serve/client,
   network benchmark): `smoke OK`. `scripts/demo.sh`: exit 0 (crash recovery, retry idempotency,
   corruption refusal, slow-consumer cut-off, graceful shutdown).
@@ -295,6 +296,17 @@ Blocked in this environment (exact symptoms), so they are not claimed for the sp
   a scripted search for compound assignments to sub-`int` types (`uint16_t x; x += y`, which
   GCC's `-Wconversion` flags and clang's does not) found none. This does not replace a GCC
   build.
+
+## Sprint final status (2026-11-11, 17:30 EST, commit `6d93043` code / `dee4c16` docs)
+
+* `scripts/verify_all.sh --repeat 3 --real-data --mutation`: exit 0, all 16 run steps passed
+  (Release 533/533 ×3; Debug, UBSan, hardened 533/533; demos; argument sweep; 200 000 fuzz
+  inputs; fault injection; real data on 3 days identical; mutation 69/69). Summary:
+  `benchmarks/results/verify-all-6d93043-macos-m3.md`.
+* Fresh clone at `6d93043`: Release build and 533/533. `clang --analyze` over 70 project
+  translation units: 0 findings.
+* Not verified here: clang-format 19.1.7 (`format OK`), GCC 13, Linux ASan/TSan. The formatting
+  pass is committed (`6d93043`); the GitHub CI run on it is the check (docs/linux-validation.md).
 
 ## Blocked / external
 
