@@ -97,6 +97,12 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(itch_pydecode_lifecycle itch_pydecode_malformed
                          itch_pydecode_random_all_types itch_pybook_lifecycle
                          PROPERTIES LABELS "itch;cli" TIMEOUT 120)
+    # Order references >= 2^32 crafted against the old unkeyed hash (D34): they all live in the
+    # paged index's keyed hash fallback, which real data never reaches. The independent Python
+    # book must agree at every level and at checkpoints.
+    add_test(NAME itch_pybook_fallback_index
+             COMMAND sh -c "${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_adversarial.py 5000 hashflood ${CMAKE_CURRENT_BINARY_DIR}/hashflood5000.itch && ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/itch_pybook.py ${CMAKE_CURRENT_BINARY_DIR}/hashflood5000.itch --checkpoint-every 250 --enginex $<TARGET_FILE:enginex>")
+    set_tests_properties(itch_pybook_fallback_index PROPERTIES LABELS "itch;cli" TIMEOUT 120)
 endif()
 add_test(NAME cli_itch_replay_strict
          COMMAND enginex itch replay --strict --json
