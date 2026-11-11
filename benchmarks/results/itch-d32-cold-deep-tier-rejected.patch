@@ -1,0 +1,69 @@
+diff --git a/src/itch/book.cpp b/src/itch/book.cpp
+index fc20d5b..0a171c2 100644
+--- a/src/itch/book.cpp
++++ b/src/itch/book.cpp
+@@ -200,12 +200,7 @@ public:
+     Level& get_or_create(Price4 price, bool& created) {
+         const std::uint32_t r = rank(price);
+         if (!deep_.empty() && r <= deep_.rbegin()->first) {
+-            const auto [dit, inserted] = deep_.try_emplace(r, nullptr);
+-            created = inserted;
+-            if (inserted) {
+-                dit->second = new_level();
+-            }
+-            return *dit->second;
++            return deep_get_or_create(r, created);
+         }
+         auto it = position(r);
+         if (it != v_.end() && it->rank == r) {
+@@ -223,12 +218,7 @@ public:
+     void erase(Price4 price) {
+         const std::uint32_t r = rank(price);
+         if (!deep_.empty() && r <= deep_.rbegin()->first) {
+-            const auto dit = deep_.find(r);
+-            if (dit == deep_.end()) {
+-                throw std::logic_error("ITCH book: erasing a missing price level");
+-            }
+-            storage_->free.push_back(dit->second);
+-            deep_.erase(dit);
++            deep_erase(r);
+             return;
+         }
+         auto it = position(r);
+@@ -274,8 +264,26 @@ private:
+         }
+         return &storage_->levels.emplace_back();
+     }
++    // The deep tier, out of line. Real books never reach it (D32), and inlining std::map code
++    // into the hot paths can cost time even when the branch is never taken (D35).
++    ENGINEX_ITCH_COLD Level& deep_get_or_create(std::uint32_t r, bool& created) {
++        const auto [dit, inserted] = deep_.try_emplace(r, nullptr);
++        created = inserted;
++        if (inserted) {
++            dit->second = new_level();
++        }
++        return *dit->second;
++    }
++    ENGINEX_ITCH_COLD void deep_erase(std::uint32_t r) {
++        const auto dit = deep_.find(r);
++        if (dit == deep_.end()) {
++            throw std::logic_error("ITCH book: erasing a missing price level");
++        }
++        storage_->free.push_back(dit->second);
++        deep_.erase(dit);
++    }
+     // Moves the worst half of the vector into the deep map (all of them rank below what stays).
+-    void spill() {
++    ENGINEX_ITCH_COLD void spill() {
+         const std::size_t move = v_.size() / 2;
+         for (std::size_t i = 0; i < move; ++i) {
+             deep_.emplace_hint(deep_.end(), v_[i].rank, v_[i].level);
+@@ -283,7 +291,7 @@ private:
+         v_.erase(v_.begin(), v_.begin() + static_cast<std::ptrdiff_t>(move));
+     }
+     // The vector emptied: bring back the best half of the deep map (at least one level).
+-    void refill() {
++    ENGINEX_ITCH_COLD void refill() {
+         const std::size_t move = std::max<std::size_t>(1, std::min(deep_.size(), storage_->vector_limit / 2));
+         auto first = std::prev(deep_.end(), static_cast<std::ptrdiff_t>(move));
+         for (auto it = first; it != deep_.end(); ++it) {

@@ -475,5 +475,10 @@ regression that remains is below what the gate resolves, consistent with D32's �
 *Tradeoff accepted:* the attack input, whose cost D34 bounded, is now ≈ 4.5 % slower, because
 the fallback is a real call. It stays O(1) per message at ≈ 73 ns, against 5.4–43 µs before
 D34. Real data is the workload that matters, and it gains ≈ 3 %, recovering D34's cost.
-*Not done:* recovering D32's 2 %. That is the price of its worst-case bound (D32), and no
-measured mechanism suggests a cheap fix.
+*Tried and rejected:* the same treatment for D32's deep tier. The `std::map` branches of
+`get_or_create` and `erase`, plus `spill` and `refill`, went into cold out-of-line helpers.
+Against `b50a73f`: apply 1.006 (p = 0.50) on 2019-03-27 and 0.998 (p = 0.82) on 2020-01-30,
+so no measurable difference. D32's ≈ 2 % has some other cause, so the change was reverted
+(patch `itch-d32-cold-deep-tier-rejected.patch`, pairs
+`itch-d32-cold-deep-tier-rejected-macos-m3.csv`). It is the accepted price of the worst-case
+bound.

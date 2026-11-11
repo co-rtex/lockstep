@@ -664,6 +664,8 @@ run had the same state hash.
 * **Net, `b50a73f` against `562c56d`: apply 1.012** (IQR 0.991–1.026, 14/20, p = 0.12). That
   is no measurable difference. What remains is D32's deliberate ≈ 2 %, at the edge of what
   the gate resolves.
+* Moving D32's deep-tier code out of line in the same way changed nothing (1.006 and 0.998,
+  p ≥ 0.5). It was reverted; patch and pairs are kept (D35, *tried and rejected*).
 
 Raw pairs:
 [`itch-apply-gate-quiet2-macos-m3.csv`](../benchmarks/results/itch-apply-gate-quiet2-macos-m3.csv),
