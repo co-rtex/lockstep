@@ -15,6 +15,10 @@ Modes:
   hashflood  N adds whose order references are chosen to collide in a multiplicative hash with
              the fixed multiplier 2^64/phi at every table size: (C + i) * phi^-1 mod 2^64.
              They are >= 2^32, so the paged index sends them to its hash fallback.
+  hashflood-lifecycle
+             the same N adds, then for every order in turn: a partial execution, a partial
+             cancel, a replace onto a new crafted reference, or a delete, so lookups, removals
+             (backward-shift deletion) and re-inserts all run inside the hash fallback
 """
 import pathlib
 import sys
@@ -23,7 +27,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from itch_pydecode import STRUCTS  # noqa: E402
 
 PHI = 0x9E3779B97F4A7C15
-MODES = ("worse", "better", "churn", "hashflood")
+MODES = ("worse", "better", "churn", "hashflood", "hashflood-lifecycle")
 
 
 def header(msg_type, locate, ts):
@@ -62,12 +66,30 @@ def main():
             buf += add(ref, worst - 1)  # a new worst level: inserted at the vector's front
             ts += 1
             buf += frame(header("D", 1, ts) + STRUCTS["D"].pack(ref))  # and removed again
-    else:  # hashflood
+    else:  # hashflood, hashflood-lifecycle
         inv = pow(PHI, -1, 1 << 64)
         base = 1 << 40
+
+        def crafted(i):
+            return ((base + i) * inv) % (1 << 64)
         for i in range(n):
-            ref = ((base + i) * inv) % (1 << 64)
-            buf += add(ref, 1_000_000 + (i % 100))
+            buf += add(crafted(i), 1_000_000 + (i % 100))
+        if mode == "hashflood-lifecycle":
+            def msg(t, body):
+                nonlocal ts
+                ts += 1
+                return frame(header(t, 1, ts) + body)
+            for i in range(n):  # every order starts with 100 shares (see add())
+                ref = crafted(i)
+                k = i % 4
+                if k == 0:  # partial execution, match number i
+                    buf += msg("E", STRUCTS["E"].pack(ref, 40, i + 1))
+                elif k == 1:  # partial cancel
+                    buf += msg("X", STRUCTS["X"].pack(ref, 30))
+                elif k == 2:  # replace onto a new crafted reference, new price and size
+                    buf += msg("U", STRUCTS["U"].pack(ref, crafted(n + i), 70, 1_000_200 + (i % 50)))
+                else:  # delete
+                    buf += msg("D", STRUCTS["D"].pack(ref))
     pathlib.Path(out).write_bytes(bytes(buf))
     return 0
 
