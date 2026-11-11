@@ -336,7 +336,7 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 | book apply, 5000 symbols / 2 M msgs, `std::allocator` level nodes → free-list arena | 70.6 → 56.1 | 14.2 M → 17.8 M | 0.304 → 0.003 |
 | **real Nasdaq sample** (21.26 M msgs, 8 713 symbols): replay, map + hash → sorted-vector levels + paged direct index | 99.3 → 62.1 | 10.1 M → 16.1 M | ≈ 0 |
 | same, + near-top level scan (3 sample days: 56.0 / 58.1 / 54.8, reproduced at `562c56d` as 58.0 / 59.3 / 54.9) | **56.0** | **17.9 M** | ≈ 0 |
-| same, final sprint code (adds the D32 worst-case bound and the keyed fallback index; `4fa606a`, quiet host): 3 days 57.6 / 60.5 / 56.7; the paired gate puts book apply ≈ 7 % slower than `562c56d` | **57.6** | **17.4 M** | ≈ 0 |
+| same, final sprint code (adds the D32 worst-case bound, the keyed fallback index and D35's out-of-line fallback; `b50a73f`, quiet host): 3 days 56.7 / 57.2 / 55.3. A paired gate finds no measurable book-apply difference from `562c56d` (1.012, p = 0.12) | **56.7** | **17.6 M** | ≈ 0 |
 | book apply, 1 M msgs / 8 symbols, same change (no capacity hint) | 31.7 → 22.4 | 31.5 M → 44.6 M | ≈ 0 |
 | current default (+ chunked node pool, which removes the 10 ms stall), `562c56d`: book apply / full replay, 8 symbols | 24.2 / 35.8 | 41.3 M / 27.9 M | ≈ 0 |
 | same, 5000 symbols / 2 M msgs | 44.2 / 56.5 | 22.6 M / 17.7 M | 0.03 |

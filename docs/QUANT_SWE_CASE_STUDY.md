@@ -41,7 +41,7 @@ are loopback measurements on this one machine. None is an exchange wire latency.
 | What | Result | Evidence |
 |---|---|---|
 | ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
-| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs, at `562c56d`). Later commits made book apply **≈ 7 % slower** (20-pair gate in a quiet window, p = 0.0004). About half of that is the D32 worst-case bound, a deliberate tradeoff; the other half is not attributed. Final code, quiet host: replay 56.7–60.5, apply 44.1–46.4 ns/msg (apply p99.9 417–459 ns) | `itch-real-sample-macos-m3.csv`, `itch-apply-regression-quiet-macos-m3.csv`, `itch-real-current-quiet-macos-m3.csv` |
+| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs, at `562c56d`). Later commits made book apply **≈ 5 % slower** (20-pair gates on a quiet host, p < 1e-4). A bisect attributed it to D32's worst-case bound (≈ 2 %, accepted) and to D34's keyed fallback (≈ 2.7 %). That code never runs on real data; its inlined SipHash grew the hot paths. **D35 moved it out of line**: real-data apply/replay ≈ 3 % faster, and net against `562c56d`, no measurable difference (1.012, p = 0.12). Final code (`b50a73f`), quiet host: replay 55.3–57.2, apply 41.7–45.0 ns/msg (apply p99.9 417–459 ns) | `itch-real-sample-macos-m3.csv`, `itch-apply-bisect-quiet-macos-m3.csv`, `itch-cold-fallback-d35-macos-m3.csv`, `itch-real-current-quiet-macos-m3.csv` |
 | Book memory (real data) | ≈ 188–211 bytes per live order for the whole process, at 1.5–1.65 M live orders. The book's own structures account for 115–122 B of it: index pages 52–59 B (≈ 7 % occupied), order nodes 41 B, levels ≈ 20 B | `itch-real-memory-macos-m3.csv`, `itch-real-memory-breakdown-macos-m3.csv` |
 | Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder, and every price level equal to an independent Python book (final books, plus best bid/ask of every book every 100 k messages) | `scripts/real_data_check.sh`, `tools/itch_pydecode.py`, `tools/itch_pybook.py` |
 | Book apply per message, real data | p50 41–42 ns, p99 292–333 ns, p99.9 458–541 ns (3 days, timer included) | `itch-real-latency-macos-m3.csv` |
@@ -178,6 +178,19 @@ are loopback measurements on this one machine. None is an exchange wire latency.
     On this noisy machine, 3-trial medians ranged from 50 to 106 ns/msg in *both* arms, so I
     switched to 20 back-to-back pairs. The median ratio was 0.99. The code was reverted, and
     the patch and raw pairs are kept.
+12. *"Find a regression in code that never runs."* After the sprint, real-data book apply was
+    ≈ 5 % slower than at `562c56d`. I rebuilt every bisect step from a `git archive` export,
+    so that all binaries were built the same way, and paired-gated each step on a quiet host.
+    The steps came out as D32 at 2.1 %, which was expected, and D34 at 2.7 %, twice. D34 was
+    the surprise: its SipHash fallback is never consulted on real data. Inlining it had grown
+    `PagedIndex::find`, `insert` and `erase`. Three `[[gnu::cold, gnu::noinline]]` helpers
+    gave back 3.0–3.6 % on two days and in full replay. The price was 4.5 % on the hash-flood
+    attack input, which is the one input that runs that code. Net against `562c56d`, no
+    measurable difference remains (D35).
+13. *"How do your tests prove they can fail?"* A mutation harness (68 scripted bugs). The most
+    useful result was not a survivor. One mutant hung for the 900 s timeout instead of
+    failing, and that exposed a real liveness bug: a UDP receiver and sender that waited
+    forever on a gap no retransmission could fill.
 
 ## Honest limits
 

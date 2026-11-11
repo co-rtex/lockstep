@@ -587,22 +587,21 @@ earlier, and the spread is ±25 %. A quiet machine and the same command would se
 pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-replay-regression-gate-macos-m3.csv),
 [`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
 
-*Current numbers (the code after every sprint change, quiet host).* Measured with
-`enginex_itch_bench --input DAY --trials 5` on 2026-11-11 at 01:17–01:21 EST, load average
-1.7–2.1. The binary is labelled `c19c56d-dirty` (uncommitted harness files at build time);
-its sources are identical to `4fa606a`. The numbers are ns/msg, as median (best–worst) of the
-5 trials; latency is from the per-message timing pass, timer included:
+*Current numbers (`b50a73f`, the code after every sprint change including D35, quiet host).*
+Measured with `enginex_itch_bench --input DAY --trials 5` on 2026-11-11 at about 02:40 EST,
+load average 1.9–2.1. The numbers are ns/msg, as median (best–worst) of the 5 trials; latency
+is from the per-message timing pass, timer included:
 
 | day | decode | book apply | replay | apply p50 / p99 / p99.9 |
 |---|---:|---:|---:|---:|
-| 2019-01-30 | 12.5 (12.5–12.6) | 44.8 (44.5–46.2) | 57.6 (57.3–57.8) | 42 / 291 / 417 |
-| 2020-01-30 | 12.6 (12.6–12.6) | 46.4 (46.0–47.6) | 60.5 (60.1–60.5) | 42 / 292 / 459 |
-| 2019-03-27 | 12.5 (12.5–12.6) | 44.1 (44.0–44.5) | 56.7 (56.3–56.7) | 42 / 291 / 417 |
+| 2019-01-30 | 12.7 (12.6–12.7) | 45.0 (44.9–45.2) | 56.7 (55.5–58.5) | 42 / 291 / 417 |
+| 2020-01-30 | 12.6 (12.6–12.7) | 44.8 (44.6–46.2) | 57.2 (56.7–57.4) | 42 / 292 / 459 |
+| 2019-03-27 | 12.5 (12.5–12.5) | 41.7 (41.3–42.6) | 55.3 (54.5–56.8) | 41 / 291 / 417 |
 
-The state hashes are identical across trials and match the reference hashes. Every spread is
-under 4 %. Replay is 2.9–4.1 % above the `562c56d` figures (56.0 / 58.1 / 54.8). Those figures
-were measured at another time, not paired, so the paired gate below is the like-for-like
-comparison. Raw rows:
+The state hashes are identical across trials and match the reference hashes. Unpaired medians
+like these still move by a few percent between sessions; for example, 2019-01-30 apply gave
+44.8 an hour earlier, before D35. So changes are judged only by the paired gates below. Raw
+rows:
 [`itch-real-current-quiet-macos-m3.csv`](../benchmarks/results/itch-real-current-quiet-macos-m3.csv).
 An earlier run of the same command at `8253653`, at load 3.3–7.4, varied by up to 50 % between
 trials: [`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-current-macos-m3.csv).
@@ -613,7 +612,9 @@ trials: [`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-curre
 * the current code slower in 18 of 20 pairs, sign test p = 0.0004;
 * 44.0 → 47.4 ns/msg, with an identical state hash.
 
-That passes the gate: **book apply is about 7 % slower on real data than at `562c56d`**.
+That passes the gate: **book apply was about 7 % slower on real data than at `562c56d`**.
+A quieter host later put it at ≈ 5 %, attributed it to D32 and D34, and D35 removed D34's
+share (below).
 
 Bisecting with the same gate (load ≈ 3–5):
 
@@ -635,16 +636,40 @@ HEAD (20 pairs, p = 1.0), so it was reverted.
 
 The D32 share is the price of the worst-case bound: the hostile pattern costs 96 ns/msg instead
 of 25 µs/msg, and the vector's own worst case is 1.6 µs/msg (churn). That price is accepted
-deliberately. The other ≈ 3 % is not attributed. The post-D32 commits on this path are small:
-the capacity check, the keyed fallback index (D34, which is never consulted on real data),
-memory-accounting accessors and the checkpoint hook. Telling them apart needs a quieter host
-than this one.
+deliberately. At this load the other ≈ 3 % could not be attributed. The quiet-host bisect
+below pins it on D34.
 
 Raw pairs:
 [`itch-apply-regression-quiet-macos-m3.csv`](../benchmarks/results/itch-apply-regression-quiet-macos-m3.csv),
 [`itch-apply-bisect-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-d32-macos-m3.csv),
 [`itch-apply-bisect-after-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-after-d32-macos-m3.csv),
 [`itch-apply-deep-map-pointer-macos-m3.csv`](../benchmarks/results/itch-apply-deep-map-pointer-macos-m3.csv), [`itch-apply-bisect-d34-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-d34-macos-m3.csv).
+
+**Settled on a quiet host (2026-11-11, load ≈ 1.7–2.5), then mostly removed (D35).** Every
+binary was built the same way, from a `git archive` export under `$TMPDIR` with the already
+fetched dependencies. Such binaries report `git_sha` as `unknown`, so each CSV row names its
+commit in the `step` or `workload` column. Each gate was 20 pairs on 2019-03-27, and every
+run had the same state hash.
+* Current code (`12c661a`) against `562c56d`: apply **1.053** (IQR 1.050–1.057, 19/20 slower),
+  replay **1.047** (1.039–1.057, 20/20). The ≈ 7 % above was measured at higher load; ≈ 5 % is
+  the better estimate.
+* Bisect: lazy nodes 1.001 (no difference); **D32 1.021** (p = 0.003); the bounds commits
+  0.997 (no difference); **D34 1.028, and 1.027 on a repeat** (p = 0.04, 0.012); memory
+  accounting and later 1.006 (no difference). The steps multiply to ≈ 1.05.
+* D34's share was unexpected, because its SipHash never runs on real data. It had been
+  inlined into the paged index's hot paths. **D35** moves the three fallback calls out of
+  line. Against `12c661a`: apply 0.969 and 0.964 (repeat) on 2019-03-27 and 0.970 on
+  2020-01-30, and replay 0.969, each faster in 17–20 of 20. The hash-flood attack input, which
+  does use the fallback, is 4.5 % slower (69.6 → 72.7 ns/msg, still O(1); accepted, D35).
+* **Net, `b50a73f` against `562c56d`: apply 1.012** (IQR 0.991–1.026, 14/20, p = 0.12). That
+  is no measurable difference. What remains is D32's deliberate ≈ 2 %, at the edge of what
+  the gate resolves.
+
+Raw pairs:
+[`itch-apply-gate-quiet2-macos-m3.csv`](../benchmarks/results/itch-apply-gate-quiet2-macos-m3.csv),
+[`itch-replay-gate-quiet2-macos-m3.csv`](../benchmarks/results/itch-replay-gate-quiet2-macos-m3.csv),
+[`itch-apply-bisect-quiet-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-quiet-macos-m3.csv),
+[`itch-cold-fallback-d35-macos-m3.csv`](../benchmarks/results/itch-cold-fallback-d35-macos-m3.csv).
 
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
