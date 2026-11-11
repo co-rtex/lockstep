@@ -28,3 +28,32 @@ mold-send: 498172 packets, 21375302 messages, from port 47424 to 127.0.0.1:47423
   receiver: ended, 21375302 messages in order=True, 1 gaps, 27472 requests, 11.72 s
   book hash 8cbb4baaf680ec4503b0c8185376f78d020fad31042836f6cfa48159a16d6a3e == direct replay
 mold-udp demo OK
+
+# Re-run at b680e75 (after fcb3d25: the stall clock starts when a gap opens), same settings, 2026-11-11 03:32 EST
+## 01302019
+== direct replay of build/realdata/01302019.prefix256.itch
+  state hash 21b8433565433eb7eb0e16107da8632bf63197fca9a610e86487706fe7a97c40
+== receiver on 127.0.0.1:47423, sender on 127.0.0.1:47424
+mold-send: 496120 packets, 21255695 messages, from port 47424 to 127.0.0.1:47423
+  sender:   471216 of 496120 packets sent (24904 dropped), 27671 re-requests answered, 42827 retransmitted (4809 of those dropped)
+  receiver: ended, 21255695 messages in order=True, 1 gaps, 27671 requests, 11.81 s
+  book hash 21b8433565433eb7eb0e16107da8632bf63197fca9a610e86487706fe7a97c40 == direct replay
+mold-udp demo OK
+## 01302020
+== direct replay of build/realdata/01302020.prefix256.itch
+  state hash a47b9b2508994e5eb5865244ab67710ec5aea0a3d743bfe6fe8dd2a782b66a27
+== receiver on 127.0.0.1:47423, sender on 127.0.0.1:47424
+mold-send: 493349 packets, 21051558 messages, from port 47424 to 127.0.0.1:47423
+  sender:   468587 of 493349 packets sent (24762 dropped), 27543 re-requests answered, 43436 retransmitted (4865 of those dropped)
+  receiver: ended, 21051558 messages in order=True, 1 gaps, 27543 requests, 11.72 s
+  book hash a47b9b2508994e5eb5865244ab67710ec5aea0a3d743bfe6fe8dd2a782b66a27 == direct replay
+mold-udp demo OK
+## 03272019
+== direct replay of build/realdata/03272019.prefix256.itch
+  state hash 8cbb4baaf680ec4503b0c8185376f78d020fad31042836f6cfa48159a16d6a3e
+== receiver on 127.0.0.1:47423, sender on 127.0.0.1:47424
+mold-send: 498172 packets, 21375302 messages, from port 47424 to 127.0.0.1:47423
+  sender:   473151 of 498172 packets sent (25021 dropped), 27659 re-requests answered, 41391 retransmitted (4565 of those dropped)
+  receiver: ended, 21375302 messages in order=True, 1 gaps, 27659 requests, 11.68 s
+  book hash 8cbb4baaf680ec4503b0c8185376f78d020fad31042836f6cfa48159a16d6a3e == direct replay
+mold-udp demo OK
