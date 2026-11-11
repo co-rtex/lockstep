@@ -139,6 +139,37 @@ TEST(JsonCodec, ObjectsWithTooManyKeysAreRejected) {
     EXPECT_EQ(issue, codec::KeyIssue::None);
 }
 
+// Keys are tracked per object: each nested object, sibling and array element starts afresh,
+// and its keys count neither as repeats of nor towards the limit of the enclosing object.
+TEST(JsonCodec, KeyChecksArePerObjectAtEveryDepth) {
+    auto issue_of = [](const std::string& text) {
+        codec::KeyIssue issue = codec::KeyIssue::None;
+        (void)codec::parse_json(text, issue);
+        return issue;
+    };
+    using codec::KeyIssue;
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"b":{"k":1}})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"a":[{"k":1},{"k":1}]})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"k":{"k":{"k":1}}})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"a":{"k":1}})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1,"k":2}})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":[{"x":1},{"k":1,"k":2}]})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"k":2,"k":3})"), KeyIssue::RepeatedKey);  // after a child
+
+    // Two sibling children with the limit each: 2 x 64 keys below one parent is fine.
+    auto keys = [](std::size_t n) {
+        std::string s = "{";
+        for (std::size_t i = 0; i < n; ++i) {
+            s += (i ? ",\"k" : "\"k") + std::to_string(i) + "\":1";
+        }
+        return s + "}";
+    };
+    const std::size_t limit = codec::kMaxKeysPerObject;
+    EXPECT_EQ(issue_of(R"({"a":)" + keys(limit) + R"(,"b":)" + keys(limit) + "}"), KeyIssue::None);
+    EXPECT_EQ(issue_of("[" + keys(limit) + "," + keys(limit) + "]"), KeyIssue::None);
+    EXPECT_EQ(issue_of("[" + keys(limit) + "," + keys(limit + 1) + "]"), KeyIssue::TooManyKeys);
+}
+
 TEST(JsonCodec, ErrorEchoesRequestIdAndType) {
     auto parsed = codec::parse_input(
         R"({"type":"new_limit","request_id":"abc","symbol":"AAPL","side":"BUY","price":1})");
