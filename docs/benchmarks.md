@@ -602,6 +602,7 @@ Bisecting with the same gate (load ≈ 3–5):
 | lazy node construction (`dd78a8d`) | 12 | 0.983 | 0.87–1.17 | 4 of 12 | 0.39 |
 | D32 bounded level vector, and commits between (`b7f750e`) | 20 | 1.031 | 1.00–1.08 | 14 of 20 | 0.12 |
 | everything after D32, up to `a505d51` | 20 | 1.033 | 0.99–1.08 | 12 of 20 | 0.50 |
+| of which D34 keyed fallback index alone (`eb2442f` → `9c8f48a`, load ≈ 3) | 20 | 1.015 | 0.98–1.05 | 13 of 20 | 0.26 |
 
 The cost splits roughly evenly between D32 and the later commits. Neither half is
 significant on its own. The two halves multiply to ≈ 1.065, consistent with the end-to-end
@@ -623,7 +624,7 @@ Raw pairs:
 [`itch-apply-regression-quiet-macos-m3.csv`](../benchmarks/results/itch-apply-regression-quiet-macos-m3.csv),
 [`itch-apply-bisect-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-d32-macos-m3.csv),
 [`itch-apply-bisect-after-d32-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-after-d32-macos-m3.csv),
-[`itch-apply-deep-map-pointer-macos-m3.csv`](../benchmarks/results/itch-apply-deep-map-pointer-macos-m3.csv).
+[`itch-apply-deep-map-pointer-macos-m3.csv`](../benchmarks/results/itch-apply-deep-map-pointer-macos-m3.csv), [`itch-apply-bisect-d34-macos-m3.csv`](../benchmarks/results/itch-apply-bisect-d34-macos-m3.csv).
 
 **Memory.** `enginex itch replay --metrics-out` streams the file in 1 MiB chunks and now
 records peak RSS. With `--depth 1`, so the JSON stays small, and `--strict`, the whole
