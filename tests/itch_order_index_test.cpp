@@ -241,6 +241,25 @@ TEST(PagedIndex, PagesAreFreedWhenEmptyAndKeyZeroWorks) {
 // References crafted against the old unkeyed multiplicative hash, (C + i) * phi^-1 mod 2^64:
 // every one of them had the same home bucket at every table size, so 40 000 such adds cost
 // 43 µs each (D34). Under the keyed hash they spread like any other keys.
+// The key, not just the reference, decides placement, and each default index draws its own
+// key. Otherwise an attacker who learns one placement (or the code) can predict them all.
+// The collision tests above use one fixed key for probe and index alike, so they would still
+// pass if the key were ignored or constant.
+TEST(OrderIndex, TheKeyDecidesPlacementAndEachIndexDrawsItsOwn) {
+    auto homes = [](const OrderIndex& idx) {
+        std::vector<std::size_t> h;
+        for (std::uint64_t k = 1; k <= 64; ++k) {
+            h.push_back(idx.home_bucket(k));
+        }
+        return h;
+    };
+    const OrderIndex a(1024, SipKey{1, 2});
+    EXPECT_EQ(homes(a), homes(OrderIndex(1024, SipKey{1, 2})));    // deterministic per key
+    EXPECT_NE(homes(a), homes(OrderIndex(1024, SipKey{1, 3})));    // a different key moves them
+    EXPECT_NE(homes(OrderIndex{}), homes(OrderIndex{}));          // 1024^-64 chance to be equal
+    EXPECT_NE(OrderIndex::random_key().k0, OrderIndex::random_key().k0);  // 2^-64 chance
+}
+
 TEST(OrderIndex, CraftedReferencesDoNotShareAHomeBucket) {
     constexpr std::uint64_t kPhi = 0x9E3779B97F4A7C15ULL;
     std::uint64_t inverse = kPhi;  // Newton iteration for phi^-1 mod 2^64 (phi is odd)

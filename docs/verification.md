@@ -97,8 +97,14 @@ failed, no test noticed, and subscribers would have seen an event that a restart
 lose. `Server.JournalFailureNeverPublishesTheUndurableEvent` now kills it. One mutant
 was equivalent and is excluded with a comment in the script: dropping the event-watermark
 rollback after a failed commit cannot be observed, because both failure modes are permanent
-fail-stops. The current score is **56/56** (≈ 5.8 min on the M3 with an incremental release
-build). Run it with
+fail-stops. The last full run scored **56/56** (≈ 5.8 min on the M3 with an incremental release
+build). Eight mutants were added afterwards for the newest code: a constant or ignored key in
+the ITCH order index's keyed hash, nested JSON objects sharing their parent's key set, an
+unreported repeated key, a key limit off by one, a wrong sequencer failure reason, an
+off-by-one `PacketStore::find`, and mold-sim recovery skipping a packet. Each was run on its
+own (`--only`) and killed. Two of them, the constant and the ignored key, and the
+nested-object mutant first survived every existing test. `OrderIndex.TheKeyDecidesPlacementAndEachIndexDrawsItsOwn`
+and `JsonCodec.KeyChecksArePerObjectAtEveryDepth` were added to kill them. Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with up to four failing tests
 per mutant (none listed when the test binary crashed), is in
