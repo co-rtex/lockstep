@@ -82,9 +82,10 @@ These are the riskiest places, from the portability review and from what is new 
     warning for GCC Release.
 * **UDP tests added on 2026-11-11, macOS only so far.**
   * `MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` sets the receiver to
-    `0.0.0.0`. It relies on a UDP `connect()` there reaching the local host. Linux and macOS
-    both do this, and the test was checked on macOS. Linux can bind 127.0.0.2, so if this
-    fails there, switch that platform to a receiver at 127.0.0.2.
+    `0.0.0.0`. It relies on a UDP `connect()` there reaching the local host. That was checked
+    on macOS only. Linux is expected to behave the same, since it treats a destination of
+    `INADDR_ANY` as the local host, but this has not run there. Linux can bind 127.0.0.2, so if
+    it fails, switch that platform to a receiver at 127.0.0.2.
   * `MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered` sends 900 ms of heartbeats
     against a 500 ms idle timeout, then expects a re-request within 1 s. Under TSan, if the
     receiver thread is starved past 1 s, raise the `wait(1000ms)`.
