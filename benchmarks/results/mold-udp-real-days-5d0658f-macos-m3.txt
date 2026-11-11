@@ -1,6 +1,6 @@
-# scripts/mold_udp_demo.sh on the three real sample days (first 256 MiB-prefix files), after the
-# gap-stall fix (c19c56d), at 5d0658f. RATE_PPS=50000, DROP_PERCENT=5, RETRANSMIT_DROP_PERCENT=10
-# (script defaults), loopback, Apple M3 / macOS 26.6, Release, load ~1.6-3. 2026-11-11 01:14 EST
+# scripts/mold_udp_demo.sh on the three real sample days (each file: the decompressed first 256 MiB of
+# that day's gzip download, see scripts/real_data_check.sh), after the gap-stall fix (c19c56d), at 5d0658f. RATE_PPS=50000, DROP_PERCENT=5, RETRANSMIT_DROP_PERCENT=10
+# (the loss settings are the script defaults; the rate is not), loopback, Apple M3 / macOS 26.6, Release, load ~1.6-3. 2026-11-11 01:14 EST
 ## 01302019
 == direct replay of build/realdata/01302019.prefix256.itch
   state hash 21b8433565433eb7eb0e16107da8632bf63197fca9a610e86487706fe7a97c40
