@@ -84,6 +84,12 @@ These are the riskiest places, from the portability review and from what is new 
     but do not fail the build. Each is probed with `check_cxx_compiler_flag` first. Every
     other warning is still an error. This targets the most likely GCC Release failure. It
     cannot be confirmed without the CI log, and those warnings should still be read in it.
+* **The fuzz smoke test against the sanitizer job's time limit (most concrete candidate).**
+  `fuzz_itch_standalone_smoke` (20 000 inputs, TIMEOUT 300 s) took 4 s in Release, 71 s in
+  Debug, 85 s in hardened Debug and **151 s under UBSan Debug** on the M3. The CI
+  `clang-asan-ubsan` job adds ASan on a slower runner, so it would very likely time out.
+  Since 2026-11-11, Debug and sanitizer builds run 2 000 inputs: 15 s under UBSan here.
+  Release keeps 20 000. This is not confirmed against the CI log.
 * **Missing standard includes (libstdc++).** `tools/include_audit.py` (ctest
   `include_audit`) reported 45 `std::` symbols whose header was not in the file's include
   closure, and they were added. libc++ supplies many of these transitively, libstdc++ fewer.

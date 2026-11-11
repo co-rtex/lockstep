@@ -131,8 +131,16 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 # Short, seeded run of the fuzz harness (regression net; long runs are manual, see fuzz/README).
+# 20 000 inputs take ≈ 4 s in Release, but 71 s in Debug and 151 s in a UBSan Debug build on
+# the M3. CI's ASan+UBSan job on a slower runner would pass its 300 s limit, so Debug and
+# sanitizer builds run 2 000.
+if(ENGINEX_SANITIZER OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(ENGINEX_FUZZ_SMOKE_INPUTS 2000)
+else()
+    set(ENGINEX_FUZZ_SMOKE_INPUTS 20000)
+endif()
 add_test(NAME fuzz_itch_standalone_smoke
-         COMMAND enginex_fuzz_itch_standalone 20000 1
+         COMMAND enginex_fuzz_itch_standalone ${ENGINEX_FUZZ_SMOKE_INPUTS} 1
                  ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/lifecycle.itch
                  ${CMAKE_CURRENT_SOURCE_DIR}/testdata/itch/malformed.itch
                  ${PROJECT_SOURCE_DIR}/fuzz/corpus/mold_packets.bin
