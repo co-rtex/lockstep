@@ -4,12 +4,14 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -356,6 +358,16 @@ struct ScriptedPeer {
             throw std::runtime_error("scripted peer send");
         }
     }
+    // Waits up to `timeout` for one datagram.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> wait(std::chrono::milliseconds timeout) const {
+        pollfd p{s.fd(), POLLIN, 0};
+        if (::poll(&p, 1, static_cast<int>(timeout.count())) <= 0) return std::nullopt;
+        std::vector<std::uint8_t> buf(2048);
+        const ssize_t n = ::recv(s.fd(), buf.data(), buf.size(), MSG_DONTWAIT);
+        if (n < 0) return std::nullopt;
+        buf.resize(static_cast<std::size_t>(n));
+        return buf;
+    }
     [[nodiscard]] std::size_t drain() const {
         std::size_t n = 0;
         std::uint8_t buf[2048];
@@ -363,6 +375,54 @@ struct ScriptedPeer {
         return n;
     }
 };
+
+// The stall rule above measures time from when the gap opened, not from the last accepted
+// message. A sparse feed accepts message 1, then sends only heartbeats for longer than the
+// idle timeout. A heartbeat then reveals that messages 2..3 were lost. The receiver must
+// re-request them, not give up at once (an independent review found that it did), and end
+// exact when they arrive. The feed is scripted; the script plays the re-request server.
+TEST(MoldUdp, AGapRevealedAfterAQuietSpellIsStillRecovered) {
+    const ScriptedPeer feed;
+    udp::ReceiverOptions ro;
+    ro.sequencer.session = kSession;
+    ro.idle_timeout = 500ms;
+    udp::Receiver rx(ro);
+    rx.set_request_port(feed.port);
+    std::atomic<bool> stop{false};
+    std::atomic<bool> finished{false};
+    udp::ReceiverReport r;  // read only after join()
+    std::thread receiver([&] {
+        r = rx.run([](std::uint64_t, std::span<const std::uint8_t>) {}, &stop);
+        finished = true;
+    });
+    const std::vector<std::uint8_t> m1{1}, m2{2}, m3{3};
+    bool requested = false;
+    try {
+        feed.send_to(rx.port(), build_packet(kSession, 1, {m1}));
+        for (int i = 0; i < 9; ++i) {  // 900 ms of heartbeats: no new message, still alive
+            std::this_thread::sleep_for(100ms);
+            feed.send_to(rx.port(), build_control(kSession, 2, kHeartbeat));
+        }
+        feed.send_to(rx.port(), build_control(kSession, 4, kHeartbeat));  // 2..3 were lost
+        if (const auto req = feed.wait(1000ms)) {
+            const auto parsed = parse_request(*req);
+            requested = parsed && parsed->sequence == 2;
+            feed.send_to(rx.port(), build_packet(kSession, 2, {m2, m3}));
+            feed.send_to(rx.port(), build_control(kSession, 4, kEndOfSession));
+        }
+    } catch (...) {
+        stop = true;
+        receiver.join();
+        throw;
+    }
+    for (int i = 0; i < 50 && !finished.load(); ++i) std::this_thread::sleep_for(100ms);
+    stop = true;
+    receiver.join();
+    EXPECT_TRUE(requested) << "final state " << r.final_state << ", gap_stalled " << r.gap_stalled;
+    EXPECT_FALSE(r.gap_stalled);
+    EXPECT_EQ(r.final_state, "ended");
+    EXPECT_EQ(r.delivered, 3U);
+}
 
 // Reflection limits of the retransmission server, with a scripted requester and the feed sent
 // to a socket nobody reads. One request asking for 60 000 messages is answered only up to the

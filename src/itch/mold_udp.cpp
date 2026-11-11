@@ -348,6 +348,7 @@ ReceiverReport Receiver::run(
     auto last_packet = start;
     auto last_progress = start;
     std::uint64_t accepted = 0;
+    bool in_gap = false;
     auto last_round = start - o_.request_interval;
     in_addr feed_ip{};
     const std::string feed_host = o_.feed_from.empty() ? o_.request_to.host : o_.feed_from;
@@ -399,10 +400,16 @@ ReceiverReport Receiver::run(
         // Progress = a message accepted (delivered or held for reordering). Heartbeats, the
         // sender's repeated end-of-session packets and duplicates are not progress: while a gap
         // is open they would otherwise keep the run alive forever if it can never be filled.
+        // The stall clock starts when a gap opens: a heartbeat can reveal a lost tail after a
+        // quiet spell longer than the timeout, and that gap deserves its own recovery time.
         if (const std::uint64_t a = q.stats().delivered + q.buffered(); a != accepted) {
             accepted = a;
             last_progress = now;
         }
+        if (s == Sequencer::State::Gap && !in_gap) {
+            last_progress = now;
+        }
+        in_gap = s == Sequencer::State::Gap;
         if (now - last_packet > o_.idle_timeout) {
             r.timed_out = true;
             break;

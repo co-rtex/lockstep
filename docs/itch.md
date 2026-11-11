@@ -123,7 +123,11 @@ split.
 
 Both sides always finish. The receiver stops after `--idle-timeout-ms` (5 s) without a
 datagram. While a gap is open, it also stops after the same time without accepting a new
-message: it ends in `gap` with `"gap_stalled": true` and exits 1. Before that rule, a gap that
+message, counted from the later of the last accepted message and the moment the gap opened.
+It then ends in `gap` with `"gap_stalled": true` and exits 1. The second clause matters: a
+heartbeat may reveal a lost tail after a quiet spell longer than the timeout. That gap gets
+its own recovery time. An independent review caught the first version, which gave up on
+such a gap at once (`MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered`). Before that rule, a gap that
 could never be filled (for example, every retransmission lost) kept both processes running
 forever. The sender's repeated end-of-session packets reset the receiver's idle timer, and
 the receiver's requests extended the sender's linger.
