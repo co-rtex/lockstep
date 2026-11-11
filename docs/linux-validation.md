@@ -11,7 +11,7 @@ page records why, and the shortest way to get those results.
 | Check | Sprint status | Evidence or blocker |
 |---|---|---|
 | Release, Debug, UBSan (`-fno-sanitize-recover`), hardened libc++ | run | 531/531 each at `cc26cb2` (`verify_all.sh`; verification.md); Debug and UBSan 3 consecutive runs each earlier |
-| Leaks (`leaks --atExit`), guard malloc | run | 0 leaks over 501 gtests; MallocScribble/GuardEdges whole binary |
+| Leaks (`leaks --atExit`), guard malloc | run | 0 leaks over 510 gtests at `7e5af9c`; MallocScribble/GuardEdges whole binary |
 | ASan, TSan on macOS | **blocked** | the sanitizer runtimes fail even on an empty `int main(){}`: ASan hangs, TSan exits 139 (verification.md) |
 | GCC 13 | **not run** | no GCC installed on this machine |
 | Docker (`scripts/linux_check.sh`) | **blocked** | `docker` is installed, but the sandbox denies the socket: `dial unix /var/run/docker.sock: connect: operation not permitted` |
@@ -74,7 +74,7 @@ These are the riskiest places, from the portability review and from what is new 
     If the traders are too slow under TSan, the slow-consumer assertion fails. Fix by
     lowering the client's `SO_RCVBUF` or lengthening the stall.
   * The ASan job runs LeakSanitizer, which has never run on the sprint code. A read-through
-    found no leak; macOS `leaks` reported 0 over 501 gtests.
+    found no leak; macOS `leaks` reported 0 over 510 gtests.
   * GCC Release at `-O3 -Werror` can raise `-Wmaybe-uninitialized` and
     `-Wstringop-overflow` false positives that the `-O0` Debug job cannot. The review named
     two candidate patterns: `std::optional<Session>` in `Sequencer::Options`, and the sized
