@@ -114,7 +114,7 @@ was killed only by the harness's 900 s timeout: the run hung instead of failing.
 a real liveness bug, fixed in `c19c56d`: when no retransmission ever arrived, `mold-send` and
 `mold-recv` both ran forever. A 68th mutant removes the fix. The latest full run (`cc26cb2`,
 inside `verify_all.sh`) scored **68/68** in 11 min, and the slowest mutant took 27 s:
-with the fix, the `find()` mutant now fails instead of hanging. A 69th mutant, added since, covers the follow-up fix (`fcb3d25`, the stall clock starts when a gap opens), and the new test kills it. Run it with
+with the fix, the `find()` mutant now fails instead of hanging. A 69th mutant covers the follow-up fix (`fcb3d25`, the stall clock starts when a gap opens). The full run at `15cfbde` scored **69/69** in 12.2 min. Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with up to four failing tests
 per mutant (none listed when the test binary crashed), is in
