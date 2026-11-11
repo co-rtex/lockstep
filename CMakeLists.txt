@@ -137,6 +137,10 @@ add_executable(enginex_bench benchmarks/bench_main.cpp)
 target_link_libraries(enginex_bench PRIVATE enginex_bench_lib)
 enginex_set_warnings(enginex_bench)
 
+# These two benchmarks replace global operator new/delete to count allocations, which
+# conflicts with ThreadSanitizer's allocator interceptors at link time, so a TSan build skips
+# them (they are measurement tools, not tests; every test target still builds under TSan).
+if(NOT ENGINEX_SANITIZER MATCHES "thread")
 # Exchange core: heap allocations per command by outcome (evidence for layout work).
 add_executable(enginex_core_alloc_probe benchmarks/core_alloc_probe.cpp)
 target_link_libraries(enginex_core_alloc_probe PRIVATE enginex_bench_lib)
@@ -145,6 +149,8 @@ enginex_set_warnings(enginex_core_alloc_probe)
 # ITCH decode / book / replay measurements (counts heap allocations via operator new).
 add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
 target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
+enginex_set_warnings(enginex_itch_bench)
+endif()
 
 # MoldUDP64 sequencer cost in process (reorder buffer vs in order).
 add_executable(enginex_mold_bench benchmarks/mold_bench.cpp)
@@ -155,7 +161,6 @@ enginex_set_warnings(enginex_mold_bench)
 add_executable(enginex_udp_syscall_bench benchmarks/udp_syscall_bench.cpp)
 target_link_libraries(enginex_udp_syscall_bench PRIVATE enginex_core)
 enginex_set_warnings(enginex_udp_syscall_bench)
-enginex_set_warnings(enginex_itch_bench)
 
 # Cross-layout check: the ITCH book sources compiled a second time with the earlier layout
 # (std::map levels + open-addressing hash index), each linked into its own small executable.

@@ -124,7 +124,9 @@ Outcome run(std::uint64_t seed, int requests) {
             ++o.parse_errors;
             std::string reply;
             EXPECT_NO_THROW(reply = error_message(*err));
-            EXPECT_NO_THROW((void)Json::parse(reply));  // a valid JSON frame body
+            Json body;
+            EXPECT_NO_THROW(body = Json::parse(reply));  // a valid JSON frame body
+            EXPECT_FALSE(body.is_discarded());
             continue;
         }
         ++o.parsed;

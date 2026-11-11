@@ -30,7 +30,14 @@ target_compile_definitions(enginex_tests PRIVATE
 enginex_set_warnings(enginex_tests)
 
 include(GoogleTest)
-gtest_discover_tests(enginex_tests DISCOVERY_TIMEOUT 60 PROPERTIES TIMEOUT 120)
+# Sanitizer builds run the same tests several times slower (the protocol fuzz test exceeded
+# 120 s under ASan/UBSan in CI), so they get a longer per-test timeout; coverage is unchanged.
+if(ENGINEX_SANITIZER)
+    set(ENGINEX_GTEST_TIMEOUT 600)
+else()
+    set(ENGINEX_GTEST_TIMEOUT 120)
+endif()
+gtest_discover_tests(enginex_tests DISCOVERY_TIMEOUT 60 PROPERTIES TIMEOUT ${ENGINEX_GTEST_TIMEOUT})
 
 # End-to-end CLI checks that need a real process: kill -9 during journaled sessions, and
 # corruption/tail handling through `enginex replay` (tools/fault_injection.py).
