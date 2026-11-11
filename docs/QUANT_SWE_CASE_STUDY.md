@@ -93,7 +93,7 @@ are loopback measurements on this one machine. None is an exchange wire latency.
   with the last value, which makes the idempotency key ambiguous to anyone who reads the
   first. Repeated keys are now `INVALID_REQUEST` (D33). All four are fixed, with regression
   tests.
-* **Fuzzing:** a libFuzzer-compatible harness, more than 58 M inputs without a violation (UBSan
+* **Fuzzing:** a libFuzzer-compatible harness, more than 66 M inputs without a violation (UBSan
   on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
   over 100 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
