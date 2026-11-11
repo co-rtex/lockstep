@@ -350,7 +350,8 @@ TEST(Recovery, RandomDamageNeverYieldsAStateOutsideThePrefixes) {
             cmds.push_back(test::sell(rid, 10000 + static_cast<PriceCents>(rng.below(20)) * 10,
                                       1 + static_cast<Quantity>(rng.below(9))));
         } else {
-            cmds.push_back(test::cancel(rid, static_cast<OrderId>(1 + rng.below(static_cast<std::uint64_t>(i) + 1))));
+            cmds.push_back(test::cancel(
+                rid, static_cast<OrderId>(1 + rng.below(static_cast<std::uint64_t>(i) + 1))));
         }
     }
     DurableOptions o = options_for(path);
@@ -358,7 +359,8 @@ TEST(Recovery, RandomDamageNeverYieldsAStateOutsideThePrefixes) {
     {
         auto ex = DurableExchange::open(o);
         CommandResult out;
-        for (const auto& c : cmds) ex->process(c, out);
+        for (const auto& c : cmds)
+            ex->process(c, out);
     }
     // Hash after each journaled (accepted) prefix, from an independent in-memory run.
     std::set<std::string> prefixes;
@@ -368,7 +370,8 @@ TEST(Recovery, RandomDamageNeverYieldsAStateOutsideThePrefixes) {
         CommandResult out;
         for (const auto& c : cmds) {
             ref.process(c, out);
-            if (out.accepted && !out.duplicate) prefixes.insert(state_hash(ref));
+            if (out.accepted && !out.duplicate)
+                prefixes.insert(state_hash(ref));
         }
     }
     const std::string clean = journal::read_file(path);
@@ -377,7 +380,8 @@ TEST(Recovery, RandomDamageNeverYieldsAStateOutsideThePrefixes) {
     for (int trial = 0; trial < 400; ++trial) {
         std::string bytes = clean;
         const auto mode = rng.below(3);  // 0 truncate, 1 flip, 2 both
-        if (mode != 1) bytes.resize(rng.below(bytes.size() + 1));
+        if (mode != 1)
+            bytes.resize(rng.below(bytes.size() + 1));
         if (mode != 0 && !bytes.empty()) {
             for (auto k = 1 + rng.below(3); k > 0; --k) {
                 bytes[rng.below(bytes.size())] ^= static_cast<char>(1U << rng.below(8));

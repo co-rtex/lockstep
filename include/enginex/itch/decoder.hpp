@@ -50,8 +50,8 @@ void append_framed(std::vector<std::uint8_t>& out, const Message& m);
 // Errors that end a stream: after them the message boundaries are unknown.
 enum class FrameError : std::uint8_t {
     None,
-    ZeroLength,      // length prefix 0: not a valid message, boundaries lost
-    TruncatedTail,   // stream ended inside a length prefix or a message
+    ZeroLength,     // length prefix 0: not a valid message, boundaries lost
+    TruncatedTail,  // stream ended inside a length prefix or a message
 };
 [[nodiscard]] std::string_view to_string(FrameError e) noexcept;
 

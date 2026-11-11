@@ -28,8 +28,10 @@ public:
     Anomaly apply(const Message& m) {
         const Header& h = header_of(m);
         if (const auto* a = std::get_if<AddOrder>(&m)) {
-            if (orders_.count(a->order_ref) != 0) return Anomaly::DuplicateOrderRef;
-            if (a->shares == 0) return Anomaly::ZeroShares;
+            if (orders_.count(a->order_ref) != 0)
+                return Anomaly::DuplicateOrderRef;
+            if (a->shares == 0)
+                return Anomaly::ZeroShares;
             orders_[a->order_ref] = Order{h.stock_locate, a->side, a->price, a->shares, ++clock_};
             return Anomaly::None;
         }
@@ -44,19 +46,24 @@ public:
         }
         if (const auto* d = std::get_if<OrderDelete>(&m)) {
             auto it = orders_.find(d->order_ref);
-            if (it == orders_.end()) return Anomaly::UnknownOrderRef;
-            if (it->second.locate != h.stock_locate) return Anomaly::LocateMismatch;
+            if (it == orders_.end())
+                return Anomaly::UnknownOrderRef;
+            if (it->second.locate != h.stock_locate)
+                return Anomaly::LocateMismatch;
             orders_.erase(it);
             return Anomaly::None;
         }
         if (const auto* u = std::get_if<OrderReplace>(&m)) {
             auto it = orders_.find(u->original_ref);
-            if (it == orders_.end()) return Anomaly::UnknownOrderRef;
-            if (it->second.locate != h.stock_locate) return Anomaly::LocateMismatch;
+            if (it == orders_.end())
+                return Anomaly::UnknownOrderRef;
+            if (it->second.locate != h.stock_locate)
+                return Anomaly::LocateMismatch;
             if (u->new_ref != u->original_ref && orders_.count(u->new_ref) != 0) {
                 return Anomaly::DuplicateOrderRef;
             }
-            if (u->shares == 0) return Anomaly::ZeroShares;
+            if (u->shares == 0)
+                return Anomaly::ZeroShares;
             const Side side = it->second.side;
             orders_.erase(it);
             orders_[u->new_ref] = Order{h.stock_locate, side, u->price, u->shares, ++clock_};
@@ -80,14 +87,16 @@ public:
                    std::tie(std::get<0>(b), std::get<1>(b));
         });
         std::vector<OrderView> out;
-        for (const auto& t : v) out.push_back(std::get<2>(t));
+        for (const auto& t : v)
+            out.push_back(std::get<2>(t));
         return out;
     }
 
     std::vector<LevelView> levels(std::uint16_t locate, Side side) const {
         std::vector<LevelView> out;
         for (const OrderView& o : orders(locate, side)) {
-            if (out.empty() || out.back().price != o.price) out.push_back(LevelView{o.price, 0, 0});
+            if (out.empty() || out.back().price != o.price)
+                out.push_back(LevelView{o.price, 0, 0});
             out.back().shares += o.shares;
             ++out.back().orders;
         }
@@ -115,7 +124,8 @@ public:
                        std::tie(std::get<0>(b), std::get<1>(b));
             });
             auto& dst = out[k];
-            for (const auto& t : v) dst.push_back(std::get<2>(t));
+            for (const auto& t : v)
+                dst.push_back(std::get<2>(t));
         }
         return out;
     }
@@ -125,13 +135,18 @@ public:
 private:
     Anomaly take(OrderRef ref, std::uint16_t locate, std::uint32_t shares, std::uint64_t* total) {
         auto it = orders_.find(ref);
-        if (it == orders_.end()) return Anomaly::UnknownOrderRef;
-        if (it->second.locate != locate) return Anomaly::LocateMismatch;
-        if (shares == 0) return Anomaly::ZeroShares;
-        if (shares > it->second.shares) return Anomaly::OverExecution;
+        if (it == orders_.end())
+            return Anomaly::UnknownOrderRef;
+        if (it->second.locate != locate)
+            return Anomaly::LocateMismatch;
+        if (shares == 0)
+            return Anomaly::ZeroShares;
+        if (shares > it->second.shares)
+            return Anomaly::OverExecution;
         it->second.shares -= shares;
         *total += shares;
-        if (it->second.shares == 0) orders_.erase(it);
+        if (it->second.shares == 0)
+            orders_.erase(it);
         return Anomaly::None;
     }
 

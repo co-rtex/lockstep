@@ -87,10 +87,14 @@ int ms_until(Clock::time_point t) {
 
 const char* state_name(Sequencer::State s) {
     switch (s) {
-        case Sequencer::State::Running: return "running";
-        case Sequencer::State::Gap: return "gap";
-        case Sequencer::State::Ended: return "ended";
-        case Sequencer::State::Failed: return "failed";
+        case Sequencer::State::Running:
+            return "running";
+        case Sequencer::State::Gap:
+            return "gap";
+        case Sequencer::State::Ended:
+            return "ended";
+        case Sequencer::State::Failed:
+            return "failed";
     }
     return "unknown";
 }
@@ -118,7 +122,9 @@ Sender::Sender(const PacketStore& store, SenderOptions options)
     tokens_at_ = Clock::now();
 }
 
-std::uint16_t Sender::port() const { return bound_port(sock_.fd()); }
+std::uint16_t Sender::port() const {
+    return bound_port(sock_.fd());
+}
 
 // Answers go out on a socket connected to the requester and bound to the request port
 // (SO_REUSEPORT), so the requester sees them come from the address it asked. A connected
@@ -170,7 +176,9 @@ void Sender::answer(std::span<const std::uint8_t> datagram, const sockaddr_in& f
     for (std::size_t i = *first; i < store_.size() && store_.first(i) < end; ++i) {
         const auto now = Clock::now();
         const double rate = static_cast<double>(o_.max_answer_packets_per_second);
-        answer_tokens_ = std::min(std::max(1.0, rate / 10), answer_tokens_ + rate * std::chrono::duration<double>(now - tokens_at_).count());
+        answer_tokens_ = std::min(
+            std::max(1.0, rate / 10),
+            answer_tokens_ + rate * std::chrono::duration<double>(now - tokens_at_).count());
         tokens_at_ = now;
         if (answer_tokens_ < 1) {
             r.answers_rate_limited += 1;  // the receiver will ask again after retry_after
@@ -183,10 +191,10 @@ void Sender::answer(std::span<const std::uint8_t> datagram, const sockaddr_in& f
         }
         ++r.retransmitted;
         const auto& pkt = store_.packet(i);
-        const ssize_t n =
-            via_fd >= 0 ? ::send(via_fd, pkt.data(), pkt.size(), 0)
-                        : ::sendto(sock_.fd(), pkt.data(), pkt.size(), 0,
-                                   reinterpret_cast<const sockaddr*>(&from), sizeof from);
+        const ssize_t n = via_fd >= 0
+                              ? ::send(via_fd, pkt.data(), pkt.size(), 0)
+                              : ::sendto(sock_.fd(), pkt.data(), pkt.size(), 0,
+                                         reinterpret_cast<const sockaddr*>(&from), sizeof from);
         if (n != static_cast<ssize_t>(pkt.size())) {
             ++r.send_errors;  // UDP: a failed send is a lost packet; recovery handles it
         }
@@ -198,7 +206,8 @@ void Sender::serve_requests(int timeout_ms, SenderReport& r) {
     for (int budget = 64; budget > 0; --budget) {
         std::vector<pollfd> fds;
         fds.push_back({sock_.fd(), POLLIN, 0});
-        for (const Peer& p : peers_) fds.push_back({p.sock.fd(), POLLIN, 0});
+        for (const Peer& p : peers_)
+            fds.push_back({p.sock.fd(), POLLIN, 0});
         if (::poll(fds.data(), static_cast<nfds_t>(fds.size()), std::max(0, timeout_ms)) <= 0) {
             return;
         }
@@ -232,9 +241,8 @@ SenderReport Sender::run(const std::atomic<bool>* stop) {
     const auto stopped = [&] { return stop != nullptr && stop->load(); };
     for (std::size_t i = 0; i < store_.size() && !stopped(); ++i) {
         if (o_.packets_per_second != 0) {
-            const auto due = start + std::chrono::nanoseconds(
-                                         static_cast<std::int64_t>(i * 1'000'000'000ULL /
-                                                                   o_.packets_per_second));
+            const auto due = start + std::chrono::nanoseconds(static_cast<std::int64_t>(
+                                         i * 1'000'000'000ULL / o_.packets_per_second));
             while (Clock::now() < due) {
                 serve_requests(0, r);
                 if (due - Clock::now() > std::chrono::microseconds(200)) {
@@ -316,7 +324,9 @@ Receiver::Receiver(ReceiverOptions options) : o_(std::move(options)), sock_(open
     (void)::setsockopt(sock_.fd(), SOL_SOCKET, SO_RCVBUF, &size, sizeof size);  // best effort
 }
 
-std::uint16_t Receiver::port() const { return bound_port(sock_.fd()); }
+std::uint16_t Receiver::port() const {
+    return bound_port(sock_.fd());
+}
 
 ReceiverReport Receiver::run(
     const std::function<void(std::uint64_t, std::span<const std::uint8_t>)>& deliver,
@@ -382,8 +392,10 @@ ReceiverReport Receiver::run(
         pollfd fds[2] = {{sock_.fd(), POLLIN, 0}, {req.valid() ? req.fd() : -1, POLLIN, 0}};
         if (::poll(fds, 2, static_cast<int>(o_.request_interval.count())) > 0) {
             bool got = false;
-            if ((fds[0].revents & POLLIN) != 0) got = drain(sock_.fd()) || got;
-            if (req.valid() && (fds[1].revents & POLLIN) != 0) got = drain(req.fd()) || got;
+            if ((fds[0].revents & POLLIN) != 0)
+                got = drain(sock_.fd()) || got;
+            if (req.valid() && (fds[1].revents & POLLIN) != 0)
+                got = drain(req.fd()) || got;
             for (const pollfd& f : fds) {
                 if (f.fd >= 0 && (f.revents & (POLLERR | POLLIN)) == POLLERR) {
                     clear_error(f.fd);  // e.g. ICMP port unreachable: else poll() spins

@@ -56,9 +56,13 @@ std::string printable(std::string_view raw) {
     }
     return out;
 }
-std::string printable(char c) { return printable(std::string_view(&c, 1)); }
+std::string printable(char c) {
+    return printable(std::string_view(&c, 1));
+}
 
-std::string sym(const Symbol& s) { return printable(trim_alpha(s)); }
+std::string sym(const Symbol& s) {
+    return printable(trim_alpha(s));
+}
 
 Json level_json(const LevelView& l) {
     return Json{{"price", l.price}, {"shares", l.shares}, {"orders", l.orders}};
@@ -90,7 +94,8 @@ int cmd_generate(const std::vector<std::string>& argv) {
     o.anomalies_per_million = static_cast<std::uint32_t>(anomalies);
     const std::vector<std::uint8_t> bytes = generate_file(o);
     std::ofstream f(out, std::ios::binary | std::ios::trunc);
-    f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    f.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
     f.close();
     if (!f) {
         throw std::runtime_error("cannot write " + out);
@@ -149,30 +154,30 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
         anomalies[std::string(to_string(static_cast<Anomaly>(k)))] = s.anomalies[k];
     }
     j["anomalies"] = anomalies;
-    j["book_stats"] = Json{{"applied", s.applied},
-                           {"rejected", s.rejected},
-                           {"adds", s.adds},
-                           {"executions", s.executions},
-                           {"executed_shares", s.executed_shares},
-                           {"printable_executed_shares", s.printable_executed_shares},
-                           {"cancels", s.cancels},
-                           {"canceled_shares", s.canceled_shares},
-                           {"deletes", s.deletes},
-                           {"replaces", s.replaces},
-                           {"levels_created", s.levels_created},
-                           {"levels_removed", s.levels_removed},
-                           {"index_pages", s.index_pages},
-                           {"peak_index_pages", s.peak_index_pages},
-                           {"non_displayed_trade_shares", s.non_displayed_trade_shares},
-                           {"cross_shares", s.cross_shares},
-                           {"broken_trades", s.broken_trades},
-                           {"live_orders", s.live_orders},
-                           {"peak_live_orders", s.peak_live_orders},
-                           {"timestamp_regressions", s.timestamp_regressions},
-                           {"last_timestamp_ns", s.last_timestamp_ns},
-                           {"last_system_event", s.last_system_event == 0
-                                                     ? std::string()
-                                                     : printable(s.last_system_event)}};
+    j["book_stats"] =
+        Json{{"applied", s.applied},
+             {"rejected", s.rejected},
+             {"adds", s.adds},
+             {"executions", s.executions},
+             {"executed_shares", s.executed_shares},
+             {"printable_executed_shares", s.printable_executed_shares},
+             {"cancels", s.cancels},
+             {"canceled_shares", s.canceled_shares},
+             {"deletes", s.deletes},
+             {"replaces", s.replaces},
+             {"levels_created", s.levels_created},
+             {"levels_removed", s.levels_removed},
+             {"index_pages", s.index_pages},
+             {"peak_index_pages", s.peak_index_pages},
+             {"non_displayed_trade_shares", s.non_displayed_trade_shares},
+             {"cross_shares", s.cross_shares},
+             {"broken_trades", s.broken_trades},
+             {"live_orders", s.live_orders},
+             {"peak_live_orders", s.peak_live_orders},
+             {"timestamp_regressions", s.timestamp_regressions},
+             {"last_timestamp_ns", s.last_timestamp_ns},
+             {"last_system_event",
+              s.last_system_event == 0 ? std::string() : printable(s.last_system_event)}};
     // Bytes the book's structures hold at the end, by structure (capacities, not RSS).
     const MemoryUsage mem = b.memory_usage();
     j["book_memory_bytes"] = Json{{"node_pool", mem.node_pool},
@@ -223,8 +228,10 @@ Json replay_json(const std::string& input, const ReplayResult& r, const BookBuil
         bk["ask_levels"] = b.level_count(locate, Side::Sell);
         Json bids = Json::array();
         Json asks = Json::array();
-        for (const auto& l : b.depth(locate, Side::Buy, depth)) bids.push_back(level_json(l));
-        for (const auto& l : b.depth(locate, Side::Sell, depth)) asks.push_back(level_json(l));
+        for (const auto& l : b.depth(locate, Side::Buy, depth))
+            bids.push_back(level_json(l));
+        for (const auto& l : b.depth(locate, Side::Sell, depth))
+            asks.push_back(level_json(l));
         bk["bids"] = bids;
         bk["asks"] = asks;
         books.push_back(bk);
@@ -276,8 +283,8 @@ void print_text(const Json& j) {
 
 int cmd_replay_itch(const std::vector<std::string>& argv) {
     const Args a(argv,
-                 {"input", "depth", "symbol", "metrics-out", "expected-orders", "level-vector-limit",
-                  "checkpoint-every", "checkpoint-out"},
+                 {"input", "depth", "symbol", "metrics-out", "expected-orders",
+                  "level-vector-limit", "checkpoint-every", "checkpoint-out"},
                  {"strict", "json"});
     const std::string input = a.require("input");
     const std::size_t depth = a.get_u64("depth", 5);
@@ -288,13 +295,15 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
     // both too small (rehash spikes) and far too large (cache misses) cost time).
     // --level-vector-limit (testing aid): a small value forces the deep-level path (D32); the
     // books and the state hash must not change.
-    const std::uint64_t limit = a.get_u64("level-vector-limit", BookBuilder::kDefaultLevelVectorLimit);
+    const std::uint64_t limit =
+        a.get_u64("level-vector-limit", BookBuilder::kDefaultLevelVectorLimit);
     if (limit < 2 || limit > (std::uint64_t{1} << 30U)) {
         throw UsageError("--level-vector-limit must be in [2, 2^30]");
     }
     const std::uint64_t expected = a.get_u64("expected-orders", 0);
     if (expected > BookBuilder::kMaxOrders) {
-        throw UsageError("--expected-orders must be at most " + std::to_string(BookBuilder::kMaxOrders));
+        throw UsageError("--expected-orders must be at most " +
+                         std::to_string(BookBuilder::kMaxOrders));
     }
     BookBuilder book(static_cast<std::size_t>(expected), static_cast<std::size_t>(limit));
     // --checkpoint-every N --checkpoint-out FILE: after every N decoded messages, one JSON line
@@ -323,8 +332,9 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
             for (const std::uint16_t l : book.locates()) {
                 const TopOfBook t = book.top(l);
                 if (t.bid || t.ask) {
-                    tops.push_back(Json::array({l, t.bid ? t.bid->price : 0, t.bid ? t.bid->shares : 0,
-                                                t.ask ? t.ask->price : 0, t.ask ? t.ask->shares : 0}));
+                    tops.push_back(
+                        Json::array({l, t.bid ? t.bid->price : 0, t.bid ? t.bid->shares : 0,
+                                     t.ask ? t.ask->price : 0, t.ask ? t.ask->shares : 0}));
                 }
             }
             checkpoints << Json{{"message", decoded},
@@ -352,15 +362,17 @@ int cmd_replay_itch(const std::vector<std::string>& argv) {
         // The input is streamed in 1 MiB chunks, so peak RSS is dominated by the book itself.
         const std::uint64_t rss_kib = metrics::peak_rss_kib();
         const std::uint64_t peak_live = book.stats().peak_live_orders;
-        m["timing"] = Json{{"wall_seconds", secs},
-                           {"frames_per_second", secs > 0 ? static_cast<double>(r.frames) / secs : 0.0},
-                           {"peak_rss_kib", rss_kib},
-                           {"peak_rss_bytes_per_peak_live_order",
-                            peak_live == 0 ? 0.0
-                                           : static_cast<double>(rss_kib) * 1024.0 /
-                                                 static_cast<double>(peak_live)},
-                           {"note", "single run, includes I/O; RSS is the whole process (book, "
-                                    "tables, JSON); see docs/benchmarks.md for methodology"}};
+        m["timing"] =
+            Json{{"wall_seconds", secs},
+                 {"frames_per_second", secs > 0 ? static_cast<double>(r.frames) / secs : 0.0},
+                 {"peak_rss_kib", rss_kib},
+                 {"peak_rss_bytes_per_peak_live_order",
+                  peak_live == 0
+                      ? 0.0
+                      : static_cast<double>(rss_kib) * 1024.0 / static_cast<double>(peak_live)},
+                 {"note",
+                  "single run, includes I/O; RSS is the whole process (book, "
+                  "tables, JSON); see docs/benchmarks.md for methodology"}};
         std::ofstream f(*out, std::ios::trunc);
         f << m.dump(2) << "\n";
         if (!f) {
@@ -601,29 +613,29 @@ int cmd_dump(const std::vector<std::string>& argv) {
         if (got == 0) {
             break;
         }
-        const FrameError e = framer.feed(
-            std::span(reinterpret_cast<const std::uint8_t*>(buf.data()), got),
-            [&](std::span<const std::uint8_t> p) {
-                if (done) {
-                    return;
-                }
-                ++n;
-                const DecodeResult d = decode(p);
-                if (const auto* err = std::get_if<DecodeError>(&d)) {
-                    std::cout << Json{{"frame", n},
-                                      {"decode_error", std::string(to_string(*err))},
-                                      {"length", p.size()},
-                                      {"type_byte", p.empty() ? 0 : p[0]}}
-                                     .dump()
-                              << "\n";
-                } else {
-                    Json j = all_fields ? full_message_json(std::get<Message>(d))
-                                        : message_json(std::get<Message>(d));
-                    j["frame"] = n;
-                    std::cout << j.dump() << "\n";
-                }
-                done = limit != 0 && n >= limit;
-            });
+        const FrameError e =
+            framer.feed(std::span(reinterpret_cast<const std::uint8_t*>(buf.data()), got),
+                        [&](std::span<const std::uint8_t> p) {
+                            if (done) {
+                                return;
+                            }
+                            ++n;
+                            const DecodeResult d = decode(p);
+                            if (const auto* err = std::get_if<DecodeError>(&d)) {
+                                std::cout << Json{{"frame", n},
+                                                  {"decode_error", std::string(to_string(*err))},
+                                                  {"length", p.size()},
+                                                  {"type_byte", p.empty() ? 0 : p[0]}}
+                                                 .dump()
+                                          << "\n";
+                            } else {
+                                Json j = all_fields ? full_message_json(std::get<Message>(d))
+                                                    : message_json(std::get<Message>(d));
+                                j["frame"] = n;
+                                std::cout << j.dump() << "\n";
+                            }
+                            done = limit != 0 && n >= limit;
+                        });
         if (e != FrameError::None) {
             break;
         }
@@ -644,12 +656,14 @@ int cmd_dump(const std::vector<std::string>& argv) {
 // Exit 0 only if the rebuilt book equals a direct replay of exactly the delivered prefix (never
 // silently wrong) and, with recovery, the session ended with every message delivered.
 int cmd_mold_sim(const std::vector<std::string>& argv) {
-    const Args a(argv, {"input", "seed", "loss-percent", "duplicate-percent", "reorder-window", "mtu"},
+    const Args a(argv,
+                 {"input", "seed", "loss-percent", "duplicate-percent", "reorder-window", "mtu"},
                  {"no-recovery"});
     const std::string input = a.require("input");
     mold::ChannelOptions o;
     o.seed = a.get_u64("seed", 1);
-    o.loss_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64("loss-percent", 3), 100));
+    o.loss_percent =
+        static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64("loss-percent", 3), 100));
     o.duplicate_percent =
         static_cast<std::uint32_t>(std::min<std::uint64_t>(a.get_u64("duplicate-percent", 5), 100));
     o.reorder_window = a.get_u64("reorder-window", 8);
@@ -741,7 +755,8 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
                  {"allow-remote"});
     const std::string input = a.require("input");
     if (a.flag("allow-remote") && !a.get("session")) {
-        throw UsageError("--allow-remote requires an explicit --session (the transport is unauthenticated)");
+        throw UsageError(
+            "--allow-remote requires an explicit --session (the transport is unauthenticated)");
     }
     mold::udp::SenderOptions o;
     o.bind.host = "0.0.0.0";
@@ -772,8 +787,9 @@ int cmd_mold_send(const std::vector<std::string>& argv) {
     while (fe == FrameError::None && *in) {
         in->read(buf.data(), static_cast<std::streamsize>(buf.size()));
         const auto n = static_cast<std::size_t>(in->gcount());
-        fe = framer.feed(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(buf.data()), n),
-                         [&](std::span<const std::uint8_t> m) { store.append(m); });
+        fe = framer.feed(
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(buf.data()), n),
+            [&](std::span<const std::uint8_t> m) { store.append(m); });
     }
     if (fe == FrameError::None) {
         fe = framer.finish();
@@ -821,7 +837,8 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
                   "request-interval-ms", "max-buffered-messages", "max-ahead"},
                  {"no-recovery", "allow-remote"});
     if (a.flag("allow-remote") && !a.get("session")) {
-        throw UsageError("--allow-remote requires an explicit --session (the transport is unauthenticated)");
+        throw UsageError(
+            "--allow-remote requires an explicit --session (the transport is unauthenticated)");
     }
     mold::udp::ReceiverOptions o;
     o.bind.host = a.flag("allow-remote") ? "0.0.0.0" : "127.0.0.1";
@@ -890,7 +907,8 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
 
 int cmd_itch(const std::vector<std::string>& args) {
     if (args.empty()) {
-        throw UsageError("expected a subcommand: generate, replay, dump, mold-sim, mold-send or mold-recv");
+        throw UsageError(
+            "expected a subcommand: generate, replay, dump, mold-sim, mold-send or mold-recv");
     }
     const std::vector<std::string> rest(args.begin() + 1, args.end());
     if (args[0] == "generate") {

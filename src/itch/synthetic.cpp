@@ -49,8 +49,7 @@ public:
         system('S');
         system('Q');
         while (lifecycle_ < o_.messages) {
-            if (o_.anomalies_per_million != 0 &&
-                rng_.below(1'000'000) < o_.anomalies_per_million) {
+            if (o_.anomalies_per_million != 0 && rng_.below(1'000'000) < o_.anomalies_per_million) {
                 anomaly();
             } else {
                 event();
@@ -95,7 +94,9 @@ private:
         out_.emplace_back(d);
     }
 
-    static Symbol symbol(std::uint16_t locate) { return make_symbol("SYM" + std::to_string(locate)); }
+    static Symbol symbol(std::uint16_t locate) {
+        return make_symbol("SYM" + std::to_string(locate));
+    }
     std::uint16_t random_locate() { return static_cast<std::uint16_t>(rng_.below(o_.symbols) + 1); }
 
     std::set<Key>& side_set(std::uint16_t locate, Side side) {
@@ -155,7 +156,7 @@ private:
         const std::uint16_t locate = random_locate();
         const Side side = rng_.chance(50) ? Side::Buy : Side::Sell;
         const auto shares = static_cast<std::uint32_t>(rng_.chance(70) ? 100 * rng_.between(1, 10)
-                                                                      : rng_.between(1, 5000));
+                                                                       : rng_.between(1, 5000));
         if (rng_.chance(4) && best(locate, side == Side::Buy ? Side::Sell : Side::Buy)) {
             aggress(locate, side, shares);  // marketable: executes, never displayed
             return;
@@ -228,9 +229,8 @@ private:
         } else if (r < 82) {
             const OrderRef ref = random_ref();
             const Live& o = live_.at(ref);
-            const auto n = o.shares == 1
-                               ? 1U
-                               : static_cast<std::uint32_t>(rng_.between(1, o.shares - 1));
+            const auto n =
+                o.shares == 1 ? 1U : static_cast<std::uint32_t>(rng_.between(1, o.shares - 1));
             emit(OrderCancel{header('X', o.locate), ref, n});
             live_.at(ref).shares -= n;
             if (live_.at(ref).shares == 0) {
@@ -247,9 +247,9 @@ private:
             }
             const OrderRef ref = std::get<2>(*book.begin());
             const std::uint32_t have = live_.at(ref).shares;
-            const std::uint32_t n =
-                have > 1 && rng_.chance(60) ? static_cast<std::uint32_t>(rng_.between(1, have - 1))
-                                            : have;
+            const std::uint32_t n = have > 1 && rng_.chance(60)
+                                        ? static_cast<std::uint32_t>(rng_.between(1, have - 1))
+                                        : have;
             execute(ref, n, r < 92 ? 'E' : 'C');
         } else if (r < 98) {
             const std::uint16_t locate = random_locate();
@@ -320,11 +320,15 @@ private:
                     const auto wrong =
                         static_cast<std::uint16_t>(live_.at(ref).locate % o_.symbols + 1);
                     switch (rng_.below(4)) {
-                        case 0: emit(OrderDelete{header('D', wrong), ref}); break;
+                        case 0:
+                            emit(OrderDelete{header('D', wrong), ref});
+                            break;
                         case 1:
                             emit(OrderExecuted{header('E', wrong), ref, 1, next_match_++});
                             break;
-                        case 2: emit(OrderCancel{header('X', wrong), ref, 1}); break;
+                        case 2:
+                            emit(OrderCancel{header('X', wrong), ref, 1});
+                            break;
                         default:
                             emit(OrderReplace{header('U', wrong), ref, next_ref_++, 100,
                                               live_.at(ref).price});

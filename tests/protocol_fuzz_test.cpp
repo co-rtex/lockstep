@@ -20,41 +20,50 @@ using codec::Json;
 
 Json random_value(Rng& rng, int depth = 0) {
     switch (rng.below(depth > 1 ? 7 : 9)) {
-        case 0: return nullptr;
-        case 1: return rng.chance(50);
-        case 2: return static_cast<std::int64_t>(rng.between(-5, 20'000));
-        case 3: return static_cast<std::int64_t>(rng.next());  // huge / negative
-        case 4: return static_cast<double>(rng.below(100000)) / 7.0;
-        case 5: return std::string(rng.below(3), 'x');
+        case 0:
+            return nullptr;
+        case 1:
+            return rng.chance(50);
+        case 2:
+            return static_cast<std::int64_t>(rng.between(-5, 20'000));
+        case 3:
+            return static_cast<std::int64_t>(rng.next());  // huge / negative
+        case 4:
+            return static_cast<double>(rng.below(100000)) / 7.0;
+        case 5:
+            return std::string(rng.below(3), 'x');
         case 6: {
-            static const char* const kStrings[] = {"AAPL", "MSFT", "BUY", "SELL", "ord-1",
-                                                   "ord-999999", "", "é漢", "\u0000",
-                                                   "new_limit", "cancel", "subscribe"};
+            static const char* const kStrings[] = {"AAPL",   "MSFT",       "BUY",    "SELL",
+                                                   "ord-1",  "ord-999999", "",       "é漢",
+                                                   "\u0000", "new_limit",  "cancel", "subscribe"};
             return kStrings[rng.below(std::size(kStrings))];
         }
         case 7: {
             Json a = Json::array();
-            for (std::uint64_t i = rng.below(3); i > 0; --i) a.push_back(random_value(rng, depth + 1));
+            for (std::uint64_t i = rng.below(3); i > 0; --i)
+                a.push_back(random_value(rng, depth + 1));
             return a;
         }
         default: {
             Json o = Json::object();
-            for (std::uint64_t i = rng.below(3); i > 0; --i) o["k"] = random_value(rng, depth + 1);
+            for (std::uint64_t i = rng.below(3); i > 0; --i)
+                o["k"] = random_value(rng, depth + 1);
             return o;
         }
     }
 }
 
 std::string random_request(Rng& rng) {
-    static const char* const kKeys[] = {"protocol_version", "type",   "request_id", "symbol",
-                                        "side",             "price",  "quantity",   "order_id",
-                                        "depth",            "extra"};
+    static const char* const kKeys[] = {
+        "protocol_version", "type",     "request_id", "symbol", "side", "price",
+        "quantity",         "order_id", "depth",      "extra"};
     static const char* const kTypes[] = {"new_limit", "cancel", "snapshot_request", "subscribe",
                                          "bogus"};
     const auto r = rng.below(10);
     if (r == 0) {  // raw bytes
         std::string s(rng.below(40), '\0');
-        for (auto& c : s) c = static_cast<char>(rng.next());
+        for (auto& c : s)
+            c = static_cast<char>(rng.next());
         return s;
     }
     Json j = Json::object();

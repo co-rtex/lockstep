@@ -31,10 +31,14 @@ std::string hash_of_prefix(const std::vector<Message>& stream, std::size_t n) {
 
 std::string state_name(Sequencer::State s) {
     switch (s) {
-        case Sequencer::State::Running: return "running";
-        case Sequencer::State::Gap: return "gap";
-        case Sequencer::State::Ended: return "ended";
-        case Sequencer::State::Failed: return "failed";
+        case Sequencer::State::Running:
+            return "running";
+        case Sequencer::State::Gap:
+            return "gap";
+        case Sequencer::State::Ended:
+            return "ended";
+        case Sequencer::State::Failed:
+            return "failed";
     }
     return "unknown";
 }
@@ -112,9 +116,9 @@ SimulationReport simulate(const std::vector<Message>& stream, const ChannelOptio
     if (o.recovery) {
         // The end-of-session marker itself may have been lost: a real consumer would learn the
         // end from the next heartbeat; the simulation re-sends it once per round.
-        for (std::size_t round = 0; round < o.max_recovery_rounds &&
-                                    q.state() != Sequencer::State::Ended &&
-                                    q.state() != Sequencer::State::Failed;
+        for (std::size_t round = 0;
+             round < o.max_recovery_rounds && q.state() != Sequencer::State::Ended &&
+             q.state() != Sequencer::State::Failed;
              ++round) {
             q.on_packet(end_packet, deliver);
             recover();

@@ -14,7 +14,9 @@ namespace {
 
 using codec::Json;
 
-std::string type_of(const Json& m) { return m.value("type", std::string()); }
+std::string type_of(const Json& m) {
+    return m.value("type", std::string());
+}
 
 // Levels of one side, best first, at most `depth` (0 = all).
 template <typename Map>
@@ -44,25 +46,38 @@ std::vector<std::pair<std::int64_t, std::pair<std::int64_t, std::int64_t>>> side
 
 std::string_view to_string(FeedMirror::State s) noexcept {
     switch (s) {
-        case FeedMirror::State::AwaitingBaseline: return "awaiting_baseline";
-        case FeedMirror::State::Live: return "live";
-        case FeedMirror::State::Stale: return "stale";
+        case FeedMirror::State::AwaitingBaseline:
+            return "awaiting_baseline";
+        case FeedMirror::State::Live:
+            return "live";
+        case FeedMirror::State::Stale:
+            return "stale";
     }
     return "unknown";
 }
 
 std::string_view to_string(FeedMirror::Verdict v) noexcept {
     switch (v) {
-        case FeedMirror::Verdict::Baseline: return "baseline";
-        case FeedMirror::Verdict::Applied: return "applied";
-        case FeedMirror::Verdict::Rejected: return "rejected";
-        case FeedMirror::Verdict::Gap: return "gap";
-        case FeedMirror::Verdict::ResyncRequired: return "resync_required";
-        case FeedMirror::Verdict::SubscribeFailed: return "subscribe_failed";
-        case FeedMirror::Verdict::Verified: return "verified";
-        case FeedMirror::Verdict::Mismatch: return "mismatch";
-        case FeedMirror::Verdict::Ignored: return "ignored";
-        case FeedMirror::Verdict::Malformed: return "malformed";
+        case FeedMirror::Verdict::Baseline:
+            return "baseline";
+        case FeedMirror::Verdict::Applied:
+            return "applied";
+        case FeedMirror::Verdict::Rejected:
+            return "rejected";
+        case FeedMirror::Verdict::Gap:
+            return "gap";
+        case FeedMirror::Verdict::ResyncRequired:
+            return "resync_required";
+        case FeedMirror::Verdict::SubscribeFailed:
+            return "subscribe_failed";
+        case FeedMirror::Verdict::Verified:
+            return "verified";
+        case FeedMirror::Verdict::Mismatch:
+            return "mismatch";
+        case FeedMirror::Verdict::Ignored:
+            return "ignored";
+        case FeedMirror::Verdict::Malformed:
+            return "malformed";
     }
     return "unknown";
 }
@@ -124,16 +139,16 @@ FeedMirror::Verdict FeedMirror::handle(const Json& m) {
         }
         if (seq != last_event_ + 1) {
             ++stats_.gaps;
-            return stale(Verdict::Gap, "event " + std::to_string(seq) + " after " +
-                                           std::to_string(last_event_));
+            return stale(Verdict::Gap,
+                         "event " + std::to_string(seq) + " after " + std::to_string(last_event_));
         }
         const std::string symbol = m.at("symbol").get<std::string>();
         const auto it = books_.find(symbol);
         if (it == books_.end()) {
             // The baseline lists every symbol the server trades; an unknown one is a violation.
             ++stats_.mismatches;
-            return stale(Verdict::Mismatch, "book_update for symbol " + symbol +
-                                                " absent from the baseline");
+            return stale(Verdict::Mismatch,
+                         "book_update for symbol " + symbol + " absent from the baseline");
         }
         std::vector<std::pair<Key, Level>> changes;  // parse everything first
         for (const auto& l : m.at("levels")) {
@@ -190,8 +205,8 @@ FeedMirror::Verdict FeedMirror::verify(const Json& snap) {
         for (const char side : {'B', 'S'}) {
             if (side_levels(have, side, depth) != side_levels(expected, side, 0)) {
                 ++stats_.mismatches;
-                return stale(Verdict::Mismatch, "book " + symbol + " side " +
-                                                    std::string(1, side) + " differs at watermark " +
+                return stale(Verdict::Mismatch, "book " + symbol + " side " + std::string(1, side) +
+                                                    " differs at watermark " +
                                                     std::to_string(watermark));
             }
         }
@@ -219,7 +234,9 @@ void FeedMirror::on_disconnect() {
     }
 }
 
-void FeedMirror::note_connection_failure() { ++stats_.connect_failures; }
+void FeedMirror::note_connection_failure() {
+    ++stats_.connect_failures;
+}
 
 void FeedMirror::reset_for_resubscribe() {
     state_ = State::AwaitingBaseline;
@@ -267,9 +284,10 @@ MirrorReport run_mirror(const MirrorOptions& o, FeedMirror& mirror) {
                                              {"request_id", "mirror-final"},
                                              {"depth", 0}});
                 } else if (!final_sent && now >= next_verify && live) {
-                    (void)c.send(Json{{"type", "snapshot_request"},
-                                      {"request_id", "mirror-verify-" + std::to_string(++verify_no)},
-                                      {"depth", 0}});
+                    (void)c.send(
+                        Json{{"type", "snapshot_request"},
+                             {"request_id", "mirror-verify-" + std::to_string(++verify_no)},
+                             {"depth", 0}});
                     next_verify = now + o.verify_every;
                 }
                 if (now >= give_up) {

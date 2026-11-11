@@ -36,8 +36,8 @@ Header hdr(char type, std::uint16_t locate = kL) {
     static std::uint64_t ts = 1000;
     return Header{type, locate, 0, ts += 10};
 }
-AddOrder add(OrderRef ref, Side side, Price4 price, std::uint32_t shares,
-             std::uint16_t locate = kL, const char* stock = "AAPL") {
+AddOrder add(OrderRef ref, Side side, Price4 price, std::uint32_t shares, std::uint16_t locate = kL,
+             const char* stock = "AAPL") {
     AddOrder a;
     a.h = hdr('A', locate);
     a.order_ref = ref;
@@ -47,19 +47,26 @@ AddOrder add(OrderRef ref, Side side, Price4 price, std::uint32_t shares,
     a.stock = make_symbol(stock);
     return a;
 }
-OrderExecuted exec(OrderRef ref, std::uint32_t n) { return {hdr('E'), ref, n, 1}; }
+OrderExecuted exec(OrderRef ref, std::uint32_t n) {
+    return {hdr('E'), ref, n, 1};
+}
 OrderExecutedWithPrice exec_px(OrderRef ref, std::uint32_t n, bool printable, Price4 px) {
     return {hdr('C'), ref, n, 2, printable, px};
 }
-OrderCancel cancel(OrderRef ref, std::uint32_t n) { return {hdr('X'), ref, n}; }
-OrderDelete del(OrderRef ref, std::uint16_t locate = kL) { return {hdr('D', locate), ref}; }
+OrderCancel cancel(OrderRef ref, std::uint32_t n) {
+    return {hdr('X'), ref, n};
+}
+OrderDelete del(OrderRef ref, std::uint16_t locate = kL) {
+    return {hdr('D', locate), ref};
+}
 OrderReplace replace(OrderRef from, OrderRef to, std::uint32_t n, Price4 px) {
     return {hdr('U'), from, to, n, px};
 }
 
 std::vector<OrderRef> refs(const BookBuilder& b, Side s) {
     std::vector<OrderRef> out;
-    for (const auto& o : b.orders(kL, s)) out.push_back(o.ref);
+    for (const auto& o : b.orders(kL, s))
+        out.push_back(o.ref);
     return out;
 }
 
@@ -77,8 +84,7 @@ TEST(ItchBook, AddsBuildSortedLevelsWithFifo) {
     apply(b, add(3, Side::Buy, 100, 30));
     apply(b, add(4, Side::Sell, 103, 5));
     apply(b, add(5, Side::Sell, 102, 6));
-    EXPECT_EQ(b.depth(kL, Side::Buy, 0),
-              (std::vector<LevelView>{{101, 20, 1}, {100, 40, 2}}));
+    EXPECT_EQ(b.depth(kL, Side::Buy, 0), (std::vector<LevelView>{{101, 20, 1}, {100, 40, 2}}));
     EXPECT_EQ(b.depth(kL, Side::Sell, 0), (std::vector<LevelView>{{102, 6, 1}, {103, 5, 1}}));
     EXPECT_EQ(b.depth(kL, Side::Buy, 1), (std::vector<LevelView>{{101, 20, 1}}));
     EXPECT_EQ(refs(b, Side::Buy), (std::vector<OrderRef>{2, 1, 3}));
@@ -490,11 +496,11 @@ TEST(ItchBook, MemoryUsageAccountsForTheStructures) {
     const MemoryUsage mb = b.memory_usage();
     EXPECT_EQ(ma.total(), mb.total());  // capacities only: deterministic
     EXPECT_EQ(ma.total(), ma.node_pool + ma.free_slots + ma.index_pages + ma.index_directory +
-                              ma.index_fallback + ma.levels + ma.level_vectors +
-                              ma.level_maps_est + ma.books);
+                              ma.index_fallback + ma.levels + ma.level_vectors + ma.level_maps_est +
+                              ma.books);
     const std::uint64_t live = a.stats().live_orders;
     ASSERT_GT(live, 0U);
-    EXPECT_GE(ma.node_pool, live * 32);         // a node holds at least ref, prices, links
+    EXPECT_GE(ma.node_pool, live * 32);  // a node holds at least ref, prices, links
     // Every live order occupies at least one 4-byte slot of some page (or of the fallback).
     EXPECT_GE(ma.index_pages + ma.index_fallback, live * 4);
     EXPECT_GT(ma.levels, 0U);
@@ -620,7 +626,8 @@ TEST(ItchSynthetic, CleanStreamsNeverLockOrCrossAndExecuteAtTheTop) {
 
 std::vector<std::uint8_t> framed(const std::vector<Message>& msgs) {
     std::vector<std::uint8_t> out;
-    for (const Message& m : msgs) append_framed(out, m);
+    for (const Message& m : msgs)
+        append_framed(out, m);
     return out;
 }
 
@@ -668,7 +675,8 @@ TEST(ItchReplay, StrictStopsOnBookAnomaly) {
 // Regression (independent review): after a strict stop the result must describe the stop
 // point only — later frames are not counted and later framing errors are not reported.
 TEST(ItchReplay, StrictStopFreezesTheResultAtTheStopPoint) {
-    auto file = framed({add(1, Side::Buy, 100, 10), cancel(1, 11), del(1), add(2, Side::Buy, 1, 1)});
+    auto file =
+        framed({add(1, Side::Buy, 100, 10), cancel(1, 11), del(1), add(2, Side::Buy, 1, 1)});
     file.insert(file.end(), {0x00, 0x00});  // a framing error after the stop
     for (const bool use_stream : {false, true}) {
         BookBuilder b;

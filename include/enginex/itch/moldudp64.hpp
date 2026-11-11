@@ -71,8 +71,7 @@ struct ParsedPacket {
                                                       std::uint64_t next_sequence,
                                                       std::uint16_t count);
 [[nodiscard]] std::vector<std::uint8_t> build_request(const Session& session,
-                                                      std::uint64_t sequence,
-                                                      std::uint16_t count);
+                                                      std::uint64_t sequence, std::uint16_t count);
 [[nodiscard]] Session make_session(std::string_view text);
 
 // A request packet sent to a re-request server: exactly 20 bytes, count in 1..65534.
@@ -97,7 +96,9 @@ public:
     void finish();
 
     [[nodiscard]] std::size_t size() const noexcept { return packets_.size(); }
-    [[nodiscard]] const std::vector<std::uint8_t>& packet(std::size_t i) const { return packets_[i]; }
+    [[nodiscard]] const std::vector<std::uint8_t>& packet(std::size_t i) const {
+        return packets_[i];
+    }
     [[nodiscard]] std::uint64_t first(std::size_t i) const { return first_[i]; }
     [[nodiscard]] std::uint16_t count(std::size_t i) const { return count_[i]; }
     // Sequence number after the last message (the end-of-session packet carries it).
@@ -144,8 +145,8 @@ public:
     };
 
     struct Options {
-        std::uint64_t first_sequence = 1;               // sequence numbers start at 1
-        std::size_t max_buffered_messages = 65536;      // reorder buffer bound (messages)
+        std::uint64_t first_sequence = 1;           // sequence numbers start at 1
+        std::size_t max_buffered_messages = 65536;  // reorder buffer bound (messages)
         // Reorder buffer bound in bytes: buffered messages are held in copies of their packets,
         // and those copies count (a copy can hold duplicates that came in the same packet).
         std::size_t max_buffered_bytes = 64U << 20U;
@@ -161,7 +162,7 @@ public:
         std::uint64_t packets = 0;
         std::uint64_t heartbeats = 0;
         std::uint64_t delivered = 0;
-        std::uint64_t duplicates = 0;          // messages dropped as already delivered/buffered
+        std::uint64_t duplicates = 0;  // messages dropped as already delivered/buffered
         std::uint64_t gaps_opened = 0;
         std::uint64_t gaps_closed = 0;
         std::uint64_t buffered_peak = 0;
@@ -216,7 +217,7 @@ private:
     template <typename Deliver>
     void on_parsed(const ParsedPacket& p, Deliver& deliver);
     void note_horizon(std::uint64_t end);
-    void open_hole(std::uint64_t end);  // [horizon_, end) is missing; horizon_ = end
+    void open_hole(std::uint64_t end);                // [horizon_, end) is missing; horizon_ = end
     [[nodiscard]] bool fill_hole(std::uint64_t seq);  // false if seq is not in a hole
     // Copies the packet's message blocks into a chunk, or returns kNoChunk if the capacity
     // it would hold exceeds the byte bound.
@@ -327,9 +328,9 @@ void Sequencer::on_parsed(const ParsedPacket& p, Deliver& deliver) {
             if (k >= window_.size()) {
                 window_.resize(k + 1);
             }
-            window_[k] = Slot{chunk,
-                              static_cast<std::uint32_t>(p.messages[i].data() - p.messages.front().data()),
-                              static_cast<std::uint32_t>(p.messages[i].size())};
+            window_[k] = Slot{
+                chunk, static_cast<std::uint32_t>(p.messages[i].data() - p.messages.front().data()),
+                static_cast<std::uint32_t>(p.messages[i].size())};
             ++chunks_[chunk].live;
             ++buffered_count_;
             buffered_bytes_ += p.messages[i].size();

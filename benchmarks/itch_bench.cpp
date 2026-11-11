@@ -48,11 +48,21 @@ void* operator new(std::size_t n) {
     }
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+void* operator new[](std::size_t n) {
+    return ::operator new(n);
+}
+void operator delete(void* p) noexcept {
+    std::free(p);
+}
+void operator delete[](void* p) noexcept {
+    std::free(p);
+}
+void operator delete(void* p, std::size_t) noexcept {
+    std::free(p);
+}
+void operator delete[](void* p, std::size_t) noexcept {
+    std::free(p);
+}
 
 namespace {
 
@@ -224,7 +234,8 @@ Trial run_pass(const std::string& m, const Workload& w, bool with_latency, std::
     }
     const double secs = static_cast<double>(t.elapsed_ns) / 1e9;
     t.msgs_per_s = static_cast<double>(frames) / secs;
-    t.mib_per_s = m == "itch_book_apply" ? 0 : static_cast<double>(w.file.size()) / secs / 1048576.0;
+    t.mib_per_s =
+        m == "itch_book_apply" ? 0 : static_cast<double>(w.file.size()) / secs / 1048576.0;
     return t;
 }
 
@@ -308,26 +319,31 @@ metrics::LatencyStats probe_tail(const Workload& w, std::size_t start, std::size
 int run_cold_probe(const Options& o, const Workload& w) {
     const std::size_t n = std::min(o.cold_probe, w.messages.size());
     const std::size_t start = w.messages.size() - n;
-    std::printf("[itch_cold_probe] book built from %zu messages, then %zu messages timed one by "
-                "one; 64 MiB flush before the cold runs; %zu repetitions each\n",
-                start, n, o.trials);
+    std::printf(
+        "[itch_cold_probe] book built from %zu messages, then %zu messages timed one by "
+        "one; 64 MiB flush before the cold runs; %zu repetitions each\n",
+        start, n, o.trials);
     for (const char* mode : {"warm", "cold"}) {
         std::vector<double> mean, p50, p99, p999, mx;
         std::string first_hash;
         for (std::size_t t = 0; t < o.trials; ++t) {
             std::string hash;
-            const auto s = probe_tail(w, start, o.reserve, std::string(mode) == "cold" ? 64 : 0, hash);
-            if (first_hash.empty()) first_hash = hash;
-            if (hash != first_hash) throw std::runtime_error("cold probe diverged");
+            const auto s =
+                probe_tail(w, start, o.reserve, std::string(mode) == "cold" ? 64 : 0, hash);
+            if (first_hash.empty())
+                first_hash = hash;
+            if (hash != first_hash)
+                throw std::runtime_error("cold probe diverged");
             mean.push_back(s.mean_ns);
             p50.push_back(static_cast<double>(s.p50_ns));
             p99.push_back(static_cast<double>(s.p99_ns));
             p999.push_back(static_cast<double>(s.p999_ns));
             mx.push_back(static_cast<double>(s.max_ns));
         }
-        std::printf("  %s: median over repetitions of: mean %.1f ns, p50 %.0f, p99 %.0f, p99.9 %.0f, "
-                    "max %.0f (includes one ~15 ns timer call; 41.7 ns tick)\n",
-                    mode, median(mean), median(p50), median(p99), median(p999), median(mx));
+        std::printf(
+            "  %s: median over repetitions of: mean %.1f ns, p50 %.0f, p99 %.0f, p99.9 %.0f, "
+            "max %.0f (includes one ~15 ns timer call; 41.7 ns tick)\n",
+            mode, median(mean), median(p50), median(p99), median(p999), median(mx));
     }
     return 0;
 }
@@ -348,7 +364,8 @@ int run(const Options& o) {
     } else {
         w.source = o.input;
         std::ifstream f(o.input, std::ios::binary);
-        if (!f) throw std::runtime_error("cannot open " + o.input);
+        if (!f)
+            throw std::runtime_error("cannot open " + o.input);
         w.file.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
         // Cut a truncated final message so every pass sees whole messages only.
         StreamFramer framer;
@@ -359,7 +376,8 @@ int run(const Options& o) {
             ++w.count;
             if (want_messages) {
                 const DecodeResult d = decode(p);
-                if (const auto* m = std::get_if<Message>(&d)) w.messages.push_back(*m);
+                if (const auto* m = std::get_if<Message>(&d))
+                    w.messages.push_back(*m);
             }
         });
         w.file.resize(whole);
@@ -379,8 +397,9 @@ int run(const Options& o) {
             std::string header;
             std::getline(probe, header);
             if (header != csv_header()) {
-                throw std::runtime_error(o.out + ": existing CSV has a different header; "
-                                                 "write to a new file");
+                throw std::runtime_error(o.out +
+                                         ": existing CSV has a different header; "
+                                         "write to a new file");
             }
         }
         csv.open(o.out, std::ios::app);
@@ -391,19 +410,21 @@ int run(const Options& o) {
     std::printf("enginex_itch_bench: git %s, %s %s %s, %s\n", bi::kGitSha, bi::kCompilerId,
                 bi::kCompilerVersion, bi::kBuildType, bi::kSystem);
     if (o.input.empty()) {
-        std::printf("workload: synthetic ITCH 5.0, seed %llu, %zu messages (%zu lifecycle), %u "
-                    "symbols, %zu bytes; %zu trials + 1 warm-up\n",
-                    static_cast<unsigned long long>(o.seed), w.count, o.messages,
-                    static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
+        std::printf(
+            "workload: synthetic ITCH 5.0, seed %llu, %zu messages (%zu lifecycle), %u "
+            "symbols, %zu bytes; %zu trials + 1 warm-up\n",
+            static_cast<unsigned long long>(o.seed), w.count, o.messages,
+            static_cast<unsigned>(o.symbols), w.file.size(), o.trials);
     } else {
-        std::printf("workload: FILE %s, %zu messages, %zu bytes (in memory); %zu trials + 1 "
-                    "warm-up\n",
-                    o.input.c_str(), w.count, w.file.size(), o.trials);
+        std::printf(
+            "workload: FILE %s, %zu messages, %zu bytes (in memory); %zu trials + 1 "
+            "warm-up\n",
+            o.input.c_str(), w.count, w.file.size(), o.trials);
     }
-    std::printf("book reserve hint: %zu orders; order index: %s; level nodes: %s; cache flush "
-                "before each pass: %zu MiB\n",
-                o.reserve, enginex::itch::kOrderIndexName, enginex::itch::kLevelAllocName,
-                o.flush_mib);
+    std::printf(
+        "book reserve hint: %zu orders; order index: %s; level nodes: %s; cache flush "
+        "before each pass: %zu MiB\n",
+        o.reserve, enginex::itch::kOrderIndexName, enginex::itch::kLevelAllocName, o.flush_mib);
     std::printf("timer: now() ~%.1f ns, smallest tick %llu ns\n", timer.mean_call_ns,
                 static_cast<unsigned long long>(timer.min_nonzero_tick_ns));
     if (o.cold_probe != 0) {
@@ -451,12 +472,14 @@ int run(const Options& o) {
         med.trial = "median";
         auto col = [&](auto f) {
             std::vector<double> v;
-            for (const auto& t : trials) v.push_back(static_cast<double>(f(t)));
+            for (const auto& t : trials)
+                v.push_back(static_cast<double>(f(t)));
             return median(v);
         };
         auto colu = [&](auto f) {
             std::vector<std::uint64_t> v;
-            for (const auto& t : trials) v.push_back(f(t));
+            for (const auto& t : trials)
+                v.push_back(f(t));
             return median_u(v);
         };
         med.elapsed_ns = colu([](const Trial& t) { return t.elapsed_ns; });
@@ -479,32 +502,36 @@ int run(const Options& o) {
             hi = std::max(hi, t.msgs_per_s);
         }
         const std::uint64_t rss = metrics::peak_rss_kib();
-        std::printf("[%s]\n  first pass %.2f M msg/s; trials median %.2f M msg/s [min %.2f, max %.2f]"
-                    " = %.1f ns/msg",
-                    m.c_str(), first.msgs_per_s / 1e6, med.msgs_per_s / 1e6, lo / 1e6, hi / 1e6,
-                    1e9 / med.msgs_per_s);
+        std::printf(
+            "[%s]\n  first pass %.2f M msg/s; trials median %.2f M msg/s [min %.2f, max %.2f]"
+            " = %.1f ns/msg",
+            m.c_str(), first.msgs_per_s / 1e6, med.msgs_per_s / 1e6, lo / 1e6, hi / 1e6,
+            1e9 / med.msgs_per_s);
         if (med.mib_per_s > 0) {
             std::printf(", %.0f MiB/s", med.mib_per_s);
         }
-        std::printf("\n  heap allocations in timed region: median %llu (%.3f per message), "
-                    "first pass %llu\n",
-                    static_cast<unsigned long long>(med.allocs),
-                    static_cast<double>(med.allocs) / static_cast<double>(w.count),
-                    static_cast<unsigned long long>(first.allocs));
-        std::printf("  page faults per pass (minor/major, setup included): first pass %llu/%llu, "
-                    "trials median %llu/%llu\n",
-                    static_cast<unsigned long long>(first.minor_faults),
-                    static_cast<unsigned long long>(first.major_faults),
-                    static_cast<unsigned long long>(med.minor_faults),
-                    static_cast<unsigned long long>(med.major_faults));
+        std::printf(
+            "\n  heap allocations in timed region: median %llu (%.3f per message), "
+            "first pass %llu\n",
+            static_cast<unsigned long long>(med.allocs),
+            static_cast<double>(med.allocs) / static_cast<double>(w.count),
+            static_cast<unsigned long long>(first.allocs));
+        std::printf(
+            "  page faults per pass (minor/major, setup included): first pass %llu/%llu, "
+            "trials median %llu/%llu\n",
+            static_cast<unsigned long long>(first.minor_faults),
+            static_cast<unsigned long long>(first.major_faults),
+            static_cast<unsigned long long>(med.minor_faults),
+            static_cast<unsigned long long>(med.major_faults));
         if (m == "itch_book_apply" && o.latency) {
-            std::printf("  per-message latency (ns, median of trials, includes one now() call): "
-                        "mean %.1f p50 %llu p90 %llu p99 %llu p99.9 %llu max %llu\n",
-                        med.latency.mean_ns, static_cast<unsigned long long>(med.latency.p50_ns),
-                        static_cast<unsigned long long>(med.latency.p90_ns),
-                        static_cast<unsigned long long>(med.latency.p99_ns),
-                        static_cast<unsigned long long>(med.latency.p999_ns),
-                        static_cast<unsigned long long>(med.latency.max_ns));
+            std::printf(
+                "  per-message latency (ns, median of trials, includes one now() call): "
+                "mean %.1f p50 %llu p90 %llu p99 %llu p99.9 %llu max %llu\n",
+                med.latency.mean_ns, static_cast<unsigned long long>(med.latency.p50_ns),
+                static_cast<unsigned long long>(med.latency.p90_ns),
+                static_cast<unsigned long long>(med.latency.p99_ns),
+                static_cast<unsigned long long>(med.latency.p999_ns),
+                static_cast<unsigned long long>(med.latency.max_ns));
         }
         if (m == "itch_book_apply" && o.latency) {
             std::printf("  mean ns by type (trial 1 latency pass; incl. ~%.0f ns timer):",
@@ -522,22 +549,23 @@ int run(const Options& o) {
             std::printf("\n");
             for (const auto& t : trials) {
                 std::printf("  trial %s: largest sample %llu ns at message %zu (type %c)\n",
-                            t.trial.c_str(), static_cast<unsigned long long>(t.max_ns),
-                            t.max_index, t.max_type == 0 ? '?' : t.max_type);
+                            t.trial.c_str(), static_cast<unsigned long long>(t.max_ns), t.max_index,
+                            t.max_type == 0 ? '?' : t.max_type);
             }
         }
         if (m != "itch_decode") {
-            std::printf("  live orders at end %llu (peak %llu); state hash %.16s (identical "
-                        "across trials)\n",
-                        static_cast<unsigned long long>(med.live_orders),
-                        static_cast<unsigned long long>(med.peak_live_orders),
-                        med.state_hash.c_str());
+            std::printf(
+                "  live orders at end %llu (peak %llu); state hash %.16s (identical "
+                "across trials)\n",
+                static_cast<unsigned long long>(med.live_orders),
+                static_cast<unsigned long long>(med.peak_live_orders), med.state_hash.c_str());
         }
         std::printf("  peak RSS %llu MiB (process high-water mark so far, includes the workload)\n",
                     static_cast<unsigned long long>(rss / 1024));
         if (csv.is_open()) {
             write_row(csv, started, m, o, w, first, timer, rss);
-            for (const auto& t : trials) write_row(csv, started, m, o, w, t, timer, rss);
+            for (const auto& t : trials)
+                write_row(csv, started, m, o, w, t, timer, rss);
             write_row(csv, started, m, o, w, med, timer, rss);
         }
     }
@@ -561,21 +589,34 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
             auto value = [&]() -> std::string {
-                if (i + 1 >= argc) throw std::invalid_argument("missing value for " + a);
+                if (i + 1 >= argc)
+                    throw std::invalid_argument("missing value for " + a);
                 return argv[++i];
             };
-            if (a == "--seed") o.seed = parse_u64(value());
-            else if (a == "--messages") o.messages = parse_u64(value());
-            else if (a == "--symbols") o.symbols = static_cast<std::uint16_t>(parse_u64(value()));
-            else if (a == "--trials") o.trials = parse_u64(value());
-            else if (a == "--out") o.out = value();
-            else if (a == "--only") o.only = value();
-            else if (a == "--cold-probe") o.cold_probe = parse_u64(value());
-            else if (a == "--input") o.input = value();
-            else if (a == "--no-latency") o.latency = false;
-            else if (a == "--reserve") o.reserve = parse_u64(value());
-            else if (a == "--flush-cache-mib") o.flush_mib = parse_u64(value());
-            else throw std::invalid_argument("unknown option " + a);
+            if (a == "--seed")
+                o.seed = parse_u64(value());
+            else if (a == "--messages")
+                o.messages = parse_u64(value());
+            else if (a == "--symbols")
+                o.symbols = static_cast<std::uint16_t>(parse_u64(value()));
+            else if (a == "--trials")
+                o.trials = parse_u64(value());
+            else if (a == "--out")
+                o.out = value();
+            else if (a == "--only")
+                o.only = value();
+            else if (a == "--cold-probe")
+                o.cold_probe = parse_u64(value());
+            else if (a == "--input")
+                o.input = value();
+            else if (a == "--no-latency")
+                o.latency = false;
+            else if (a == "--reserve")
+                o.reserve = parse_u64(value());
+            else if (a == "--flush-cache-mib")
+                o.flush_mib = parse_u64(value());
+            else
+                throw std::invalid_argument("unknown option " + a);
         }
         if (o.trials == 0 || o.symbols == 0) {
             throw std::invalid_argument("--trials and --symbols must be > 0");

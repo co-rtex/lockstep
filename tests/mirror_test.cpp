@@ -18,9 +18,9 @@
 #include "enginex/client.hpp"
 #include "enginex/mirror.hpp"
 #include "enginex/protocol.hpp"
-#include "enginex/socket.hpp"
 #include "enginex/rng.hpp"
 #include "enginex/server.hpp"
+#include "enginex/socket.hpp"
 
 namespace enginex::net {
 namespace {
@@ -43,13 +43,12 @@ Json snapshot(std::uint64_t watermark, bool subscribed, Json bids, Json asks,
 }
 Json update(std::uint64_t seq, const std::string& side, std::int64_t price, std::int64_t qty,
             std::int64_t n) {
-    return Json{{"type", "book_update"},
-                {"event_sequence", seq},
-                {"symbol", "AAPL"},
-                {"levels", Json::array({Json{{"side", side},
-                                             {"price", price},
-                                             {"quantity", qty},
-                                             {"order_count", n}}})}};
+    return Json{
+        {"type", "book_update"},
+        {"event_sequence", seq},
+        {"symbol", "AAPL"},
+        {"levels", Json::array({Json{
+                       {"side", side}, {"price", price}, {"quantity", qty}, {"order_count", n}}})}};
 }
 
 TEST(FeedMirror, UpdatesBeforeAnyBaselineAreRejected) {
@@ -138,8 +137,10 @@ TEST(FeedMirror, SymbolSetMustMatchTheBaseline) {
 
     FeedMirror b;  // mirror holds AAPL, verification snapshot lacks it
     b.on_message(snapshot(1, true, Json::array({level(100, 5, 1)}), Json::array()));
-    const Json empty_snap{{"type", "snapshot_response"}, {"event_watermark", 1},
-                          {"subscribed", false},         {"depth", 0},
+    const Json empty_snap{{"type", "snapshot_response"},
+                          {"event_watermark", 1},
+                          {"subscribed", false},
+                          {"depth", 0},
                           {"books", Json::array()}};
     EXPECT_EQ(b.on_message(empty_snap), V::Mismatch);
     EXPECT_EQ(b.stats().mismatches, 1U);
@@ -148,8 +149,10 @@ TEST(FeedMirror, SymbolSetMustMatchTheBaseline) {
 TEST(FeedMirror, SubscribeErrorOnALiveFeedGoesStale) {
     FeedMirror m;
     m.on_message(snapshot(1, true, Json::array(), Json::array()));
-    EXPECT_EQ(m.on_message(Json{{"type", "error"}, {"command_type", "subscribe"},
-                                {"code", "INVALID_REQUEST"}, {"message", "already subscribed"}}),
+    EXPECT_EQ(m.on_message(Json{{"type", "error"},
+                                {"command_type", "subscribe"},
+                                {"code", "INVALID_REQUEST"},
+                                {"message", "already subscribed"}}),
               V::SubscribeFailed);
     EXPECT_EQ(m.state(), S::Stale);
 }
@@ -193,8 +196,12 @@ TEST(FeedMirror, RandomMessagesNeverBreakTheRules) {
     Rng rng(4242);
     auto maybe = [&](Json& j, const char* key, Json value) {
         const auto r = rng.below(40);
-        if (r == 0) return;                              // field missing (2.5 %)
-        if (r == 1) { j[key] = "wrong-type"; return; }   // mistyped (2.5 %)
+        if (r == 0)
+            return;  // field missing (2.5 %)
+        if (r == 1) {
+            j[key] = "wrong-type";
+            return;
+        }  // mistyped (2.5 %)
         j[key] = std::move(value);
     };
     auto random_levels = [&](bool update) {
@@ -202,7 +209,8 @@ TEST(FeedMirror, RandomMessagesNeverBreakTheRules) {
         const auto n = rng.below(4);
         for (std::uint64_t i = 0; i < n; ++i) {
             Json l;
-            if (update) maybe(l, "side", rng.chance(50) ? "BUY" : "SELL");
+            if (update)
+                maybe(l, "side", rng.chance(50) ? "BUY" : "SELL");
             maybe(l, "price", static_cast<std::int64_t>(rng.between(9990, 10010)));
             maybe(l, "quantity", static_cast<std::int64_t>(rng.below(5)));
             maybe(l, "order_count", static_cast<std::int64_t>(rng.below(3)));
@@ -275,12 +283,12 @@ TEST(FeedMirror, RandomMessagesNeverBreakTheRules) {
     EXPECT_GT(applied_total, 100U);
     EXPECT_GT(gaps, 100U);
     EXPECT_GT(malformed, 100U);
-    std::printf("mirror property test: %llu baselines, %llu applied, %llu gaps, %llu malformed, "
-                "%llu verified\n",
-                static_cast<unsigned long long>(baselines),
-                static_cast<unsigned long long>(applied_total),
-                static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(malformed),
-                static_cast<unsigned long long>(verified));
+    std::printf(
+        "mirror property test: %llu baselines, %llu applied, %llu gaps, %llu malformed, "
+        "%llu verified\n",
+        static_cast<unsigned long long>(baselines), static_cast<unsigned long long>(applied_total),
+        static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(malformed),
+        static_cast<unsigned long long>(verified));
 }
 
 // ---- end to end ------------------------------------------------------------------------------
@@ -392,7 +400,8 @@ public:
         ::shutdown(listener_.fd(), SHUT_RDWR);
         acceptor_.join();
         std::lock_guard lock(mu_);
-        for (auto& t : pumps_) t.join();
+        for (auto& t : pumps_)
+            t.join();
     }
     [[nodiscard]] std::uint16_t port() const { return port_; }
     [[nodiscard]] int dropped() const { return dropped_.load(); }
@@ -432,7 +441,8 @@ private:
             if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
                 break;
             }
-            if (n > 0 && send_all(to.fd(), std::string_view(buf, static_cast<std::size_t>(n))) != 0) {
+            if (n > 0 &&
+                send_all(to.fd(), std::string_view(buf, static_cast<std::size_t>(n))) != 0) {
                 break;
             }
         }
@@ -498,7 +508,7 @@ TEST(FeedMirrorSession, DroppedEventIsDetectedAsGapAndRecoveredBySnapshot) {
     t1.join();
     ASSERT_EQ(proxy.dropped(), 1);
     EXPECT_EQ(r.stats.gaps, 1U) << r.last_problem;  // detected, not applied
-    EXPECT_EQ(r.connections, 2U);                    // resubscribed through a clean connection
+    EXPECT_EQ(r.connections, 2U);                   // resubscribed through a clean connection
     EXPECT_EQ(r.stats.mismatches, 0U);
     EXPECT_TRUE(r.ok()) << r.last_problem;
 }
@@ -533,8 +543,12 @@ TEST(FeedMirrorSession, OversizedBaselineNeverGoesLive) {
     EXPECT_NE(r.last_problem.find("frame limit"), std::string::npos) << r.last_problem;
     // Server side: nothing was registered. An accepted command afterwards reaches no one.
     Client c = Client::connect("127.0.0.1", rs.server->port());
-    ASSERT_TRUE(c.request(Json{{"type", "new_limit"}, {"request_id", "late"}, {"symbol", "AAPL"},
-                               {"side", "BUY"}, {"price", 100}, {"quantity", 1}},
+    ASSERT_TRUE(c.request(Json{{"type", "new_limit"},
+                               {"request_id", "late"},
+                               {"symbol", "AAPL"},
+                               {"side", "BUY"},
+                               {"price", 100},
+                               {"quantity", 1}},
                           2s));
     std::this_thread::sleep_for(300ms);  // subscriber count is refreshed by the sequencer loop
     EXPECT_EQ(rs.server->stats().subscribers, 0U);

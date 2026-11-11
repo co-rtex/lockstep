@@ -48,43 +48,43 @@ struct SystemEvent {  // 'S', 12 bytes
 
 struct StockDirectory {  // 'R', 39 bytes
     Header h;
-    Symbol stock{};                       // @11
-    char market_category = 0;             // @19
-    char financial_status = 0;            // @20
-    std::uint32_t round_lot_size = 0;     // @21
-    char round_lots_only = 0;             // @25
-    char issue_classification = 0;        // @26
-    std::array<char, 2> issue_subtype{};  // @27
-    char authenticity = 0;                // @29
-    char short_sale_threshold = 0;        // @30
-    char ipo_flag = 0;                    // @31
-    char luld_tier = 0;                   // @32
-    char etp_flag = 0;                    // @33
+    Symbol stock{};                         // @11
+    char market_category = 0;               // @19
+    char financial_status = 0;              // @20
+    std::uint32_t round_lot_size = 0;       // @21
+    char round_lots_only = 0;               // @25
+    char issue_classification = 0;          // @26
+    std::array<char, 2> issue_subtype{};    // @27
+    char authenticity = 0;                  // @29
+    char short_sale_threshold = 0;          // @30
+    char ipo_flag = 0;                      // @31
+    char luld_tier = 0;                     // @32
+    char etp_flag = 0;                      // @33
     std::uint32_t etp_leverage_factor = 0;  // @34
     char inverse_indicator = 0;             // @38
 };
 
 struct StockTradingAction {  // 'H', 25 bytes
     Header h;
-    Symbol stock{};             // @11
-    char trading_state = 0;     // @19 'H','P','Q','T'
-    char reserved = 0;          // @20
+    Symbol stock{};                // @11
+    char trading_state = 0;        // @19 'H','P','Q','T'
+    char reserved = 0;             // @20
     std::array<char, 4> reason{};  // @21
 };
 
 struct RegShoRestriction {  // 'Y', 20 bytes
     Header h;
-    Symbol stock{};          // @11
+    Symbol stock{};           // @11
     char reg_sho_action = 0;  // @19
 };
 
 struct MarketParticipantPosition {  // 'L', 26 bytes
     Header h;
-    Mpid mpid{};                     // @11
-    Symbol stock{};                  // @15
-    char primary_market_maker = 0;   // @23
-    char market_maker_mode = 0;      // @24
-    char participant_state = 0;      // @25
+    Mpid mpid{};                    // @11
+    Symbol stock{};                 // @15
+    char primary_market_maker = 0;  // @23
+    char market_maker_mode = 0;     // @24
+    char participant_state = 0;     // @25
 };
 
 struct MwcbDeclineLevel {  // 'V', 35 bytes
@@ -101,45 +101,45 @@ struct MwcbStatus {  // 'W', 12 bytes
 
 struct IpoQuotingPeriod {  // 'K', 28 bytes
     Header h;
-    Symbol stock{};                       // @11
-    std::uint32_t release_time = 0;       // @19 seconds since midnight
-    char release_qualifier = 0;           // @23
-    Price4 ipo_price = 0;                 // @24
+    Symbol stock{};                  // @11
+    std::uint32_t release_time = 0;  // @19 seconds since midnight
+    char release_qualifier = 0;      // @23
+    Price4 ipo_price = 0;            // @24
 };
 
 struct LuldAuctionCollar {  // 'J', 35 bytes
     Header h;
-    Symbol stock{};                 // @11
-    Price4 reference_price = 0;     // @19
-    Price4 upper_collar = 0;        // @23
-    Price4 lower_collar = 0;        // @27
-    std::uint32_t extension = 0;    // @31
+    Symbol stock{};               // @11
+    Price4 reference_price = 0;   // @19
+    Price4 upper_collar = 0;      // @23
+    Price4 lower_collar = 0;      // @27
+    std::uint32_t extension = 0;  // @31
 };
 
 struct OperationalHalt {  // 'h', 21 bytes
     Header h;
-    Symbol stock{};          // @11
-    char market_code = 0;    // @19
-    char halt_action = 0;    // @20
+    Symbol stock{};        // @11
+    char market_code = 0;  // @19
+    char halt_action = 0;  // @20
 };
 
 // ---- order book messages ------------------------------------------------------------------
 
 struct AddOrder {  // 'A', 36 bytes; 'F' (with attribution) 40 bytes
     Header h;
-    OrderRef order_ref = 0;     // @11
-    Side side = Side::Buy;      // @19 'B'/'S'
-    std::uint32_t shares = 0;   // @20
-    Symbol stock{};             // @24
-    Price4 price = 0;           // @32
+    OrderRef order_ref = 0;           // @11
+    Side side = Side::Buy;            // @19 'B'/'S'
+    std::uint32_t shares = 0;         // @20
+    Symbol stock{};                   // @24
+    Price4 price = 0;                 // @32
     std::optional<Mpid> attribution;  // @36, 'F' only
 };
 
 struct OrderExecuted {  // 'E', 31 bytes
     Header h;
-    OrderRef order_ref = 0;           // @11
+    OrderRef order_ref = 0;             // @11
     std::uint32_t executed_shares = 0;  // @19
-    std::uint64_t match_number = 0;   // @23
+    std::uint64_t match_number = 0;     // @23
 };
 
 struct OrderExecutedWithPrice {  // 'C', 36 bytes
@@ -219,14 +219,14 @@ struct RetailInterest {  // 'N', 20 bytes (RPII)
 
 struct DlcrPriceDiscovery {  // 'O', 48 bytes (added 2023-04-28)
     Header h;
-    Symbol stock{};                       // @11
-    char open_eligibility_status = 0;     // @19
-    Price4 minimum_allowable_price = 0;   // @20
-    Price4 maximum_allowable_price = 0;   // @24
-    Price4 near_execution_price = 0;      // @28
+    Symbol stock{};                         // @11
+    char open_eligibility_status = 0;       // @19
+    Price4 minimum_allowable_price = 0;     // @20
+    Price4 maximum_allowable_price = 0;     // @24
+    Price4 near_execution_price = 0;        // @28
     std::uint64_t near_execution_time = 0;  // @32
-    Price4 lower_price_range_collar = 0;  // @40
-    Price4 upper_price_range_collar = 0;  // @44
+    Price4 lower_price_range_collar = 0;    // @40
+    Price4 upper_price_range_collar = 0;    // @44
 };
 
 using Message =
@@ -240,30 +240,54 @@ using Message =
 // type this decoder does not know.
 [[nodiscard]] constexpr std::optional<std::size_t> message_length(char type) noexcept {
     switch (type) {
-        case 'S': return 12;
-        case 'R': return 39;
-        case 'H': return 25;
-        case 'Y': return 20;
-        case 'L': return 26;
-        case 'V': return 35;
-        case 'W': return 12;
-        case 'K': return 28;
-        case 'J': return 35;
-        case 'h': return 21;
-        case 'A': return 36;
-        case 'F': return 40;
-        case 'E': return 31;
-        case 'C': return 36;
-        case 'X': return 23;
-        case 'D': return 19;
-        case 'U': return 35;
-        case 'P': return 44;
-        case 'Q': return 40;
-        case 'B': return 19;
-        case 'I': return 50;
-        case 'N': return 20;
-        case 'O': return 48;
-        default: return std::nullopt;
+        case 'S':
+            return 12;
+        case 'R':
+            return 39;
+        case 'H':
+            return 25;
+        case 'Y':
+            return 20;
+        case 'L':
+            return 26;
+        case 'V':
+            return 35;
+        case 'W':
+            return 12;
+        case 'K':
+            return 28;
+        case 'J':
+            return 35;
+        case 'h':
+            return 21;
+        case 'A':
+            return 36;
+        case 'F':
+            return 40;
+        case 'E':
+            return 31;
+        case 'C':
+            return 36;
+        case 'X':
+            return 23;
+        case 'D':
+            return 19;
+        case 'U':
+            return 35;
+        case 'P':
+            return 44;
+        case 'Q':
+            return 40;
+        case 'B':
+            return 19;
+        case 'I':
+            return 50;
+        case 'N':
+            return 20;
+        case 'O':
+            return 48;
+        default:
+            return std::nullopt;
     }
 }
 

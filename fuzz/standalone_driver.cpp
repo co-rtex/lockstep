@@ -36,17 +36,28 @@ int main(int argc, char** argv) {
         for (std::uint64_t e = 0; e < edits && in.size() > 1; ++e) {
             const std::size_t at = 1 + rng.below(in.size() - 1);
             switch (rng.below(6)) {
-                case 0: in[at] ^= static_cast<std::uint8_t>(1U << rng.below(8)); break;
-                case 1: in[at] = static_cast<std::uint8_t>(rng.next()); break;
-                case 2: in.insert(in.begin() + static_cast<std::ptrdiff_t>(at),
-                                  static_cast<std::uint8_t>(rng.next())); break;
-                case 3: in.erase(in.begin() + static_cast<std::ptrdiff_t>(at)); break;
-                case 4: in.resize(at); break;
+                case 0:
+                    in[at] ^= static_cast<std::uint8_t>(1U << rng.below(8));
+                    break;
+                case 1:
+                    in[at] = static_cast<std::uint8_t>(rng.next());
+                    break;
+                case 2:
+                    in.insert(in.begin() + static_cast<std::ptrdiff_t>(at),
+                              static_cast<std::uint8_t>(rng.next()));
+                    break;
+                case 3:
+                    in.erase(in.begin() + static_cast<std::ptrdiff_t>(at));
+                    break;
+                case 4:
+                    in.resize(at);
+                    break;
                 default: {
                     const auto& other = corpus[rng.below(corpus.size())];
                     if (!other.empty()) {
                         const std::size_t from = rng.below(other.size());
-                        const std::size_t n = std::min<std::size_t>(rng.below(64), other.size() - from);
+                        const std::size_t n =
+                            std::min<std::size_t>(rng.below(64), other.size() - from);
                         in.insert(in.begin() + static_cast<std::ptrdiff_t>(at),
                                   other.begin() + static_cast<std::ptrdiff_t>(from),
                                   other.begin() + static_cast<std::ptrdiff_t>(from + n));
@@ -58,6 +69,7 @@ int main(int argc, char** argv) {
         LLVMFuzzerTestOneInput(in.data(), in.size());
     }
     std::printf("standalone fuzz: %llu inputs, %llu bytes, no invariant violated\n",
-                static_cast<unsigned long long>(iterations), static_cast<unsigned long long>(bytes));
+                static_cast<unsigned long long>(iterations),
+                static_cast<unsigned long long>(bytes));
     return 0;
 }

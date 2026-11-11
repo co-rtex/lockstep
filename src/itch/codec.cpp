@@ -51,8 +51,8 @@ DecodeResult decode_known(const ByteReader& r) {
         case 'Y':
             return Message{RegShoRestriction{h, r.alpha<8>(11), r.alpha(19)}};
         case 'L':
-            return Message{MarketParticipantPosition{h, r.alpha<4>(11), r.alpha<8>(15),
-                                                     r.alpha(23), r.alpha(24), r.alpha(25)}};
+            return Message{MarketParticipantPosition{h, r.alpha<4>(11), r.alpha<8>(15), r.alpha(23),
+                                                     r.alpha(24), r.alpha(25)}};
         case 'V':
             return Message{MwcbDeclineLevel{h, r.u64(11), r.u64(19), r.u64(27)}};
         case 'W':
@@ -89,9 +89,8 @@ DecodeResult decode_known(const ByteReader& r) {
             if (printable != 'Y' && printable != 'N') {
                 return DecodeError::InvalidField;
             }
-            return Message{
-                OrderExecutedWithPrice{h, r.u64(11), r.u32(19), r.u64(23), printable == 'Y',
-                                       r.u32(32)}};
+            return Message{OrderExecutedWithPrice{h, r.u64(11), r.u32(19), r.u64(23),
+                                                  printable == 'Y', r.u32(32)}};
         }
         case 'X':
             return Message{OrderCancel{h, r.u64(11), r.u32(19)}};
@@ -103,8 +102,8 @@ DecodeResult decode_known(const ByteReader& r) {
             return Message{
                 Trade{h, r.u64(11), r.alpha(19), r.u32(20), r.alpha<8>(24), r.u32(32), r.u64(36)}};
         case 'Q':
-            return Message{CrossTrade{h, r.u64(11), r.alpha<8>(19), r.u32(27), r.u64(31),
-                                      r.alpha(39)}};
+            return Message{
+                CrossTrade{h, r.u64(11), r.alpha<8>(19), r.u32(27), r.u64(31), r.alpha(39)}};
         case 'B':
             return Message{BrokenTrade{h, r.u64(11)}};
         case 'I':
@@ -113,9 +112,8 @@ DecodeResult decode_known(const ByteReader& r) {
         case 'N':
             return Message{RetailInterest{h, r.alpha<8>(11), r.alpha(19)}};
         case 'O':
-            return Message{DlcrPriceDiscovery{h, r.alpha<8>(11), r.alpha(19), r.u32(20),
-                                              r.u32(24), r.u32(28), r.u64(32), r.u32(40),
-                                              r.u32(44)}};
+            return Message{DlcrPriceDiscovery{h, r.alpha<8>(11), r.alpha(19), r.u32(20), r.u32(24),
+                                              r.u32(28), r.u64(32), r.u32(40), r.u32(44)}};
         default:
             return DecodeError::UnknownType;
     }
@@ -160,47 +158,76 @@ private:
 
 template <typename T>
 constexpr char type_char() {
-    if constexpr (std::is_same_v<T, SystemEvent>) return 'S';
-    else if constexpr (std::is_same_v<T, StockDirectory>) return 'R';
-    else if constexpr (std::is_same_v<T, StockTradingAction>) return 'H';
-    else if constexpr (std::is_same_v<T, RegShoRestriction>) return 'Y';
-    else if constexpr (std::is_same_v<T, MarketParticipantPosition>) return 'L';
-    else if constexpr (std::is_same_v<T, MwcbDeclineLevel>) return 'V';
-    else if constexpr (std::is_same_v<T, MwcbStatus>) return 'W';
-    else if constexpr (std::is_same_v<T, IpoQuotingPeriod>) return 'K';
-    else if constexpr (std::is_same_v<T, LuldAuctionCollar>) return 'J';
-    else if constexpr (std::is_same_v<T, OperationalHalt>) return 'h';
-    else if constexpr (std::is_same_v<T, OrderExecuted>) return 'E';
-    else if constexpr (std::is_same_v<T, OrderExecutedWithPrice>) return 'C';
-    else if constexpr (std::is_same_v<T, OrderCancel>) return 'X';
-    else if constexpr (std::is_same_v<T, OrderDelete>) return 'D';
-    else if constexpr (std::is_same_v<T, OrderReplace>) return 'U';
-    else if constexpr (std::is_same_v<T, Trade>) return 'P';
-    else if constexpr (std::is_same_v<T, CrossTrade>) return 'Q';
-    else if constexpr (std::is_same_v<T, BrokenTrade>) return 'B';
-    else if constexpr (std::is_same_v<T, Noii>) return 'I';
-    else if constexpr (std::is_same_v<T, RetailInterest>) return 'N';
-    else if constexpr (std::is_same_v<T, DlcrPriceDiscovery>) return 'O';
-    else return 0;  // AddOrder: 'A' or 'F' depending on attribution
+    if constexpr (std::is_same_v<T, SystemEvent>)
+        return 'S';
+    else if constexpr (std::is_same_v<T, StockDirectory>)
+        return 'R';
+    else if constexpr (std::is_same_v<T, StockTradingAction>)
+        return 'H';
+    else if constexpr (std::is_same_v<T, RegShoRestriction>)
+        return 'Y';
+    else if constexpr (std::is_same_v<T, MarketParticipantPosition>)
+        return 'L';
+    else if constexpr (std::is_same_v<T, MwcbDeclineLevel>)
+        return 'V';
+    else if constexpr (std::is_same_v<T, MwcbStatus>)
+        return 'W';
+    else if constexpr (std::is_same_v<T, IpoQuotingPeriod>)
+        return 'K';
+    else if constexpr (std::is_same_v<T, LuldAuctionCollar>)
+        return 'J';
+    else if constexpr (std::is_same_v<T, OperationalHalt>)
+        return 'h';
+    else if constexpr (std::is_same_v<T, OrderExecuted>)
+        return 'E';
+    else if constexpr (std::is_same_v<T, OrderExecutedWithPrice>)
+        return 'C';
+    else if constexpr (std::is_same_v<T, OrderCancel>)
+        return 'X';
+    else if constexpr (std::is_same_v<T, OrderDelete>)
+        return 'D';
+    else if constexpr (std::is_same_v<T, OrderReplace>)
+        return 'U';
+    else if constexpr (std::is_same_v<T, Trade>)
+        return 'P';
+    else if constexpr (std::is_same_v<T, CrossTrade>)
+        return 'Q';
+    else if constexpr (std::is_same_v<T, BrokenTrade>)
+        return 'B';
+    else if constexpr (std::is_same_v<T, Noii>)
+        return 'I';
+    else if constexpr (std::is_same_v<T, RetailInterest>)
+        return 'N';
+    else if constexpr (std::is_same_v<T, DlcrPriceDiscovery>)
+        return 'O';
+    else
+        return 0;  // AddOrder: 'A' or 'F' depending on attribution
 }
 
 }  // namespace
 
 std::string_view to_string(DecodeError e) noexcept {
     switch (e) {
-        case DecodeError::Empty: return "empty";
-        case DecodeError::UnknownType: return "unknown_type";
-        case DecodeError::LengthMismatch: return "length_mismatch";
-        case DecodeError::InvalidField: return "invalid_field";
+        case DecodeError::Empty:
+            return "empty";
+        case DecodeError::UnknownType:
+            return "unknown_type";
+        case DecodeError::LengthMismatch:
+            return "length_mismatch";
+        case DecodeError::InvalidField:
+            return "invalid_field";
     }
     return "unknown";
 }
 
 std::string_view to_string(FrameError e) noexcept {
     switch (e) {
-        case FrameError::None: return "none";
-        case FrameError::ZeroLength: return "zero_length";
-        case FrameError::TruncatedTail: return "truncated_tail";
+        case FrameError::None:
+            return "none";
+        case FrameError::ZeroLength:
+            return "zero_length";
+        case FrameError::TruncatedTail:
+            return "truncated_tail";
     }
     return "unknown";
 }
@@ -232,30 +259,54 @@ const Header& header_of(const Message& m) noexcept {
 
 std::string_view type_name(char type) noexcept {
     switch (type) {
-        case 'S': return "system_event";
-        case 'R': return "stock_directory";
-        case 'H': return "stock_trading_action";
-        case 'Y': return "reg_sho_restriction";
-        case 'L': return "market_participant_position";
-        case 'V': return "mwcb_decline_level";
-        case 'W': return "mwcb_status";
-        case 'K': return "ipo_quoting_period";
-        case 'J': return "luld_auction_collar";
-        case 'h': return "operational_halt";
-        case 'A': return "add_order";
-        case 'F': return "add_order_mpid";
-        case 'E': return "order_executed";
-        case 'C': return "order_executed_with_price";
-        case 'X': return "order_cancel";
-        case 'D': return "order_delete";
-        case 'U': return "order_replace";
-        case 'P': return "trade";
-        case 'Q': return "cross_trade";
-        case 'B': return "broken_trade";
-        case 'I': return "noii";
-        case 'N': return "retail_interest";
-        case 'O': return "dlcr_price_discovery";
-        default: return "unknown";
+        case 'S':
+            return "system_event";
+        case 'R':
+            return "stock_directory";
+        case 'H':
+            return "stock_trading_action";
+        case 'Y':
+            return "reg_sho_restriction";
+        case 'L':
+            return "market_participant_position";
+        case 'V':
+            return "mwcb_decline_level";
+        case 'W':
+            return "mwcb_status";
+        case 'K':
+            return "ipo_quoting_period";
+        case 'J':
+            return "luld_auction_collar";
+        case 'h':
+            return "operational_halt";
+        case 'A':
+            return "add_order";
+        case 'F':
+            return "add_order_mpid";
+        case 'E':
+            return "order_executed";
+        case 'C':
+            return "order_executed_with_price";
+        case 'X':
+            return "order_cancel";
+        case 'D':
+            return "order_delete";
+        case 'U':
+            return "order_replace";
+        case 'P':
+            return "trade";
+        case 'Q':
+            return "cross_trade";
+        case 'B':
+            return "broken_trade";
+        case 'I':
+            return "noii";
+        case 'N':
+            return "retail_interest";
+        case 'O':
+            return "dlcr_price_discovery";
+        default:
+            return "unknown";
     }
 }
 

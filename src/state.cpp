@@ -93,7 +93,8 @@ const CommandRecord* ExchangeStateMachine::find_request(std::string_view request
 void ExchangeStateMachine::grow_index(std::size_t records) {
     // Keep the load factor at or below 1/2, so a miss (a new id) is a short probe.
     std::size_t cap = id_index_.empty() ? 16 : id_index_.size();
-    while (cap < 2 * records) cap *= 2;
+    while (cap < 2 * records)
+        cap *= 2;
     if (cap == id_index_.size()) {
         return;
     }
@@ -101,7 +102,8 @@ void ExchangeStateMachine::grow_index(std::size_t records) {
     for (const IdSlot& s : id_index_) {
         if (s.index_plus_one != 0) {
             std::size_t j = s.fingerprint & (cap - 1);
-            while (grown[j].index_plus_one != 0) j = (j + 1) & (cap - 1);
+            while (grown[j].index_plus_one != 0)
+                j = (j + 1) & (cap - 1);
             grown[j] = s;
         }
     }
@@ -111,7 +113,8 @@ void ExchangeStateMachine::grow_index(std::size_t records) {
 void ExchangeStateMachine::place(std::uint32_t fp, std::uint32_t index_plus_one) noexcept {
     const std::size_t mask = id_index_.size() - 1;
     std::size_t i = fp & mask;
-    while (id_index_[i].index_plus_one != 0) i = (i + 1) & mask;
+    while (id_index_[i].index_plus_one != 0)
+        i = (i + 1) & mask;
     id_index_[i] = IdSlot{fp, index_plus_one};
 }
 
@@ -148,8 +151,7 @@ Decision ExchangeStateMachine::prepare(const Command& cmd) const {
                       "request_id was already accepted with a different command");
     }
 
-    if (last_command_ == std::numeric_limits<CommandSeq>::max() ||
-        records_.size() >= kMaxRecords) {
+    if (last_command_ == std::numeric_limits<CommandSeq>::max() || records_.size() >= kMaxRecords) {
         return reject(ErrorCode::LimitExceeded, "command sequence exhausted");
     }
 
@@ -236,8 +238,7 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
             executions_.push_back(Execution{executions_.size() + 1, seq, seq, fill.resting_order_id,
                                             decision.symbol, order->side, fill.price,
                                             fill.quantity});
-            CommandRecord& resting =
-                records_[static_cast<std::size_t>(fill.resting_order_id - 1)];
+            CommandRecord& resting = records_[static_cast<std::size_t>(fill.resting_order_id - 1)];
             resting.status =
                 fill.resting_remaining == 0 ? OrderStatus::Filled : OrderStatus::PartiallyFilled;
         }

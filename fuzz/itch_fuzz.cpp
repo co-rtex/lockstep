@@ -13,9 +13,9 @@
 //      [next_expected, horizon), and that holes + buffered messages fill that range exactly
 //   2: parse_request() round trip, and PacketStore: the payload cut into messages, packed,
 //      parsed back identically, with find() agreeing with every packet's range
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <span>
@@ -36,24 +36,32 @@ void fuzz_replay(std::span<const std::uint8_t> data) {
     using namespace enginex::itch;
     BookBuilder a;
     const ReplayResult r = replay(data, a);
-    if (const auto bad = a.check_invariants()) fail(bad->c_str());
-    if (r.decoded + r.decode_error_count() != r.frames) fail("frame accounting");
-    if (r.bytes_processed > data.size()) fail("bytes_processed beyond input");
+    if (const auto bad = a.check_invariants())
+        fail(bad->c_str());
+    if (r.decoded + r.decode_error_count() != r.frames)
+        fail("frame accounting");
+    if (r.bytes_processed > data.size())
+        fail("bytes_processed beyond input");
     BookBuilder b;
     ReplayOptions strict;
     strict.strict = true;
     const ReplayResult s = replay(data, b, strict);
-    if (s.frames > r.frames) fail("strict processed more frames than lenient");
-    if (const auto bad = b.check_invariants()) fail(bad->c_str());
+    if (s.frames > r.frames)
+        fail("strict processed more frames than lenient");
+    if (const auto bad = b.check_invariants())
+        fail(bad->c_str());
     BookBuilder c;
     (void)replay(data, c);
-    if (a.state_hash() != c.state_hash()) fail("replay not deterministic");
+    if (a.state_hash() != c.state_hash())
+        fail("replay not deterministic");
     // The bounded level vector (D32) at its smallest limit: constant spill and refill must not
     // change any book.
     BookBuilder d(0, 2);
     (void)replay(data, d);
-    if (const auto bad = d.check_invariants()) fail(bad->c_str());
-    if (a.state_hash() != d.state_hash()) fail("level-vector limit changed the books");
+    if (const auto bad = d.check_invariants())
+        fail(bad->c_str());
+    if (a.state_hash() != d.state_hash())
+        fail("level-vector limit changed the books");
 }
 
 void fuzz_mold(std::span<const std::uint8_t> data) {
@@ -66,9 +74,11 @@ void fuzz_mold(std::span<const std::uint8_t> data) {
     std::uint64_t expect = 1;
     BookBuilder book;
     auto deliver = [&](std::uint64_t seq, std::span<const std::uint8_t> m) {
-        if (seq != expect++) fail("out-of-order or repeated delivery");
+        if (seq != expect++)
+            fail("out-of-order or repeated delivery");
         const DecodeResult d = decode(m);
-        if (const auto* msg = std::get_if<Message>(&d)) (void)book.apply(*msg);
+        if (const auto* msg = std::get_if<Message>(&d))
+            (void)book.apply(*msg);
     };
     std::size_t pos = 0;
     while (data.size() - pos >= 2) {
@@ -77,21 +87,25 @@ void fuzz_mold(std::span<const std::uint8_t> data) {
         const std::size_t n = std::min(len, data.size() - pos);
         q.on_packet(data.subspan(pos, n), deliver);
         pos += n;
-        if (q.state() == mold::Sequencer::State::Failed) continue;
+        if (q.state() == mold::Sequencer::State::Failed)
+            continue;
         std::uint64_t cursor = q.next_expected();
         std::uint64_t holes = 0;
         for (const auto& [first, count] : q.missing()) {
             if (count == 0 || first < cursor || (first == cursor && cursor != q.next_expected()))
                 fail("missing() ranges not sorted, disjoint and non-adjacent");
-            if (first + count > q.horizon()) fail("missing() beyond the horizon");
+            if (first + count > q.horizon())
+                fail("missing() beyond the horizon");
             holes += count;
             cursor = first + count;
         }
         if (holes + q.buffered() != q.horizon() - q.next_expected())
             fail("holes + buffered != horizon - next_expected");
     }
-    if (q.stats().delivered != expect - 1) fail("delivered count");
-    if (const auto bad = book.check_invariants()) fail(bad->c_str());
+    if (q.stats().delivered != expect - 1)
+        fail("delivered count");
+    if (const auto bad = book.check_invariants())
+        fail(bad->c_str());
 }
 
 void fuzz_store(std::span<const std::uint8_t> data) {
@@ -104,11 +118,13 @@ void fuzz_store(std::span<const std::uint8_t> data) {
         // Rejected 20-byte requests must have count 0 / 0xFFFF, sequence 0 or a wrap.
         const std::uint16_t count = static_cast<std::uint16_t>((data[18] << 8U) | data[19]);
         std::uint64_t seq = 0;
-        for (int i = 10; i < 18; ++i) seq = (seq << 8U) | data[static_cast<std::size_t>(i)];
+        for (int i = 10; i < 18; ++i)
+            seq = (seq << 8U) | data[static_cast<std::size_t>(i)];
         if (count != 0 && count != mold::kEndOfSession && seq != 0 && seq <= UINT64_MAX - count)
             fail("valid request rejected");
     }
-    if (data.empty()) return;
+    if (data.empty())
+        return;
     // Cut the payload into messages: each byte b starts a message of (b % 23) bytes.
     const std::size_t mtu = 64 + data[0] * 4U;
     mold::PacketStore store(mold::make_session("FUZZ"), mtu);
@@ -121,19 +137,22 @@ void fuzz_store(std::span<const std::uint8_t> data) {
         pos += std::max<std::size_t>(n, 1);
     }
     store.finish();
-    if (store.end_sequence() != msgs.size() + 1) fail("store end sequence");
+    if (store.end_sequence() != msgs.size() + 1)
+        fail("store end sequence");
     std::uint64_t next = 1;
     for (std::size_t i = 0; i < store.size(); ++i) {
         mold::ParsedPacket p;
         if (mold::parse(store.packet(i), p) || p.header.sequence != next ||
             p.messages.size() != store.count(i) || store.first(i) != next)
             fail("store packet does not parse back");
-        if (store.count(i) > 1 && store.packet(i).size() > mtu) fail("packet over the MTU");
+        if (store.count(i) > 1 && store.packet(i).size() > mtu)
+            fail("packet over the MTU");
         for (std::size_t k = 0; k < p.messages.size(); ++k) {
             const auto& want = msgs[static_cast<std::size_t>(next - 1 + k)];
             if (!std::equal(p.messages[k].begin(), p.messages[k].end(), want.begin(), want.end()))
                 fail("store changed a message");
-            if (store.find(next + k) != i) fail("find() disagrees with the packet range");
+            if (store.find(next + k) != i)
+                fail("find() disagrees with the packet range");
         }
         next += store.count(i);
     }
@@ -142,12 +161,19 @@ void fuzz_store(std::span<const std::uint8_t> data) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
-    if (size == 0) return 0;
+    if (size == 0)
+        return 0;
     const std::span<const std::uint8_t> payload(data + 1, size - 1);
     switch (data[0] % 3) {
-        case 0: fuzz_replay(payload); break;
-        case 1: fuzz_mold(payload); break;
-        default: fuzz_store(payload); break;
+        case 0:
+            fuzz_replay(payload);
+            break;
+        case 1:
+            fuzz_mold(payload);
+            break;
+        default:
+            fuzz_store(payload);
+            break;
     }
     return 0;
 }

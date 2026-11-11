@@ -171,10 +171,10 @@ int client_submit(const Args& args) {
         codec::KeyIssue issue = codec::KeyIssue::None;
         Json msg = codec::parse_json(line, issue);
         if (msg.is_discarded() || !msg.is_object() || issue != codec::KeyIssue::None) {
-            const std::string why = issue == codec::KeyIssue::None
-                                        ? std::string("malformed input line")
-                                        : std::string(codec::key_issue_message(issue)) +
-                                              " in input line";
+            const std::string why =
+                issue == codec::KeyIssue::None
+                    ? std::string("malformed input line")
+                    : std::string(codec::key_issue_message(issue)) + " in input line";
             std::cout << Json{{"type", "client_error"}, {"message", why}}.dump() << std::endl;
             ++failures;
             continue;
@@ -204,7 +204,7 @@ int client_submit(const Args& args) {
 
 int client_subscribe(const Args& args) {
     const std::string host = args.get_or("host", "127.0.0.1");
-    const std::uint64_t count = args.get_u64("count", 0);  // 0 = until EOF/duration
+    const std::uint64_t count = args.get_u64("count", 0);                // 0 = until EOF/duration
     const auto duration = args.get_ms("duration-ms", 0, 0, 86'400'000);  // 0 = no limit
     const auto slow = args.get_ms("slow-ms", 0, 0, 3'600'000);
     const bool quiet = args.flag("quiet");
@@ -340,8 +340,8 @@ int cmd_client(const std::vector<std::string>& argv) {
         return client_snapshot(Args(rest, {"host", "port", "symbol", "depth"}, {}));
     }
     if (sub == "mirror") {
-        return client_mirror(Args(
-            rest, {"host", "port", "duration-ms", "verify-ms", "max-resubscribes"}, {}));
+        return client_mirror(
+            Args(rest, {"host", "port", "duration-ms", "verify-ms", "max-resubscribes"}, {}));
     }
     throw UsageError("unknown client subcommand: " + sub);
 }

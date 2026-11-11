@@ -23,9 +23,9 @@ std::vector<std::uint8_t> msg(std::uint8_t tag, std::size_t n = 3) {
 
 TEST(MoldParse, GoldenPacketBytes) {
     // Session "SESSION001", sequence 0x0102030405060708, 2 blocks: [AA BB] and [CC].
-    const std::vector<std::uint8_t> bytes = {
-        'S', 'E', 'S', 'S', 'I', 'O', 'N', '0', '0', '1', 0x01, 0x02, 0x03, 0x04,
-        0x05, 0x06, 0x07, 0x08, 0x00, 0x02, 0x00, 0x02, 0xAA, 0xBB, 0x00, 0x01, 0xCC};
+    const std::vector<std::uint8_t> bytes = {'S',  'E',  'S',  'S',  'I',  'O',  'N',  '0',  '0',
+                                             '1',  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                             0x00, 0x02, 0x00, 0x02, 0xAA, 0xBB, 0x00, 0x01, 0xCC};
     ParsedPacket p;
     ASSERT_FALSE(parse(bytes, p));
     EXPECT_EQ(std::string(p.header.session.data(), 10), "SESSION001");
@@ -35,9 +35,9 @@ TEST(MoldParse, GoldenPacketBytes) {
     EXPECT_EQ(std::vector<std::uint8_t>(p.messages[0].begin(), p.messages[0].end()),
               (std::vector<std::uint8_t>{0xAA, 0xBB}));
     EXPECT_EQ(p.messages[1].size(), 1U);
-    EXPECT_EQ(build_packet(make_session("SESSION001"), 0x0102030405060708ULL,
-                           {{0xAA, 0xBB}, {0xCC}}),
-              bytes);
+    EXPECT_EQ(
+        build_packet(make_session("SESSION001"), 0x0102030405060708ULL, {{0xAA, 0xBB}, {0xCC}}),
+        bytes);
 }
 
 TEST(MoldParse, ControlPackets) {
@@ -80,14 +80,16 @@ TEST(MoldParse, RandomBytesNeverCrash) {
     ParsedPacket p;
     for (int i = 0; i < 100'000; ++i) {
         std::vector<std::uint8_t> b(rng.below(64));
-        for (auto& x : b) x = static_cast<std::uint8_t>(rng.next());
+        for (auto& x : b)
+            x = static_cast<std::uint8_t>(rng.next());
         if (b.size() >= kHeaderSize && rng.chance(50)) {
             b[18] = 0;
             b[19] = static_cast<std::uint8_t>(rng.below(4));  // plausible small counts
         }
         if (!parse(b, p)) {
             std::size_t total = kHeaderSize;
-            for (const auto& m : p.messages) total += 2 + m.size();
+            for (const auto& m : p.messages)
+                total += 2 + m.size();
             ASSERT_EQ(total, b.size());
         }
     }
@@ -211,7 +213,8 @@ TEST(MoldSequencer, DuplicatesOfBufferedMessagesUseNoCapacity) {
     o.max_buffered_bytes = 8;
     Sequencer q(o);
     Sink out;
-    for (int i = 0; i < 5; ++i) q.on_packet(build_packet(kS, 2, {msg(2)}), out);  // 1 is missing
+    for (int i = 0; i < 5; ++i)
+        q.on_packet(build_packet(kS, 2, {msg(2)}), out);  // 1 is missing
     EXPECT_EQ(q.state(), Sequencer::State::Gap);
     EXPECT_EQ(q.buffered(), 1U);
     EXPECT_EQ(q.stats().duplicates, 4U);
@@ -265,7 +268,7 @@ TEST(MoldSequencer, PacketCopiesCountAgainstTheByteBound) {
     }
     EXPECT_EQ(q.state(), Sequencer::State::Failed);
     EXPECT_EQ(q.fail_reason(), Sequencer::FailReason::BufferedBytes);
-    EXPECT_LE(sent, 100U);  // ≈ 1 MiB / 12 KB packets, not thousands
+    EXPECT_LE(sent, 100U);                              // ≈ 1 MiB / 12 KB packets, not thousands
     EXPECT_LT(q.stats().buffered_bytes_peak, 20'000U);  // the payload alone stayed small
     EXPECT_TRUE(out.seqs.empty());
 }
@@ -314,7 +317,7 @@ TEST(MoldSequencer, ForeignSessionAndMalformedPacketsAreIgnored) {
 // ---- end to end: ITCH over a lossy, reordering, duplicating channel --------------------------
 
 struct Packetized {
-    std::vector<std::vector<std::uint8_t>> packets;  // in send order
+    std::vector<std::vector<std::uint8_t>> packets;            // in send order
     std::vector<std::pair<std::uint64_t, std::size_t>> index;  // first seq, packet number
 };
 
@@ -329,7 +332,8 @@ Packetized packetize(const std::vector<Message>& stream, std::size_t mtu, Rng& r
         std::size_t bytes = kHeaderSize;
         while (i < stream.size() && batch.size() < want) {
             auto e = encode(stream[i]);
-            if (!batch.empty() && bytes + 2 + e.size() > mtu) break;
+            if (!batch.empty() && bytes + 2 + e.size() > mtu)
+                break;
             bytes += 2 + e.size();
             batch.push_back(std::move(e));
             ++i;
@@ -344,7 +348,8 @@ Packetized packetize(const std::vector<Message>& stream, std::size_t mtu, Rng& r
 
 std::string direct_hash(const std::vector<Message>& stream, std::size_t prefix) {
     BookBuilder b;
-    for (std::size_t i = 0; i < prefix; ++i) (void)b.apply(stream[i]);
+    for (std::size_t i = 0; i < prefix; ++i)
+        (void)b.apply(stream[i]);
     return b.state_hash();
 }
 
@@ -360,9 +365,11 @@ TEST(MoldEndToEnd, LossyChannelWithReRequestsRebuildsTheExactBook) {
         // Channel: 3 % loss, 5 % duplication, reordering within a window of 8 packets.
         std::vector<std::vector<std::uint8_t>> wire;
         for (const auto& p : pk.packets) {
-            if (rng.chance(3)) continue;
+            if (rng.chance(3))
+                continue;
             wire.push_back(p);
-            if (rng.chance(5)) wire.push_back(p);
+            if (rng.chance(5))
+                wire.push_back(p);
         }
         for (std::size_t i = 0; i + 1 < wire.size(); ++i) {
             const std::size_t j = i + rng.below(std::min<std::size_t>(8, wire.size() - i));
@@ -392,7 +399,8 @@ TEST(MoldEndToEnd, LossyChannelWithReRequestsRebuildsTheExactBook) {
         };
         for (std::size_t i = 0; i < wire.size(); ++i) {
             q.on_packet(wire[i], deliver);
-            if (i % 50 == 0) rerequest();
+            if (i % 50 == 0)
+                rerequest();
         }
         for (int round = 0; round < 20 && q.state() == Sequencer::State::Gap; ++round) {
             rerequest();
@@ -421,7 +429,8 @@ std::vector<std::uint8_t> payload_of(std::uint64_t seq) {
 
 std::vector<std::uint8_t> range_packet(std::uint64_t first, std::uint64_t count) {
     std::vector<std::vector<std::uint8_t>> msgs;
-    for (std::uint64_t s = first; s < first + count; ++s) msgs.push_back(payload_of(s));
+    for (std::uint64_t s = first; s < first + count; ++s)
+        msgs.push_back(payload_of(s));
     return build_packet(kS, first, msgs);
 }
 
@@ -448,7 +457,8 @@ struct SequencerModel {
         settle();
     }
     void settle() {
-        while (received.contains(next)) ++next;
+        while (received.contains(next))
+            ++next;
         const bool now_gap = next < horizon;
         gaps_opened += (now_gap && !gap) ? 1 : 0;
         gaps_closed += (!now_gap && gap) ? 1 : 0;
@@ -462,7 +472,8 @@ struct SequencerModel {
                 continue;
             }
             const std::uint64_t start = s;
-            while (s < horizon && !received.contains(s)) ++s;
+            while (s < horizon && !received.contains(s))
+                ++s;
             out.emplace_back(start, s - start);
         }
         return out;
@@ -487,7 +498,8 @@ TEST(MoldSequencer, MatchesASetModelUnderRandomTraffic) {
             q.on_packet(pkt, [&](std::uint64_t s, std::span<const std::uint8_t> msg) {
                 seqs.push_back(s);
                 const auto want = payload_of(s);
-                payload_ok = payload_ok && std::equal(msg.begin(), msg.end(), want.begin(), want.end());
+                payload_ok =
+                    payload_ok && std::equal(msg.begin(), msg.end(), want.begin(), want.end());
             });
         };
         auto check = [&](int step) {
@@ -528,10 +540,12 @@ TEST(MoldSequencer, MatchesASetModelUnderRandomTraffic) {
                 check(step);
                 continue;
             }
-            if (send.second == 0) continue;
+            if (send.second == 0)
+                continue;
             const auto fate = rng.below(100);
-            if (fate < 10) continue;  // lost
-            if (fate < 25) {          // delayed by up to 6 steps (reordering)
+            if (fate < 10)
+                continue;     // lost
+            if (fate < 25) {  // delayed by up to 6 steps (reordering)
                 delayed.push_back({step + static_cast<int>(1 + rng.below(6)), send});
             } else {
                 feed(range_packet(send.first, send.second));
@@ -562,7 +576,8 @@ TEST(MoldSequencer, MatchesASetModelUnderRandomTraffic) {
         EXPECT_EQ(q.state(), Sequencer::State::Running);
         EXPECT_EQ(q.next_expected(), m.horizon);
         EXPECT_TRUE(payload_ok) << "seed " << seed;
-        for (std::size_t i = 0; i < seqs.size(); ++i) ASSERT_EQ(seqs[i], i + 1);
+        for (std::size_t i = 0; i < seqs.size(); ++i)
+            ASSERT_EQ(seqs[i], i + 1);
         gaps += m.gaps_opened;
         dups += m.duplicates;
     }
@@ -571,10 +586,11 @@ TEST(MoldSequencer, MatchesASetModelUnderRandomTraffic) {
     EXPECT_GT(dups, 1000U);
     EXPECT_GT(multi_hole, 1000U);
     EXPECT_GT(peak_buffered, 20U);
-    std::printf("sequencer model: %llu gaps, %llu duplicates, %llu multi-hole states, peak buffered %llu\n",
-                static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(dups),
-                static_cast<unsigned long long>(multi_hole),
-                static_cast<unsigned long long>(peak_buffered));
+    std::printf(
+        "sequencer model: %llu gaps, %llu duplicates, %llu multi-hole states, peak buffered %llu\n",
+        static_cast<unsigned long long>(gaps), static_cast<unsigned long long>(dups),
+        static_cast<unsigned long long>(multi_hole),
+        static_cast<unsigned long long>(peak_buffered));
 }
 
 TEST(MoldEndToEnd, WithoutRecoveryTheBookStopsAtTheHoleNeverSkips) {
@@ -589,7 +605,8 @@ TEST(MoldEndToEnd, WithoutRecoveryTheBookStopsAtTheHoleNeverSkips) {
     Sequencer q;
     BookBuilder book;
     for (std::size_t i = 0; i < pk.packets.size(); ++i) {
-        if (i == lost) continue;
+        if (i == lost)
+            continue;
         q.on_packet(pk.packets[i], [&](std::uint64_t, std::span<const std::uint8_t> m) {
             (void)book.apply(std::get<Message>(decode(m)));
         });

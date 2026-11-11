@@ -92,9 +92,9 @@ struct BookStats {
     std::uint64_t applied = 0;
     std::uint64_t rejected = 0;
     std::uint64_t adds = 0;
-    std::uint64_t executions = 0;          // E + C applied
-    std::uint64_t executed_shares = 0;     // E + C applied (printable or not)
-    std::uint64_t printable_executed_shares = 0;  // E + printable C
+    std::uint64_t executions = 0;                  // E + C applied
+    std::uint64_t executed_shares = 0;             // E + C applied (printable or not)
+    std::uint64_t printable_executed_shares = 0;   // E + printable C
     std::uint64_t non_displayed_trade_shares = 0;  // P
     std::uint64_t cross_shares = 0;                // Q
     std::uint64_t broken_trades = 0;               // B
@@ -104,7 +104,7 @@ struct BookStats {
     std::uint64_t replaces = 0;
     std::uint64_t levels_created = 0;  // adds/replaces that opened a new price level
     std::uint64_t levels_removed = 0;
-    std::uint64_t index_pages = 0;       // paged index only: pages currently allocated
+    std::uint64_t index_pages = 0;  // paged index only: pages currently allocated
     std::uint64_t peak_index_pages = 0;
     std::uint64_t live_orders = 0;
     std::uint64_t peak_live_orders = 0;
@@ -119,13 +119,14 @@ struct BookStats {
 // freed-but-retained heap pages are not included, so the total is a lower bound on what the
 // book costs in RSS.
 struct MemoryUsage {
-    std::uint64_t node_pool = 0;     // order nodes: allocated chunks x nodes per chunk x node size
-    std::uint64_t free_slots = 0;    // recycled node slots
-    std::uint64_t index_pages = 0;   // paged direct index: pages x page size
+    std::uint64_t node_pool = 0;    // order nodes: allocated chunks x nodes per chunk x node size
+    std::uint64_t free_slots = 0;   // recycled node slots
+    std::uint64_t index_pages = 0;  // paged direct index: pages x page size
     std::uint64_t index_directory = 0;
-    std::uint64_t index_fallback = 0;  // hash index (the fallback, or the whole index in A/B builds)
-    std::uint64_t levels = 0;        // Level objects ever created (pooled, reused, never freed)
-    std::uint64_t level_vectors = 0;   // the sorted vectors of every book side (capacity)
+    std::uint64_t index_fallback =
+        0;                            // hash index (the fallback, or the whole index in A/B builds)
+    std::uint64_t levels = 0;         // Level objects ever created (pooled, reused, never freed)
+    std::uint64_t level_vectors = 0;  // the sorted vectors of every book side (capacity)
     std::uint64_t level_maps_est = 0;  // deep-tier std::map nodes, estimated at 48 bytes each
     std::uint64_t books = 0;           // per-locate book pointers, Book objects, directory
     [[nodiscard]] std::uint64_t total() const noexcept {

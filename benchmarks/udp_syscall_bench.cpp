@@ -48,8 +48,9 @@ int main(int argc, char** argv) {
                            std::strcmp(argv[i], "--trials") == 0 ||
                            std::strcmp(argv[i], "--bytes") == 0;
         if (!known || i + 1 >= argc) {
-            std::fprintf(stderr, "usage: enginex_udp_syscall_bench [--datagrams N] [--trials T] "
-                                 "[--bytes B]\n");
+            std::fprintf(stderr,
+                         "usage: enginex_udp_syscall_bench [--datagrams N] [--trials T] "
+                         "[--bytes B]\n");
             return 2;
         }
         const bool is_bytes = std::strcmp(argv[i], "--bytes") == 0;
@@ -89,7 +90,8 @@ int main(int argc, char** argv) {
             const ssize_t r = with_addr ? ::recvfrom(rx, buf.data(), buf.size(), MSG_DONTWAIT,
                                                      reinterpret_cast<sockaddr*>(&from), &fl)
                                         : ::recv(rx, buf.data(), buf.size(), MSG_DONTWAIT);
-            if (r <= 0) break;
+            if (r <= 0)
+                break;
             ++got;
         }
         return got;
@@ -109,7 +111,9 @@ int main(int argc, char** argv) {
         auto t0 = Clock::now();
         for (int i = 0; i < n; ++i) {
             failed += ::sendto(s, payload.data(), payload.size(), 0,
-                               reinterpret_cast<sockaddr*>(&a), sizeof a) < 0 ? 1 : 0;
+                               reinterpret_cast<sockaddr*>(&a), sizeof a) < 0
+                          ? 1
+                          : 0;
         }
         auto t1 = Clock::now();
         const int g1 = drain(false);
@@ -127,7 +131,8 @@ int main(int argc, char** argv) {
         auto t5 = Clock::now();
         ::close(s);
         if (failed != 0) {
-            std::fprintf(stderr, "enginex_udp_syscall_bench: %d sends failed in trial %d; no result\n",
+            std::fprintf(stderr,
+                         "enginex_udp_syscall_bench: %d sends failed in trial %d; no result\n",
                          failed, t + 1);
             return 1;
         }

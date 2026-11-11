@@ -27,13 +27,15 @@ Json read_json(const std::string& name) {
 
 Json levels_json(const std::vector<LevelView>& levels) {
     Json j = Json::array();
-    for (const auto& l : levels) j.push_back(Json::array({l.price, l.shares, l.orders}));
+    for (const auto& l : levels)
+        j.push_back(Json::array({l.price, l.shares, l.orders}));
     return j;
 }
 
 Json orders_json(const std::vector<OrderView>& orders) {
     Json j = Json::array();
-    for (const auto& o : orders) j.push_back(Json::array({o.ref, o.shares}));
+    for (const auto& o : orders)
+        j.push_back(Json::array({o.ref, o.shares}));
     return j;
 }
 

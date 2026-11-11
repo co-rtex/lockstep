@@ -80,7 +80,8 @@ TEST(OrderIndex, ExtremeKeysAndMixedHomeChains) {
     std::vector<std::uint64_t> keys;
     for (std::uint64_t k = 1; keys.size() < 6; ++k) {
         const auto home = probe.home_bucket(k);
-        if (home == 14 || home == 15) keys.push_back(k);
+        if (home == 14 || home == 15)
+            keys.push_back(k);
     }
     for (std::size_t victim = 0; victim < keys.size(); ++victim) {
         OrderIndex t(16, fixed);
@@ -159,11 +160,18 @@ TEST(PagedIndex, MatchesUnorderedMapIncludingFallbackAndPageFreeing) {
         for (int i = 0; i < 200'000; ++i) {
             std::uint64_t k = 0;
             switch (rng.below(10)) {
-                case 0: k = rng.next(); break;                          // anywhere, often huge
-                case 1: k = rng.below(1 << 20); break;                  // old, scattered
-                default: k = next + rng.below(64); next += rng.below(3);  // dense, increasing
+                case 0:
+                    k = rng.next();
+                    break;  // anywhere, often huge
+                case 1:
+                    k = rng.below(1 << 20);
+                    break;  // old, scattered
+                default:
+                    k = next + rng.below(64);
+                    next += rng.below(3);  // dense, increasing
             }
-            if (!keys.empty() && rng.chance(40)) k = keys[rng.below(keys.size())];
+            if (!keys.empty() && rng.chance(40))
+                k = keys[rng.below(keys.size())];
             keys.push_back(k);
             if (rng.chance(55)) {
                 const auto v = static_cast<std::uint32_t>(rng.below(1'000'000));
@@ -211,9 +219,9 @@ TEST(PagedIndex, KeyInFallbackStaysFindableWhenItsPageAppearsAndGoes) {
     EXPECT_TRUE(idx.erase(10));        // page 0 freed (kept as spare)
     EXPECT_TRUE(idx.insert(5001, 3));  // page 1 now created, from the spare
     EXPECT_EQ(idx.pages(), 1U);
-    EXPECT_EQ(idx.find(5000), 2U);     // still found in the fallback behind an existing page
+    EXPECT_EQ(idx.find(5000), 2U);  // still found in the fallback behind an existing page
     EXPECT_EQ(idx.find(5001), 3U);
-    EXPECT_FALSE(idx.insert(5000, 9)); // no duplicate across page and fallback
+    EXPECT_FALSE(idx.insert(5000, 9));  // no duplicate across page and fallback
     EXPECT_TRUE(idx.erase(5000));
     EXPECT_EQ(idx.find(5000), PagedIndex::kEmpty);
     EXPECT_EQ(idx.fallback_size(), 0U);
@@ -254,9 +262,9 @@ TEST(OrderIndex, TheKeyDecidesPlacementAndEachIndexDrawsItsOwn) {
         return h;
     };
     const OrderIndex a(1024, SipKey{1, 2});
-    EXPECT_EQ(homes(a), homes(OrderIndex(1024, SipKey{1, 2})));    // deterministic per key
-    EXPECT_NE(homes(a), homes(OrderIndex(1024, SipKey{1, 3})));    // a different key moves them
-    EXPECT_NE(homes(OrderIndex{}), homes(OrderIndex{}));          // 1024^-64 chance to be equal
+    EXPECT_EQ(homes(a), homes(OrderIndex(1024, SipKey{1, 2})));  // deterministic per key
+    EXPECT_NE(homes(a), homes(OrderIndex(1024, SipKey{1, 3})));  // a different key moves them
+    EXPECT_NE(homes(OrderIndex{}), homes(OrderIndex{}));         // 1024^-64 chance to be equal
     EXPECT_NE(OrderIndex::random_key().k0, OrderIndex::random_key().k0);  // 2^-64 chance
 }
 

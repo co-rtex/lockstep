@@ -362,8 +362,9 @@ private:
                     if (auto* err = std::get_if<codec::ParseError>(&parsed)) {
                         submit(s, ReplyOnly{make_frame(error_message(*err))});
                     } else {
-                        std::visit([&](auto&& m) { submit(s, Message{std::forward<decltype(m)>(m)}); },
-                                   std::get<ClientMessage>(std::move(parsed)));
+                        std::visit(
+                            [&](auto&& m) { submit(s, Message{std::forward<decltype(m)>(m)}); },
+                            std::get<ClientMessage>(std::move(parsed)));
                     }
                 }
                 if (fatal) {

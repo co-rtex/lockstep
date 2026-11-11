@@ -37,13 +37,13 @@ struct SimulationReport {
     std::uint64_t gaps_opened = 0;
     std::uint64_t gaps_closed = 0;
     std::uint64_t buffered_peak = 0;
-    bool in_order = true;          // every delivery was next_expected, exactly once
-    std::string final_state;       // running | gap | ended | failed
-    std::string failure;           // when failed: which bound (Sequencer::FailReason)
+    bool in_order = true;     // every delivery was next_expected, exactly once
+    std::string final_state;  // running | gap | ended | failed
+    std::string failure;      // when failed: which bound (Sequencer::FailReason)
     std::uint64_t next_expected = 0;
-    std::string book_hash;         // book built from delivered messages
-    std::string reference_hash;    // book built from the first next_expected-1 messages directly
-    std::string full_hash;         // book built from every message directly
+    std::string book_hash;       // book built from delivered messages
+    std::string reference_hash;  // book built from the first next_expected-1 messages directly
+    std::string full_hash;       // book built from every message directly
 };
 
 [[nodiscard]] SimulationReport simulate(const std::vector<Message>& stream,

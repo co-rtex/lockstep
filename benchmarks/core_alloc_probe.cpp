@@ -30,11 +30,21 @@ void* operator new(std::size_t n) {
     }
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+void* operator new[](std::size_t n) {
+    return ::operator new(n);
+}
+void operator delete(void* p) noexcept {
+    std::free(p);
+}
+void operator delete[](void* p) noexcept {
+    std::free(p);
+}
+void operator delete(void* p, std::size_t) noexcept {
+    std::free(p);
+}
+void operator delete[](void* p, std::size_t) noexcept {
+    std::free(p);
+}
 
 int run_probe(std::size_t orders);
 
@@ -44,7 +54,8 @@ int main(int argc, char** argv) {
     constexpr std::size_t kMaxOrders = 20'000'000;
     std::size_t orders = 100'000;
     if (argc > 2) {
-        std::fprintf(stderr, "usage: enginex_core_alloc_probe [COMMANDS]   (1..20000000, default 100000)\n");
+        std::fprintf(
+            stderr, "usage: enginex_core_alloc_probe [COMMANDS]   (1..20000000, default 100000)\n");
         return 2;
     }
     if (argc == 2) {
@@ -52,7 +63,8 @@ int main(int argc, char** argv) {
         const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), orders);
         if (ec != std::errc{} || ptr != text.data() + text.size() || orders == 0 ||
             orders > kMaxOrders) {
-            std::fprintf(stderr, "enginex_core_alloc_probe: COMMANDS must be an integer in [1, 20000000]\n");
+            std::fprintf(
+                stderr, "enginex_core_alloc_probe: COMMANDS must be an integer in [1, 20000000]\n");
             return 2;
         }
     }
@@ -107,8 +119,8 @@ int run_probe(std::size_t orders) {
         };
         std::printf("%-18s %10zu %12.2f %12.1f %12.2f %12.2f %12.2f\n", name.c_str(),
                     w.measured.size(), static_cast<double>(g_allocs - a0) / n,
-                    static_cast<double>(g_bytes - b0) / n, per(a_rest, n_rest),
-                    per(a_fill, n_fill), per(a_cancel, n_cancel));
+                    static_cast<double>(g_bytes - b0) / n, per(a_rest, n_rest), per(a_fill, n_fill),
+                    per(a_cancel, n_cancel));
     }
     return 0;
 }

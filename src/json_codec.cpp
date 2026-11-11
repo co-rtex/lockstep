@@ -176,9 +176,12 @@ Json parse_json(std::string_view text, KeyIssue& issue) {
 
 const char* key_issue_message(KeyIssue issue) noexcept {
     switch (issue) {
-        case KeyIssue::RepeatedKey: return "repeated field";
-        case KeyIssue::TooManyKeys: return "too many fields in one object";
-        case KeyIssue::None: break;
+        case KeyIssue::RepeatedKey:
+            return "repeated field";
+        case KeyIssue::TooManyKeys:
+            return "too many fields in one object";
+        case KeyIssue::None:
+            break;
     }
     return "";
 }

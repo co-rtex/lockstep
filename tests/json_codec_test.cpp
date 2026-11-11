@@ -103,10 +103,11 @@ TEST(JsonCodec, NegativeAndHugeIntegersReachStateValidation) {
 // keeps the last would disagree, e.g. about the idempotency key. The parser used to keep the
 // last value silently and accept the command.
 TEST(JsonCodec, RepeatedKeysAreRejected) {
-    for (const char* text :
-         {R"({"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":1})",
-          R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"price":6,"quantity":1})",
-          R"({"type":"cancel","request_id":"c","order_id":"ord-1","type":"cancel"})"}) {
+    for (
+        const char* text :
+        {R"({"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":1})",
+         R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"price":6,"quantity":1})",
+         R"({"type":"cancel","request_id":"c","order_id":"ord-1","type":"cancel"})"}) {
         EXPECT_EQ(parse_error_code_of(text), ErrorCode::InvalidRequest) << text;
     }
     // The same key in different objects is not a repeat.

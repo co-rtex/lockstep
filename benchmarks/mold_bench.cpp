@@ -74,7 +74,8 @@ int main(int argc, char** argv) {
     std::string out;
     for (int i = 1; i < argc; i += 2) {
         if (i + 1 >= argc) {
-            std::fprintf(stderr, "usage: enginex_mold_bench [--messages N] [--trials T] [--out FILE]\n");
+            std::fprintf(stderr,
+                         "usage: enginex_mold_bench [--messages N] [--trials T] [--out FILE]\n");
             return 2;
         }
         if (std::strcmp(argv[i], "--messages") == 0) {
@@ -88,8 +89,9 @@ int main(int argc, char** argv) {
             return 2;
         }
         if (messages == 0 || trials == 0) {
-            std::fprintf(stderr, "enginex_mold_bench: --messages must be in [1, 100000000] and "
-                                 "--trials in [1, 1000]\n");
+            std::fprintf(stderr,
+                         "enginex_mold_bench: --messages must be in [1, 100000000] and "
+                         "--trials in [1, 1000]\n");
             return 2;
         }
     }
@@ -99,7 +101,8 @@ int main(int argc, char** argv) {
     so.symbols = 8;
     const auto stream = generate(so);
     mold::PacketStore store(mold::make_session("BENCH"), 1400);
-    for (const Message& m : stream) store.append(encode(m));
+    for (const Message& m : stream)
+        store.append(encode(m));
     store.finish();
     namespace bi = enginex::build_info;
     char started[32];
@@ -109,28 +112,39 @@ int main(int argc, char** argv) {
     if (!out.empty()) {
         std::FILE* probe = std::fopen(out.c_str(), "r");
         const bool fresh = probe == nullptr;
-        if (probe != nullptr) std::fclose(probe);
+        if (probe != nullptr)
+            std::fclose(probe);
         csv = std::fopen(out.c_str(), "a");
-        if (csv == nullptr) { std::perror(out.c_str()); return 1; }
+        if (csv == nullptr) {
+            std::perror(out.c_str());
+            return 1;
+        }
         if (fresh) {
-            std::fprintf(csv, "started_utc,git_sha,compiler,build_type,system,measurement,messages,"
-                              "packets,trial,ns_per_msg,delivered,peak_buffered\n");
+            std::fprintf(csv,
+                         "started_utc,git_sha,compiler,build_type,system,measurement,messages,"
+                         "packets,trial,ns_per_msg,delivered,peak_buffered\n");
         }
     }
     std::printf("enginex_mold_bench: git %s, %s %s %s; %zu packets of %llu messages\n", bi::kGitSha,
                 bi::kCompilerId, bi::kCompilerVersion, bi::kBuildType, store.size(),
                 static_cast<unsigned long long>(messages));
-    struct Case { const char* name; std::size_t every; std::size_t delay; };
-    const Case cases[] = {{"in_order", 0, 0}, {"late5pct_by200", 20, 200}, {"late5pct_by2000", 20, 2000}};
+    struct Case {
+        const char* name;
+        std::size_t every;
+        std::size_t delay;
+    };
+    const Case cases[] = {
+        {"in_order", 0, 0}, {"late5pct_by200", 20, 200}, {"late5pct_by2000", 20, 2000}};
     for (const Case& c : cases) {
         std::vector<Result> rs;
-        for (int t = 0; t < trials; ++t) rs.push_back(run(store, c.every, c.delay));
+        for (int t = 0; t < trials; ++t)
+            rs.push_back(run(store, c.every, c.delay));
         std::vector<Result> sorted = rs;
         std::sort(sorted.begin(), sorted.end(),
                   [](const Result& a, const Result& b) { return a.ns_per_msg < b.ns_per_msg; });
         const Result med = sorted[sorted.size() / 2];
-        std::printf("  %-16s median %6.1f ns/msg [min %.1f, max %.1f], peak buffered %llu\n", c.name,
-                    med.ns_per_msg, sorted.front().ns_per_msg, sorted.back().ns_per_msg,
+        std::printf("  %-16s median %6.1f ns/msg [min %.1f, max %.1f], peak buffered %llu\n",
+                    c.name, med.ns_per_msg, sorted.front().ns_per_msg, sorted.back().ns_per_msg,
                     static_cast<unsigned long long>(med.peak_buffered));
         if (csv != nullptr) {
             for (int t = 0; t <= trials; ++t) {
@@ -145,6 +159,7 @@ int main(int argc, char** argv) {
             }
         }
     }
-    if (csv != nullptr) std::fclose(csv);
+    if (csv != nullptr)
+        std::fclose(csv);
     return 0;
 }

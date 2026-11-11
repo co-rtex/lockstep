@@ -34,7 +34,8 @@ public:
     // A duration in milliseconds that must lie in [min_ms, max_ms] (UsageError otherwise), so a
     // huge value can never wrap to a negative std::chrono::milliseconds.
     [[nodiscard]] std::chrono::milliseconds get_ms(const std::string& name, std::uint64_t fallback,
-                                                   std::uint64_t min_ms, std::uint64_t max_ms) const;
+                                                   std::uint64_t min_ms,
+                                                   std::uint64_t max_ms) const;
 
 private:
     std::map<std::string, std::string> values_;

@@ -84,7 +84,7 @@ public:
     [[nodiscard]] std::string canonical() const;
 
 private:
-    using Key = std::pair<char, std::int64_t>;  // ('B'|'S', price)
+    using Key = std::pair<char, std::int64_t>;            // ('B'|'S', price)
     using Level = std::pair<std::int64_t, std::int64_t>;  // quantity, order count
     using Book = std::map<Key, Level>;
 

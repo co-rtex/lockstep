@@ -129,8 +129,8 @@ struct ArenaAllocator {
 #ifdef ENGINEX_ITCH_STD_LEVEL_ALLOC
 using LevelMap = std::map<Price4, Level>;
 #else
-using LevelMap = std::map<Price4, Level, std::less<>,
-                          ArenaAllocator<std::pair<const Price4, Level>>>;
+using LevelMap =
+    std::map<Price4, Level, std::less<>, ArenaAllocator<std::pair<const Price4, Level>>>;
 #endif
 
 class SideLevels {
@@ -244,7 +244,9 @@ public:
     }
     [[nodiscard]] std::size_t size() const noexcept { return v_.size() + deep_.size(); }
     // Memory accounting (MemoryUsage).
-    [[nodiscard]] std::size_t vector_bytes() const noexcept { return v_.capacity() * sizeof(Entry); }
+    [[nodiscard]] std::size_t vector_bytes() const noexcept {
+        return v_.capacity() * sizeof(Entry);
+    }
     [[nodiscard]] std::size_t map_bytes_est() const noexcept {
         return deep_.size() * (kMapNodeHeaderBytes + sizeof(decltype(deep_)::value_type));
     }
@@ -285,7 +287,8 @@ private:
     }
     // The vector emptied: bring back the best half of the deep map (at least one level).
     void refill() {
-        const std::size_t move = std::max<std::size_t>(1, std::min(deep_.size(), storage_->vector_limit / 2));
+        const std::size_t move =
+            std::max<std::size_t>(1, std::min(deep_.size(), storage_->vector_limit / 2));
         auto first = std::prev(deep_.end(), static_cast<std::ptrdiff_t>(move));
         for (auto it = first; it != deep_.end(); ++it) {
             v_.push_back(Entry{it->first, it->second});  // ascending rank: stays sorted
@@ -402,7 +405,9 @@ public:
         return chunks_.size() * std::size_t{kChunk} * sizeof(Node) +
                chunks_.capacity() * sizeof(chunks_[0]);
     }
-    Node& operator[](std::uint32_t i) noexcept { return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)]; }
+    Node& operator[](std::uint32_t i) noexcept {
+        return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)];
+    }
     const Node& operator[](std::uint32_t i) const noexcept {
         return chunks_[i >> kChunkBits].get()[i & (kChunk - 1)];
     }
@@ -557,14 +562,22 @@ const char* const kLevelAllocName = "map_node_arena";
 
 std::string_view to_string(Anomaly a) noexcept {
     switch (a) {
-        case Anomaly::None: return "none";
-        case Anomaly::UnknownOrderRef: return "unknown_order_ref";
-        case Anomaly::DuplicateOrderRef: return "duplicate_order_ref";
-        case Anomaly::OverExecution: return "over_execution";
-        case Anomaly::ZeroShares: return "zero_shares";
-        case Anomaly::LocateMismatch: return "locate_mismatch";
-        case Anomaly::SymbolMismatch: return "symbol_mismatch";
-        case Anomaly::DirectoryConflict: return "directory_conflict";
+        case Anomaly::None:
+            return "none";
+        case Anomaly::UnknownOrderRef:
+            return "unknown_order_ref";
+        case Anomaly::DuplicateOrderRef:
+            return "duplicate_order_ref";
+        case Anomaly::OverExecution:
+            return "over_execution";
+        case Anomaly::ZeroShares:
+            return "zero_shares";
+        case Anomaly::LocateMismatch:
+            return "locate_mismatch";
+        case Anomaly::SymbolMismatch:
+            return "symbol_mismatch";
+        case Anomaly::DirectoryConflict:
+            return "directory_conflict";
     }
     return "unknown";
 }
@@ -622,7 +635,8 @@ ApplyOutcome BookBuilder::apply(const Message& m) {
         return ApplyOutcome{ApplyStatus::Applied, info};
     };
     // Validates a modify message's target: live, same locate.
-    auto target = [&](OrderRef ref, std::uint16_t locate, Anomaly* why) -> std::optional<std::uint32_t> {
+    auto target = [&](OrderRef ref, std::uint16_t locate,
+                      Anomaly* why) -> std::optional<std::uint32_t> {
         const auto slot = im.lookup(ref);
         if (!slot) {
             *why = Anomaly::UnknownOrderRef;
@@ -861,7 +875,10 @@ void index_memory(const I& index, MemoryUsage& m) noexcept {
 
 template <typename S>
 std::uint64_t level_storage_bytes(const S& storage) noexcept {
-    if constexpr (requires { storage.levels.size(); storage.free.capacity(); }) {
+    if constexpr (requires {
+                      storage.levels.size();
+                      storage.free.capacity();
+                  }) {
         return storage.levels.size() * sizeof(Level) + storage.free.capacity() * sizeof(Level*);
     } else {
         return 0;  // the map variant keeps each level inside its map node
@@ -929,24 +946,21 @@ std::string BookBuilder::canonical_state(bool include_orders) const {
             continue;  // directory entry only: no orders seen
         }
         for (const Side side : {Side::Buy, Side::Sell}) {
-            for_each_level(impl_->books[locate]->side(side), side, 0,
-                           [&](Price4 p, const Level& l) {
-                               std::snprintf(buf, sizeof buf, "%c %u %llu %u",
-                                             static_cast<char>(side), p,
-                                             static_cast<unsigned long long>(l.shares), l.count);
-                               out += buf;
-                               if (include_orders) {
-                                   for (std::uint32_t s = l.head; s != kNil;
-                                        s = impl_->pool[s].next) {
-                                       std::snprintf(
-                                           buf, sizeof buf, " %llu:%u",
-                                           static_cast<unsigned long long>(impl_->pool[s].ref),
-                                           impl_->pool[s].shares);
-                                       out += buf;
-                                   }
-                               }
-                               out += '\n';
-                           });
+            for_each_level(
+                impl_->books[locate]->side(side), side, 0, [&](Price4 p, const Level& l) {
+                    std::snprintf(buf, sizeof buf, "%c %u %llu %u", static_cast<char>(side), p,
+                                  static_cast<unsigned long long>(l.shares), l.count);
+                    out += buf;
+                    if (include_orders) {
+                        for (std::uint32_t s = l.head; s != kNil; s = impl_->pool[s].next) {
+                            std::snprintf(buf, sizeof buf, " %llu:%u",
+                                          static_cast<unsigned long long>(impl_->pool[s].ref),
+                                          impl_->pool[s].shares);
+                            out += buf;
+                        }
+                    }
+                    out += '\n';
+                });
         }
     }
     return out;
@@ -966,46 +980,46 @@ std::optional<std::string> BookBuilder::check_invariants() const {
         for (const Side side : {Side::Buy, Side::Sell}) {
             std::optional<std::string> problem;
             std::optional<Price4> previous_price;
-            im.books[locate]->side(side).for_each_best_first(0, [&](Price4 price,
-                                                                    const Level& level) {
-                if (problem) {
-                    return;
-                }
-                // Best-first order must be strictly decreasing for bids, increasing for asks.
-                if (previous_price && (side == Side::Buy ? price >= *previous_price
-                                                         : price <= *previous_price)) {
-                    problem = "levels out of order at price " + std::to_string(price);
-                    return;
-                }
-                previous_price = price;
-                if (level.count == 0) {
-                    problem = "empty level kept at price " + std::to_string(price);
-                    return;
-                }
-                std::uint64_t shares = 0;
-                std::uint32_t count = 0;
-                std::uint32_t prev = kNil;
-                for (std::uint32_t s = level.head; s != kNil; s = im.pool[s].next) {
-                    const Node& n = im.pool[s];
-                    if (n.prev != prev || n.level != &level || n.price != price ||
-                        n.side != side || n.locate != locate || n.shares == 0) {
-                        problem = "corrupt order node for ref " + std::to_string(n.ref);
+            im.books[locate]->side(side).for_each_best_first(
+                0, [&](Price4 price, const Level& level) {
+                    if (problem) {
                         return;
                     }
-                    if (im.index.find(n.ref) != s) {
-                        problem = "index does not point at ref " + std::to_string(n.ref);
+                    // Best-first order must be strictly decreasing for bids, increasing for asks.
+                    if (previous_price &&
+                        (side == Side::Buy ? price >= *previous_price : price <= *previous_price)) {
+                        problem = "levels out of order at price " + std::to_string(price);
                         return;
                     }
-                    shares += n.shares;
-                    ++count;
-                    prev = s;
-                }
-                if (prev != level.tail || shares != level.shares || count != level.count) {
-                    problem = "level totals disagree at price " + std::to_string(price);
-                    return;
-                }
-                linked += count;
-            });
+                    previous_price = price;
+                    if (level.count == 0) {
+                        problem = "empty level kept at price " + std::to_string(price);
+                        return;
+                    }
+                    std::uint64_t shares = 0;
+                    std::uint32_t count = 0;
+                    std::uint32_t prev = kNil;
+                    for (std::uint32_t s = level.head; s != kNil; s = im.pool[s].next) {
+                        const Node& n = im.pool[s];
+                        if (n.prev != prev || n.level != &level || n.price != price ||
+                            n.side != side || n.locate != locate || n.shares == 0) {
+                            problem = "corrupt order node for ref " + std::to_string(n.ref);
+                            return;
+                        }
+                        if (im.index.find(n.ref) != s) {
+                            problem = "index does not point at ref " + std::to_string(n.ref);
+                            return;
+                        }
+                        shares += n.shares;
+                        ++count;
+                        prev = s;
+                    }
+                    if (prev != level.tail || shares != level.shares || count != level.count) {
+                        problem = "level totals disagree at price " + std::to_string(price);
+                        return;
+                    }
+                    linked += count;
+                });
             if (problem) {
                 return problem;
             }

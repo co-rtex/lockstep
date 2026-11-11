@@ -58,7 +58,9 @@ T decode_as(const std::vector<std::uint8_t>& bytes) {
     return std::get<T>(m);
 }
 
-std::string sym(const Symbol& s) { return std::string(trim_alpha(s)); }
+std::string sym(const Symbol& s) {
+    return std::string(trim_alpha(s));
+}
 
 constexpr std::uint64_t kTs = 0x0102030405A6ULL;  // exercises all 6 timestamp bytes
 
@@ -72,10 +74,10 @@ void expect_header(const Header& h, char type, std::uint16_t locate, std::uint16
 TEST(ItchGolden, AddOrderLiteralBytes) {
     // Fully literal message: 'A', locate 1, tracking 2, ts 0x0102030405A6, ref
     // 0x1122334455667788, 'B', 100 shares, "AAPL    ", price 1'500'000 ($150.0000).
-    const std::vector<std::uint8_t> bytes = {
-        0x41, 0x00, 0x01, 0x00, 0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0xA6, 0x11,
-        0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x42, 0x00, 0x00, 0x00, 0x64,
-        0x41, 0x41, 0x50, 0x4C, 0x20, 0x20, 0x20, 0x20, 0x00, 0x16, 0xE3, 0x60};
+    const std::vector<std::uint8_t> bytes = {0x41, 0x00, 0x01, 0x00, 0x02, 0x01, 0x02, 0x03, 0x04,
+                                             0x05, 0xA6, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                                             0x88, 0x42, 0x00, 0x00, 0x00, 0x64, 0x41, 0x41, 0x50,
+                                             0x4C, 0x20, 0x20, 0x20, 0x20, 0x00, 0x16, 0xE3, 0x60};
     ASSERT_EQ(bytes.size(), 36U);
     const auto m = decode_as<AddOrder>(bytes);
     expect_header(m.h, 'A', 1, 2);
@@ -372,7 +374,8 @@ TEST(ItchMalformed, RandomValidOrderMessagesRoundTrip) {
     for (int i = 0; i < 50'000; ++i) {
         const char t = "AFC"[rng.below(3)];
         std::vector<std::uint8_t> bytes(*message_length(t));
-        for (auto& b : bytes) b = static_cast<std::uint8_t>(rng.next());
+        for (auto& b : bytes)
+            b = static_cast<std::uint8_t>(rng.next());
         bytes[0] = static_cast<std::uint8_t>(t);
         if (t == 'C') {
             bytes[31] = rng.chance(50) ? 'Y' : 'N';

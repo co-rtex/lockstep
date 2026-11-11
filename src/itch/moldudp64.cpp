@@ -10,21 +10,30 @@ namespace enginex::itch::mold {
 
 std::string_view to_string(PacketError e) noexcept {
     switch (e) {
-        case PacketError::TooShort: return "too_short";
-        case PacketError::BlockOverrun: return "block_overrun";
-        case PacketError::TrailingBytes: return "trailing_bytes";
-        case PacketError::ControlWithPayload: return "control_with_payload";
-        case PacketError::SequenceOverflow: return "sequence_overflow";
+        case PacketError::TooShort:
+            return "too_short";
+        case PacketError::BlockOverrun:
+            return "block_overrun";
+        case PacketError::TrailingBytes:
+            return "trailing_bytes";
+        case PacketError::ControlWithPayload:
+            return "control_with_payload";
+        case PacketError::SequenceOverflow:
+            return "sequence_overflow";
     }
     return "unknown";
 }
 
 std::string_view to_string(Sequencer::FailReason r) noexcept {
     switch (r) {
-        case Sequencer::FailReason::None: return "";
-        case Sequencer::FailReason::TooFarAhead: return "too_far_ahead";
-        case Sequencer::FailReason::BufferedMessages: return "buffered_messages_bound";
-        case Sequencer::FailReason::BufferedBytes: return "buffered_bytes_bound";
+        case Sequencer::FailReason::None:
+            return "";
+        case Sequencer::FailReason::TooFarAhead:
+            return "too_far_ahead";
+        case Sequencer::FailReason::BufferedMessages:
+            return "buffered_messages_bound";
+        case Sequencer::FailReason::BufferedBytes:
+            return "buffered_bytes_bound";
     }
     return "unknown";
 }
@@ -150,7 +159,9 @@ void PacketStore::append(std::span<const std::uint8_t> message) {
     batch_.emplace_back(message.begin(), message.end());
 }
 
-void PacketStore::finish() { flush(); }
+void PacketStore::finish() {
+    flush();
+}
 
 void PacketStore::flush() {
     if (batch_.empty()) {
@@ -237,8 +248,7 @@ std::uint32_t Sequencer::copy_packet(const ParsedPacket& p) {
             std::vector<std::uint8_t>().swap(old);
         }
     }
-    const std::size_t held =
-        id != kNoChunk ? std::max(span, chunks_[id].bytes.capacity()) : span;
+    const std::size_t held = id != kNoChunk ? std::max(span, chunks_[id].bytes.capacity()) : span;
     if (held > room) {
         return kNoChunk;
     }

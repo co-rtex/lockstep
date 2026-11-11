@@ -15,7 +15,8 @@ const SipKey kKey{0x0706050403020100ULL, 0x0F0E0D0C0B0A0908ULL};
 
 std::string message(std::size_t n) {
     std::string m(n, '\0');
-    for (std::size_t i = 0; i < n; ++i) m[i] = static_cast<char>(i);
+    for (std::size_t i = 0; i < n; ++i)
+        m[i] = static_cast<char>(i);
     return m;
 }
 
@@ -41,9 +42,9 @@ TEST(SipHash, RandomIndexKeysDoNotChangeResults) {
     CommandResult ra;
     CommandResult rb;
     for (int i = 0; i < 2000; ++i) {
-        const Command c = NewLimitOrder{"id-" + std::to_string(i % 1500), "AAPL",
-                                        i % 2 == 0 ? Side::Buy : Side::Sell,
-                                        10000 + (i * 37) % 200, 1 + i % 50};
+        const Command c =
+            NewLimitOrder{"id-" + std::to_string(i % 1500), "AAPL",
+                          i % 2 == 0 ? Side::Buy : Side::Sell, 10000 + (i * 37) % 200, 1 + i % 50};
         a.process(c, ra);
         b.process(c, rb);
         ASSERT_EQ(ra.accepted, rb.accepted);

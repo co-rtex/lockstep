@@ -14,8 +14,11 @@ int main() {
         std::uint16_t symbols;
         std::uint32_t anomalies;
     };
-    const Case cases[] = {{1, 50'000, 1, 0},     {2, 50'000, 8, 0},     {3, 30'000, 500, 0},
-                          {4, 50'000, 8, 20'000}, {5, 20'000, 2, 100'000}};
+    const Case cases[] = {{1, 50'000, 1, 0},
+                          {2, 50'000, 8, 0},
+                          {3, 30'000, 500, 0},
+                          {4, 50'000, 8, 20'000},
+                          {5, 20'000, 2, 100'000}};
     std::printf("layout %s %s\n", kOrderIndexName, kLevelAllocName);
     for (const Case& c : cases) {
         SyntheticOptions o;

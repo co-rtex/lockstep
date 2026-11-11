@@ -39,16 +39,16 @@ struct Endpoint {
 };
 
 struct SenderOptions {
-    Endpoint bind;                      // local socket (also where requests arrive)
-    Endpoint dest;                      // receiver
-    std::uint32_t drop_percent = 0;     // deliberately not sent on the live feed
+    Endpoint bind;                              // local socket (also where requests arrive)
+    Endpoint dest;                              // receiver
+    std::uint32_t drop_percent = 0;             // deliberately not sent on the live feed
     std::uint32_t retransmit_drop_percent = 0;  // deliberately not sent when answering
     std::uint64_t seed = 1;
     std::uint64_t packets_per_second = 100'000;  // live-feed pacing; 0 = unpaced
     std::chrono::milliseconds end_interval{20};  // end-of-session repeat while lingering
     // After the live feed, keep answering requests until none has arrived for this long.
     std::chrono::milliseconds linger{1000};
-    std::uint32_t max_request_messages = 4096;   // cap per request
+    std::uint32_t max_request_messages = 4096;  // cap per request
     // Anti-reflection: answer only requests from the receiver's IP address (`dest.host`), and
     // send at most this many answer packets per second overall (token bucket). A 20-byte
     // request can otherwise trigger ~95 answer packets to a spoofed source.
@@ -57,17 +57,17 @@ struct SenderOptions {
 };
 
 struct SenderReport {
-    std::uint64_t packets = 0;           // live-feed packets in the store
-    std::uint64_t sent = 0;              // live-feed packets actually sent
-    std::uint64_t dropped = 0;           // live-feed packets deliberately not sent
-    std::uint64_t requests = 0;          // valid requests answered
-    std::uint64_t bad_requests = 0;      // malformed, foreign session or out of range
-    std::uint64_t foreign_requests = 0;  // from an address other than the receiver's
+    std::uint64_t packets = 0;               // live-feed packets in the store
+    std::uint64_t sent = 0;                  // live-feed packets actually sent
+    std::uint64_t dropped = 0;               // live-feed packets deliberately not sent
+    std::uint64_t requests = 0;              // valid requests answered
+    std::uint64_t bad_requests = 0;          // malformed, foreign session or out of range
+    std::uint64_t foreign_requests = 0;      // from an address other than the receiver's
     std::uint64_t answers_rate_limited = 0;  // packets not sent: answer budget exhausted
-    std::uint64_t retransmitted = 0;     // packets sent in answers
+    std::uint64_t retransmitted = 0;         // packets sent in answers
     std::uint64_t retransmit_dropped = 0;
     std::uint64_t end_packets = 0;
-    std::uint64_t send_errors = 0;       // sendto failures (e.g. ENOBUFS), treated as loss
+    std::uint64_t send_errors = 0;  // sendto failures (e.g. ENOBUFS), treated as loss
 };
 
 class Sender {
@@ -133,12 +133,12 @@ private:
 
 struct ReceiverOptions {
     Endpoint bind;
-    Endpoint request_to;                          // the sender's address (set its port later)
+    Endpoint request_to;  // the sender's address (set its port later)
     // Feed datagrams are accepted only from this IP (default: request_to.host). This is a
     // filter, not authentication: the transport has none (as MoldUDP64 itself has none).
     std::string feed_from;
     bool accept_any_source = false;
-    bool recovery = true;                         // send re-requests for missing() ranges
+    bool recovery = true;  // send re-requests for missing() ranges
     // At most one request round per interval, each for up to `max_ranges_per_round` holes.
     // Recovery keeps up only if ranges/interval exceeds the rate at which holes open (live
     // loss × packet rate): 512 per 5 ms covers ≈ 100 k holes/s.
@@ -147,16 +147,16 @@ struct ReceiverOptions {
     // A hole already requested is asked again only after this long (its answer may be in
     // flight). Without it every round re-requests every hole and the answers snowball.
     std::chrono::milliseconds retry_after{50};
-    std::uint32_t max_request_messages = 4096;    // count per request
+    std::uint32_t max_request_messages = 4096;  // count per request
     // Stop after this long without a datagram, or, while a gap is open, without accepting a
     // new message (heartbeats and repeated end-of-session packets do not count).
     std::chrono::milliseconds idle_timeout{2000};
-    int receive_buffer_bytes = 4 << 20;           // SO_RCVBUF request (the OS may cap it)
+    int receive_buffer_bytes = 4 << 20;  // SO_RCVBUF request (the OS may cap it)
     Sequencer::Options sequencer;
 };
 
 struct ReceiverReport {
-    std::uint64_t packets = 0;          // datagrams received
+    std::uint64_t packets = 0;  // datagrams received
     std::uint64_t bytes = 0;
     std::uint64_t request_rounds = 0;
     std::uint64_t requests_sent = 0;
@@ -164,13 +164,13 @@ struct ReceiverReport {
     std::uint64_t duplicates = 0;
     std::uint64_t malformed = 0;
     std::uint64_t foreign_session = 0;
-    std::uint64_t foreign_source = 0;   // datagrams from an address other than the feed's
+    std::uint64_t foreign_source = 0;  // datagrams from an address other than the feed's
     std::uint64_t gaps_opened = 0;
     std::uint64_t gaps_closed = 0;
     std::uint64_t buffered_peak = 0;
-    bool in_order = true;               // every delivery was the next sequence, exactly once
-    std::string final_state;            // running | gap | ended | failed
-    std::string failure;                // when failed: which bound (Sequencer::FailReason)
+    bool in_order = true;     // every delivery was the next sequence, exactly once
+    std::string final_state;  // running | gap | ended | failed
+    std::string failure;      // when failed: which bound (Sequencer::FailReason)
     std::uint64_t next_expected = 0;
     bool timed_out = false;
     // Gave up on an open gap: no new message was accepted for `idle_timeout` (timed_out too).
@@ -186,8 +186,9 @@ public:
     void set_request_port(std::uint16_t port) { o_.request_to.port = port; }
     // Receives until the session ends, the sequencer fails, the idle timeout expires or
     // `stop` becomes true. `deliver(sequence, message)` sees every message once, in order.
-    ReceiverReport run(const std::function<void(std::uint64_t, std::span<const std::uint8_t>)>& deliver,
-                       const std::atomic<bool>* stop = nullptr);
+    ReceiverReport run(
+        const std::function<void(std::uint64_t, std::span<const std::uint8_t>)>& deliver,
+        const std::atomic<bool>* stop = nullptr);
 
 private:
     ReceiverOptions o_;

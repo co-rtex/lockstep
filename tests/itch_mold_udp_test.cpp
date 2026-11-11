@@ -119,7 +119,8 @@ Feed make_feed(std::size_t messages) {
 
 std::string prefix_hash(const std::vector<Message>& stream, std::uint64_t n) {
     BookBuilder b;
-    for (std::uint64_t i = 0; i < n; ++i) (void)b.apply(stream[i]);
+    for (std::uint64_t i = 0; i < n; ++i)
+        (void)b.apply(stream[i]);
     return b.state_hash();
 }
 
@@ -137,14 +138,16 @@ Outcome transfer(const Feed& f, udp::SenderOptions so, udp::ReceiverOptions ro,
     so.dest.port = rx.port();
     udp::Sender tx(f.store, so);
     rx.set_request_port(tx.port());
-    if (before) before(tx.port(), rx.port());
+    if (before)
+        before(tx.port(), rx.port());
     Outcome o;
     BookBuilder book;
     std::thread sender([&] { o.sent = tx.run(); });
     std::this_thread::sleep_for(receiver_delay);  // datagrams pile up in the socket buffer
     o.received = rx.run([&](std::uint64_t, std::span<const std::uint8_t> m) {
         const DecodeResult d = decode(m);
-        if (const auto* msg = std::get_if<Message>(&d)) (void)book.apply(*msg);
+        if (const auto* msg = std::get_if<Message>(&d))
+            (void)book.apply(*msg);
     });
     sender.join();
     o.book_hash = book.state_hash();
@@ -215,24 +218,25 @@ TEST(MoldUdp, HostileDatagramsAreCountedAndIgnored) {
     so.drop_percent = 3;
     so.seed = 5;
     so.linger = 300ms;
-    const Outcome o = transfer(f, so, udp::ReceiverOptions{}, [&](std::uint16_t tx, std::uint16_t rx) {
-        net::Socket s(::socket(AF_INET, SOCK_DGRAM, 0));
-        ASSERT_TRUE(s.valid());
-        auto send = [&](std::uint16_t port, const std::vector<std::uint8_t>& bytes) {
-            sockaddr_in a{};
-            a.sin_family = AF_INET;
-            a.sin_port = htons(port);
-            a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-            ASSERT_EQ(::sendto(s.fd(), bytes.data(), bytes.size(), 0,
-                               reinterpret_cast<const sockaddr*>(&a), sizeof a),
-                      static_cast<ssize_t>(bytes.size()));
-        };
-        send(rx, {1, 2, 3});
-        send(rx, build_packet(make_session("INTRUDER"), 1, {encode(f.stream[0])}));
-        send(tx, {9, 9, 9, 9, 9});
-        send(tx, build_request(make_session("INTRUDER"), 1, 5));
-        send(tx, build_request(kSession, 10'000'000, 5));  // out of range
-    });
+    const Outcome o =
+        transfer(f, so, udp::ReceiverOptions{}, [&](std::uint16_t tx, std::uint16_t rx) {
+            net::Socket s(::socket(AF_INET, SOCK_DGRAM, 0));
+            ASSERT_TRUE(s.valid());
+            auto send = [&](std::uint16_t port, const std::vector<std::uint8_t>& bytes) {
+                sockaddr_in a{};
+                a.sin_family = AF_INET;
+                a.sin_port = htons(port);
+                a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                ASSERT_EQ(::sendto(s.fd(), bytes.data(), bytes.size(), 0,
+                                   reinterpret_cast<const sockaddr*>(&a), sizeof a),
+                          static_cast<ssize_t>(bytes.size()));
+            };
+            send(rx, {1, 2, 3});
+            send(rx, build_packet(make_session("INTRUDER"), 1, {encode(f.stream[0])}));
+            send(tx, {9, 9, 9, 9, 9});
+            send(tx, build_request(make_session("INTRUDER"), 1, 5));
+            send(tx, build_request(kSession, 10'000'000, 5));  // out of range
+        });
     EXPECT_GE(o.received.malformed, 1U);
     EXPECT_GE(o.received.foreign_session, 1U);
     EXPECT_GE(o.sent.bad_requests, 3U);
@@ -259,15 +263,15 @@ TEST(MoldUdp, UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook) {
     // state failed): correct behaviour, but not what this test is about.
     ro.sequencer.max_buffered_messages = std::size_t{1} << 20;
     const Outcome o = transfer(f, so, ro, {}, 100ms);
-    std::printf("unpaced burst: %llu packets sent, %llu gaps, %llu requests, %llu retransmitted, "
-                "buffered peak %llu, delivered %llu, state %s\n",
-                static_cast<unsigned long long>(o.sent.sent),
-                static_cast<unsigned long long>(o.received.gaps_opened),
-                static_cast<unsigned long long>(o.received.requests_sent),
-                static_cast<unsigned long long>(o.sent.retransmitted),
-                static_cast<unsigned long long>(o.received.buffered_peak),
-                static_cast<unsigned long long>(o.received.delivered),
-                o.received.final_state.c_str());
+    std::printf(
+        "unpaced burst: %llu packets sent, %llu gaps, %llu requests, %llu retransmitted, "
+        "buffered peak %llu, delivered %llu, state %s\n",
+        static_cast<unsigned long long>(o.sent.sent),
+        static_cast<unsigned long long>(o.received.gaps_opened),
+        static_cast<unsigned long long>(o.received.requests_sent),
+        static_cast<unsigned long long>(o.sent.retransmitted),
+        static_cast<unsigned long long>(o.received.buffered_peak),
+        static_cast<unsigned long long>(o.received.delivered), o.received.final_state.c_str());
     EXPECT_GT(o.received.gaps_opened, 0U);  // the kernel did drop datagrams
     EXPECT_EQ(o.received.final_state, "ended");
     EXPECT_EQ(o.received.delivered, f.stream.size());
@@ -312,19 +316,23 @@ TEST(MoldUdp, AGapThatCanNeverBeFilledEndsTheRunInsteadOfWaitingForever) {
     std::atomic<bool> stop{false};
     std::atomic<bool> done{false};
     std::thread watchdog([&] {
-        for (int i = 0; i < 150 && !done.load(); ++i) std::this_thread::sleep_for(100ms);
+        for (int i = 0; i < 150 && !done.load(); ++i)
+            std::this_thread::sleep_for(100ms);
         stop = true;
     });
     udp::SenderReport sent;
     std::thread sender([&] { sent = tx.run(&stop); });
     const auto t0 = std::chrono::steady_clock::now();
-    const udp::ReceiverReport r = rx.run([](std::uint64_t, std::span<const std::uint8_t>) {}, &stop);
-    const double receiver_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const udp::ReceiverReport r =
+        rx.run([](std::uint64_t, std::span<const std::uint8_t>) {}, &stop);
+    const double receiver_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     sender.join();
     const bool watchdog_fired = stop.load();
     done = true;
     watchdog.join();
-    EXPECT_FALSE(watchdog_fired) << "receiver " << receiver_s << " s: the run did not end by itself";
+    EXPECT_FALSE(watchdog_fired) << "receiver " << receiver_s
+                                 << " s: the run did not end by itself";
     EXPECT_GT(sent.dropped, 0U);
     EXPECT_GT(r.requests_sent, 0U);
     EXPECT_EQ(r.final_state, "gap");
@@ -359,19 +367,23 @@ struct ScriptedPeer {
         }
     }
     // Waits up to `timeout` for one datagram.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> wait(std::chrono::milliseconds timeout) const {
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> wait(
+        std::chrono::milliseconds timeout) const {
         pollfd p{s.fd(), POLLIN, 0};
-        if (::poll(&p, 1, static_cast<int>(timeout.count())) <= 0) return std::nullopt;
+        if (::poll(&p, 1, static_cast<int>(timeout.count())) <= 0)
+            return std::nullopt;
         std::vector<std::uint8_t> buf(2048);
         const ssize_t n = ::recv(s.fd(), buf.data(), buf.size(), MSG_DONTWAIT);
-        if (n < 0) return std::nullopt;
+        if (n < 0)
+            return std::nullopt;
         buf.resize(static_cast<std::size_t>(n));
         return buf;
     }
     [[nodiscard]] std::size_t drain() const {
         std::size_t n = 0;
         std::uint8_t buf[2048];
-        while (::recv(s.fd(), buf, sizeof buf, MSG_DONTWAIT) >= 0) ++n;
+        while (::recv(s.fd(), buf, sizeof buf, MSG_DONTWAIT) >= 0)
+            ++n;
         return n;
     }
 };
@@ -415,7 +427,8 @@ TEST(MoldUdp, AGapRevealedAfterAQuietSpellIsStillRecovered) {
         receiver.join();
         throw;
     }
-    for (int i = 0; i < 50 && !finished.load(); ++i) std::this_thread::sleep_for(100ms);
+    for (int i = 0; i < 50 && !finished.load(); ++i)
+        std::this_thread::sleep_for(100ms);
     stop = true;
     receiver.join();
     EXPECT_TRUE(requested) << "final state " << r.final_state << ", gap_stalled " << r.gap_stalled;
@@ -439,7 +452,8 @@ TEST(MoldUdp, OneRequestIsAnsweredOnlyUpToItsCap) {
     requester.send_to(tx.port(), build_request(kSession, 1, 60'000));  // queued before run()
     const udp::SenderReport r = tx.run();
     std::uint64_t expected = 0;
-    for (std::size_t i = 0; i < f.store.size() && f.store.first(i) < 1 + 10; ++i) ++expected;
+    for (std::size_t i = 0; i < f.store.size() && f.store.first(i) < 1 + 10; ++i)
+        ++expected;
     ASSERT_GE(f.store.size(), 100U * expected);  // the uncapped answer would be far larger
     EXPECT_EQ(r.requests, 1U);
     EXPECT_EQ(r.retransmitted + r.answers_rate_limited, expected);

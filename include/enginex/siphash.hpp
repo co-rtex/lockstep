@@ -39,19 +39,23 @@ struct SipKey {
         v1 ^= v2;
         v2 = std::rotl(v2, 32);
     };
-    auto byte = [&](std::size_t i) { return static_cast<std::uint64_t>(static_cast<unsigned char>(data[i])); };
+    auto byte = [&](std::size_t i) {
+        return static_cast<std::uint64_t>(static_cast<unsigned char>(data[i]));
+    };
     const std::size_t n = data.size();
     const std::size_t whole = n - n % 8;
     for (std::size_t i = 0; i < whole; i += 8) {
         std::uint64_t m = 0;
-        for (std::size_t b = 0; b < 8; ++b) m |= byte(i + b) << (8 * b);  // little-endian
+        for (std::size_t b = 0; b < 8; ++b)
+            m |= byte(i + b) << (8 * b);  // little-endian
         v3 ^= m;
         round();
         round();
         v0 ^= m;
     }
     std::uint64_t last = static_cast<std::uint64_t>(n & 0xFFU) << 56U;
-    for (std::size_t b = 0; b < n % 8; ++b) last |= byte(whole + b) << (8 * b);
+    for (std::size_t b = 0; b < n % 8; ++b)
+        last |= byte(whole + b) << (8 * b);
     v3 ^= last;
     round();
     round();
