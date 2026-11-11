@@ -228,7 +228,9 @@ Commands and results (latest):
   the UBSan binary replayed 2019-03-27 strictly (21 375 302 messages) at level-vector limits
   8192 and 2, with 0 runtime errors and the Release state hash. `mold-sim` on the 2.87 M-message
   real prefix (5 % loss, 3 % duplicates, reorder window 16) ended exact, also with 0 runtime
-  errors.
+  errors. The hardened-libc++ binary at `be2fe5a` did the same checks: 2019-01-30 strict at
+  level limit 2 (21 255 695 messages) with no assertion and the Release state hash, and
+  `mold-sim` with 8 % loss, 4 % duplicates and reorder window 32, which ended exact.
 * Leak checks with macOS `leaks --atExit` (LeakSanitizer cannot run here). The full test
   binary minus the fork-based crash-point tests (their `_exit` children hang under the tool):
   466 tests passed, **0 leaks**. Also 0 leaks for `enginex itch replay` of the real sample
