@@ -23,8 +23,11 @@ trap 'rm -rf -- "$prof"' EXIT
 profdata=$(command -v llvm-profdata || xcrun --find llvm-profdata)
 cov=$(command -v llvm-cov || xcrun --find llvm-cov)
 "$profdata" merge -sparse "$prof"/*.profraw -o "$build/coverage.profdata"
-src="$(cd "$build" && grep -m1 'CMAKE_HOME_DIRECTORY' CMakeCache.txt | cut -d= -f2)"
-"$cov" report "$build/tests/enginex_tests" -object "$build/enginex" \
-    -instr-profile="$build/coverage.profdata" \
-    "$src/src/itch" "$src/include/enginex/itch" "$src/src/mirror.cpp" "$src/src/cli_itch.cpp" \
-    "$src/src/server.cpp"
+# Report from the source root with relative filters. An absolute filter taken from
+# CMakeCache.txt silently matched nothing (and llvm-cov then reported every file) when the
+# build directory had been configured through a differently-cased path on a case-insensitive
+# file system.
+build_abs="$(cd "$build" && pwd)"
+(cd "$root" && "$cov" report "$build_abs/tests/enginex_tests" -object "$build_abs/enginex" \
+    -instr-profile="$build_abs/coverage.profdata" \
+    src/itch include/enginex/itch src/mirror.cpp src/cli_itch.cpp src/server.cpp)
