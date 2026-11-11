@@ -177,6 +177,25 @@ Three adversarial property tests were also added in the sprint:
   messages. The mirror applies an update only when live and contiguous, and is stale after
   every failure verdict. Making it accept forward gaps fails this test.
 
+### One command for the local matrix
+
+`scripts/verify_all.sh [--repeat N] [--real-data] [--mutation] [--format]` runs, in order:
+
+1. the Release suite N times;
+2. the Debug, UBSan and hardened-libc++ suites;
+3. the CLI smoke test, the exchange, ITCH and MoldUDP64 demos;
+4. the hostile-argument sweep, 200 000 fuzz inputs and fault injection;
+5. optionally the real-data check, clang-format, and the mutation harness, which runs last.
+
+Every step runs even after a failure. Exit codes and durations go to `build/verify/summary.md`;
+skipped steps are listed as skipped, and the exit status is non-zero if any step failed.
+
+Its first run (`3aa3d03`) passed 12 of 13 run steps. UBSan failed:
+`MoldUdp.LossyLoopbackRebuildsTheExactBook` ended in `gap`, because the sender's 300 ms linger
+ran out while a starved receiver was still recovering. That is the same load-dependent cause
+as the earlier flake. Fixed in `bf781c8` (2 s linger in both recovery tests); afterwards
+UBSan passed 3 of 3 runs at load averages up to 12.
+
 ## Where suites have run
 
 | Environment | Compiler | Build | Result |

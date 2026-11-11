@@ -117,6 +117,9 @@ cmake --preset release && cmake --build --preset release
 ./build/release/enginex benchmark --seed 42 --orders 100000 --scenario mixed --trials 7 --out benchmarks/results.csv
 
 scripts/check.sh all            # debug+release build/test, CLI smoke tests, format check
+scripts/verify_all.sh           # whole local matrix: repeated Release, Debug, UBSan, hardened,
+                                # demos, hostile-argument sweep, fuzz, fault injection
+                                # (+ --real-data --mutation --format); summary in build/verify/
 scripts/linux_check.sh          # Linux GCC / ASan+UBSan / TSan / release jobs in Docker
 ```
 
