@@ -13,6 +13,7 @@
 // (verifying each is accepted with exactly its logged sequence), handle an incomplete tail
 // according to TailPolicy, then accept new commands.
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -76,7 +77,8 @@ public:
     // batch's pending results and for every request after fail-stop).
     void make_io_error(CommandResult& out) const;
 
-    [[nodiscard]] bool failed() const noexcept { return failed_; }
+    // Safe from any thread (Server::journal_failed() reads it while the sequencer runs).
+    [[nodiscard]] bool failed() const noexcept { return failed_.load(std::memory_order_acquire); }
     [[nodiscard]] const std::string& failure_reason() const noexcept { return failure_; }
     [[nodiscard]] const ExchangeStateMachine& state() const noexcept { return state_; }
     [[nodiscard]] std::size_t staged_records() const noexcept { return staged_count_; }
@@ -96,7 +98,8 @@ private:
     CommandSeq batch_first_ = 0;
     CommandSeq batch_last_ = 0;
     std::uint64_t durable_bytes_ = 0;
-    bool failed_ = false;
+    // Written once by the sequencer thread (after failure_, release); read anywhere (acquire).
+    std::atomic<bool> failed_{false};
     std::string failure_;
 };
 

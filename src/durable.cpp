@@ -137,9 +137,9 @@ std::unique_ptr<DurableExchange> DurableExchange::open(DurableOptions options,
 }
 
 void DurableExchange::enter_fail_stop(std::string reason) {
-    failed_ = true;
     failure_ = std::move(reason);
     batch_.clear();
+    failed_.store(true, std::memory_order_release);
     staged_count_ = 0;
 }
 
@@ -165,7 +165,7 @@ void DurableExchange::make_io_error(CommandResult& out) const {
 }
 
 void DurableExchange::stage(const Command& cmd, CommandResult& out) {
-    if (failed_) {
+    if (failed_.load(std::memory_order_relaxed)) {
         out.reset();
         out.request_id = request_id_of(cmd);
         out.type = type_of(cmd);
@@ -198,7 +198,7 @@ void DurableExchange::stage(const Command& cmd, CommandResult& out) {
 }
 
 ErrorCode DurableExchange::flush() {
-    if (failed_) {
+    if (failed_.load(std::memory_order_relaxed)) {
         return ErrorCode::JournalIoError;
     }
     if (staged_count_ == 0) {
