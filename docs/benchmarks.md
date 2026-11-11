@@ -587,22 +587,25 @@ earlier, and the spread is ±25 %. A quiet machine and the same command would se
 pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-replay-regression-gate-macos-m3.csv),
 [`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
 
-*Current numbers (`8253653`, the code after every sprint change).* Measured with
-`enginex_itch_bench --input DAY --trials 5`, 2026-11-10 21:16–21:18 EST, load average 3.3
-rising to 7.4 during the run. The numbers are ns/msg, as median (best–worst) of the 5 trials;
-latency is from the per-message timing pass, timer included:
+*Current numbers (the code after every sprint change, quiet host).* Measured with
+`enginex_itch_bench --input DAY --trials 5` on 2026-11-11 at 01:17–01:21 EST, load average
+1.7–2.1. The binary is labelled `c19c56d-dirty` (uncommitted harness files at build time);
+its sources are identical to `4fa606a`. The numbers are ns/msg, as median (best–worst) of the
+5 trials; latency is from the per-message timing pass, timer included:
 
 | day | decode | book apply | replay | apply p50 / p99 / p99.9 |
 |---|---:|---:|---:|---:|
-| 2019-01-30 | 12.9 (12.9–12.9) | 48.8 (46.3–65.2) | 75.2 (67.0–93.6) | 42 / 292 / 666 |
-| 2020-01-30 | 13.8 (13.5–14.4) | 65.7 (49.1–70.6) | 62.7 (61.2–62.9) | 42 / 334 / 792 |
-| 2019-03-27 | 13.3 (13.2–13.4) | 47.5 (45.3–75.8) | 60.5 (59.5–78.6) | 42 / 375 / 3 000 |
+| 2019-01-30 | 12.5 (12.5–12.6) | 44.8 (44.5–46.2) | 57.6 (57.3–57.8) | 42 / 291 / 417 |
+| 2020-01-30 | 12.6 (12.6–12.6) | 46.4 (46.0–47.6) | 60.5 (60.1–60.5) | 42 / 292 / 459 |
+| 2019-03-27 | 12.5 (12.5–12.6) | 44.1 (44.0–44.5) | 56.7 (56.3–56.7) | 42 / 291 / 417 |
 
-The state hashes are identical across trials and match the earlier runs. Decoding is
-stable. Apply and replay vary by up to 50 % between trials of one binary because of the
-load. So the medians here are not comparable with the quieter-host rows above. The paired
-gate below is the like-for-like comparison. Raw rows:
-[`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-current-macos-m3.csv).
+The state hashes are identical across trials and match the reference hashes. Every spread is
+under 4 %. Replay is 2.9–4.1 % above the `562c56d` figures (56.0 / 58.1 / 54.8). Those figures
+were measured at another time, not paired, so the paired gate below is the like-for-like
+comparison. Raw rows:
+[`itch-real-current-quiet-macos-m3.csv`](../benchmarks/results/itch-real-current-quiet-macos-m3.csv).
+An earlier run of the same command at `8253653`, at load 3.3–7.4, varied by up to 50 % between
+trials: [`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-current-macos-m3.csv).
 
 **It was settled in a quieter window, and the regression is real.** At load ≈ 3, the same
 20-pair apply gate gave:
