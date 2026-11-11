@@ -12,6 +12,8 @@
 //
 // Not measured here: file I/O, cold page cache (cannot be dropped without root on macOS),
 // network delivery. In-process numbers are not wire-to-wire latencies.
+#include <sys/resource.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -96,7 +98,23 @@ struct Trial {
     std::size_t max_index = 0;  // latency pass: message with the largest sample
     char max_type = 0;
     std::uint64_t max_ns = 0;
+    // Page faults over the whole pass, setup included (getrusage deltas). A process's first
+    // pass faults in fresh memory; later passes mostly reuse what the allocator kept.
+    std::uint64_t minor_faults = 0;
+    std::uint64_t major_faults = 0;
 };
+
+struct Faults {
+    std::uint64_t minor = 0;
+    std::uint64_t major = 0;
+};
+Faults faults_now() {
+    rusage u{};
+    if (getrusage(RUSAGE_SELF, &u) != 0) {
+        return {};
+    }
+    return {static_cast<std::uint64_t>(u.ru_minflt), static_cast<std::uint64_t>(u.ru_majflt)};
+}
 
 struct Workload {
     std::vector<std::uint8_t> file;
@@ -233,7 +251,7 @@ std::string csv_header() {
            "file_bytes,trial,elapsed_ns,msgs_per_s,ns_per_msg,mib_per_s,allocs,alloc_bytes,"
            "lat_mean_ns,lat_p50_ns,lat_p90_ns,lat_p99_ns,lat_p999_ns,lat_max_ns,timer_call_ns,"
            "timer_tick_ns,peak_rss_kib,live_orders,peak_live_orders,state_hash_prefix,order_index,"
-           "reserve,level_alloc,flush_cache_mib,source";
+           "reserve,level_alloc,flush_cache_mib,source,pass_minor_faults,pass_major_faults";
 }
 
 void write_row(std::ostream& out, const std::string& started, const std::string& m,
@@ -243,7 +261,7 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
     const int len = std::snprintf(
         buf, sizeof buf,
         "%s,%s,%s %s,%s,%s,%s,%llu,%zu,%u,%zu,%s,%llu,%.0f,%.2f,%.1f,%llu,%llu,%.1f,%llu,%llu,%llu,"
-        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s,%zu,%s\n",
+        "%llu,%llu,%.1f,%llu,%llu,%llu,%llu,%s,%s,%zu,%s,%zu,%s,%llu,%llu\n",
         started.c_str(), bi::kGitSha, bi::kCompilerId, bi::kCompilerVersion, bi::kBuildType,
         bi::kSystem, m.c_str(), static_cast<unsigned long long>(o.seed), w.count,
         static_cast<unsigned>(o.symbols), w.file.size(), t.trial.c_str(),
@@ -259,7 +277,8 @@ void write_row(std::ostream& out, const std::string& started, const std::string&
         static_cast<unsigned long long>(rss), static_cast<unsigned long long>(t.live_orders),
         static_cast<unsigned long long>(t.peak_live_orders), t.state_hash.substr(0, 16).c_str(),
         enginex::itch::kOrderIndexName, o.reserve, enginex::itch::kLevelAllocName, o.flush_mib,
-        w.source.c_str());
+        w.source.c_str(), static_cast<unsigned long long>(t.minor_faults),
+        static_cast<unsigned long long>(t.major_faults));
     if (len < 0 || static_cast<std::size_t>(len) >= sizeof buf) {
         throw std::runtime_error("CSV row does not fit the buffer");
     }
@@ -394,13 +413,21 @@ int run(const Options& o) {
         if (!o.only.empty() && o.only != m) {
             continue;
         }
+        auto counted_pass = [&] {
+            const Faults f0 = faults_now();
+            Trial t = run_pass(m, w, false, o.reserve);
+            const Faults f1 = faults_now();
+            t.minor_faults = f1.minor - f0.minor;
+            t.major_faults = f1.major - f0.major;
+            return t;
+        };
         flush_caches(o.flush_mib);
-        Trial first = run_pass(m, w, false, o.reserve);
+        Trial first = counted_pass();
         first.trial = "first_pass";
         std::vector<Trial> trials;
         for (std::size_t i = 0; i < o.trials; ++i) {
             flush_caches(o.flush_mib);
-            Trial t = run_pass(m, w, false, o.reserve);
+            Trial t = counted_pass();
             if (o.latency && m == "itch_book_apply") {
                 flush_caches(o.flush_mib);
                 const Trial lat = run_pass(m, w, true, o.reserve);
@@ -437,6 +464,8 @@ int run(const Options& o) {
         med.mib_per_s = col([](const Trial& t) { return t.mib_per_s; });
         med.allocs = colu([](const Trial& t) { return t.allocs; });
         med.alloc_bytes = colu([](const Trial& t) { return t.alloc_bytes; });
+        med.minor_faults = colu([](const Trial& t) { return t.minor_faults; });
+        med.major_faults = colu([](const Trial& t) { return t.major_faults; });
         med.latency.mean_ns = col([](const Trial& t) { return t.latency.mean_ns; });
         med.latency.p50_ns = colu([](const Trial& t) { return t.latency.p50_ns; });
         med.latency.p90_ns = colu([](const Trial& t) { return t.latency.p90_ns; });
@@ -462,6 +491,12 @@ int run(const Options& o) {
                     static_cast<unsigned long long>(med.allocs),
                     static_cast<double>(med.allocs) / static_cast<double>(w.count),
                     static_cast<unsigned long long>(first.allocs));
+        std::printf("  page faults per pass (minor/major, setup included): first pass %llu/%llu, "
+                    "trials median %llu/%llu\n",
+                    static_cast<unsigned long long>(first.minor_faults),
+                    static_cast<unsigned long long>(first.major_faults),
+                    static_cast<unsigned long long>(med.minor_faults),
+                    static_cast<unsigned long long>(med.major_faults));
         if (m == "itch_book_apply" && o.latency) {
             std::printf("  per-message latency (ns, median of trials, includes one now() call): "
                         "mean %.1f p50 %llu p90 %llu p99 %llu p99.9 %llu max %llu\n",

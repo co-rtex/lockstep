@@ -606,6 +606,27 @@ rows:
 An earlier run of the same command at `8253653`, at load 3.3–7.4, varied by up to 50 % between
 trials: [`itch-real-current-macos-m3.csv`](../benchmarks/results/itch-real-current-macos-m3.csv).
 
+**First pass ≈ 1.2× slower: page faults on fresh memory, not the hot path.** In every run, the
+untimed first pass of book apply is about 20 % slower than the trials. It was 48.8 against a
+41.1 ns/msg trial median on 2019-03-27, and 54.8 against 46.3 on 2020-01-30. Heap allocations
+are the same in both. The gap stays when apply runs alone (`--only itch_book_apply`), so it
+is not caused by the decode trials before it. The bench now records `getrusage` page-fault
+deltas per pass, setup included:
+
+| day | first pass: ns/msg, minor faults | trial median: ns/msg, minor faults | major faults |
+|---|---:|---:|---:|
+| 2019-03-27 | 48.8, 91 977 | 41.1, 2 | 0 |
+| 2020-01-30 | 54.8, 101 013 | 46.3, 1 | 0 |
+
+The first book in a process touches fresh pages: about 92–101 k minor faults. Later books
+reuse the memory the allocator kept, with 1–2 faults. On 2019-03-27 the extra
+7.7 ns/msg × 21.4 M messages is about 164 ms, or ≈ 1.8 µs per fault. This is first-touch
+cost. A once-a-day feed handler pays it during the morning ramp, unless it prefaults its
+pools at startup, which moves the cost out of the trading path without removing it. Nothing
+was changed for it. The paired gates compare trial 1, so they exclude it by design. Raw rows
+(bench binary at `3625d9a` plus the new columns):
+[`itch-first-pass-faults-macos-m3.csv`](../benchmarks/results/itch-first-pass-faults-macos-m3.csv).
+
 **It was settled in a quieter window, and the regression is real.** At load ≈ 3, the same
 20-pair apply gate gave:
 * a median ratio of **1.0695** (IQR 1.04–1.13);
