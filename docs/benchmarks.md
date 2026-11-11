@@ -588,7 +588,7 @@ pairs: [`itch-replay-regression-gate-macos-m3.csv`](../benchmarks/results/itch-r
 [`itch-apply-regression-gate-macos-m3.csv`](../benchmarks/results/itch-apply-regression-gate-macos-m3.csv).
 
 *Current numbers (`b50a73f`, the code after every sprint change including D35, quiet host).*
-Measured with `enginex_itch_bench --input DAY --trials 5` on 2026-11-11 at about 02:40 EST,
+Measured with `enginex_itch_bench --input DAY --trials 5` on 2026-11-11 at 02:34–02:35 EST,
 load average 1.9–2.1. The numbers are ns/msg, as median (best–worst) of the 5 trials; latency
 is from the per-message timing pass, timer included:
 

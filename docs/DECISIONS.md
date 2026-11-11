@@ -356,7 +356,7 @@ best half. Any operation is O(limit + log n), amortized. Hostile pattern 25 130 
 change measured as "unchanged within noise" at first. A later 20-pair gate (benchmarks.md) put
 it at ≈ 3 % slower in book apply, with median ratio 1.031, slower in 14 of 20 pairs, p = 0.12:
 not significant alone, but consistent with the ≈ 7 % end-to-end regression found since
-`562c56d`. On a quiet host it measured 1.021 (17 of 20, p = 0.003; D35's bisect). That cost
+`562c56d` at that load (≈ 5 % on a quiet host, D35). On a quiet host it measured 1.021 (17 of 20, p = 0.003; D35's bisect). That cost
 is accepted for the bound. Moving the map behind a pointer did not
 recover it. The bound's own worst case was found and measured later. 8 191 levels with an
 empty map, then alternating add and delete just below the worst level, moves the whole

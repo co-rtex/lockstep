@@ -44,13 +44,13 @@ are loopback measurements on this one machine. None is an exchange wire latency.
 | ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs, at `562c56d`). Later commits made book apply **≈ 5 % slower** (20-pair gates on a quiet host, p < 1e-4). A bisect attributed it to D32's worst-case bound (≈ 2 %, accepted) and to D34's keyed fallback (≈ 2.7 %). That code never runs on real data; its inlined SipHash grew the hot paths. **D35 moved it out of line**: real-data apply/replay ≈ 3 % faster, and net against `562c56d`, no measurable difference (1.012, p = 0.12). Final code (`b50a73f`), quiet host: replay 55.3–57.2, apply 41.7–45.0 ns/msg (apply p99.9 417–459 ns) | `itch-real-sample-macos-m3.csv`, `itch-apply-bisect-quiet-macos-m3.csv`, `itch-cold-fallback-d35-macos-m3.csv`, `itch-real-current-quiet-macos-m3.csv` |
 | Book memory (real data) | ≈ 188–211 bytes per live order for the whole process, at 1.5–1.65 M live orders. The book's own structures account for 115–122 B of it: index pages 52–59 B (≈ 7 % occupied), order nodes 41 B, levels ≈ 20 B | `itch-real-memory-macos-m3.csv`, `itch-real-memory-breakdown-macos-m3.csv` |
 | Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder, and every price level equal to an independent Python book (final books, plus best bid/ask of every book every 100 k messages) | `scripts/real_data_check.sh`, `tools/itch_pydecode.py`, `tools/itch_pybook.py` |
-| Book apply per message, real data | p50 41–42 ns, p99 292–333 ns, p99.9 458–541 ns (3 days, timer included) | `itch-real-latency-macos-m3.csv` |
+| Book apply per message, real data | p50 41–42 ns, p99 291–292 ns, p99.9 417–459 ns at the final code (`b50a73f`, quiet host); earlier, at `dd78a8d` under more load, p99 292–333 ns and p99.9 458–541 ns (3 days, timer included) | `itch-real-current-quiet-macos-m3.csv`, `itch-real-latency-macos-m3.csv` |
 | Structural worst cases on real data | ≈ 10 ms vector-growth copy removed. A ≈ 95 µs chunk value-initialization on the day's first add was cut to ≈ 30–38 µs. Both found by locating the max sample | benchmarks.md, `itch-node-chunk-ab-macos-m3.txt` |
 | Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
 | Exchange core vs history size | idempotency index rebuilt as a keyed flat table: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196, p99 ≈ halved, identical state hashes | `core-request-index-ab-macos-m3.csv` |
 | Durable ack | ≈ 3 ms p50 with `F_FULLFSYNC`; group commit 3.7× throughput with 8 clients | R2/R3 tables |
 | Loopback TCP round trip | ≈ 33 µs p50 (1 client, in-memory) | R3 table |
-| MoldUDP64 over loopback UDP, real data | all 3 sample days exact at 50 k packets/s with 5 % live / 10 % retransmission loss; reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv` |
+| MoldUDP64 over loopback UDP, real data | all 3 sample days exact at 50 k packets/s with 5 % live / 10 % retransmission loss; reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv`; re-run after the gap-stall fixes (`5d0658f`, `b680e75`): `mold-udp-real-days-5d0658f-macos-m3.txt` |
 
 ## Correctness work that found real bugs
 
@@ -71,8 +71,9 @@ are loopback measurements on this one machine. None is an exchange wire latency.
   amplification, a filter on the feed's source address, and a reorder-buffer memory bound
   that counts the capacity actually held.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
-  kills 68/68 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
-  validation, journal, the UDP transport and server (full run at `cc26cb2`). It found seven real
+  killed 68/68 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
+  validation, journal, the UDP transport and server in its last full run (`cc26cb2`). The
+  69th, added since, was killed in an individual run. It found seven real
   test gaps, all now covered, and one real bug: a mutant that hung rather than failed exposed a
   receiver/sender pair that ran forever on a gap that could never be filled (fixed, `c19c56d`). One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
