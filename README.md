@@ -375,7 +375,7 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   See [docs/itch.md § Verification](docs/itch.md#verification).
 * `tools/mutation_check.py` injects 68 hand-chosen bugs one at a time (matching priority,
   validation bounds, journal checks, sequencing, book rules, server fail-stop, UDP reflection
-  limits); the last full run killed 67/67, and the 68th is killed on its own. It found seven
+  limits); the latest full run killed 68/68. It found seven
   real test gaps, all now covered, and one liveness bug in the UDP transport (fixed). See
   [docs/verification.md](docs/verification.md#do-the-tests-catch-bugs).
 * `tools/cli_arg_sweep.py` gives hostile values to every CLI flag (1 302 runs). It and a

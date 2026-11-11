@@ -76,5 +76,5 @@ rationale is in DECISIONS.md D19–D32.
 | S.2 | Read-only feed mirror; MoldUDP64 sequencing, simulation and loopback UDP transport | gap/refusal/resubscribe tests, lossy relays, set-model differential, real days over UDP | done (macOS loopback only) |
 | S.3 | Performance work driven by measurement: ITCH layout, exchange request index (D31), bounded level vector (D32) | interleaved A/B runs with identical state hashes; raw CSVs in `benchmarks/results/` | done |
 | S.4 | Independent checks of the exchange: Python model over simulate, TCP, journal and restart | ctest `exchange_pymodel_*` | done |
-| S.5 | Verification sweep: mutation testing (56/56, then 67/67 at `3ab0ee2`), UBSan, hardened libc++, leaks, coverage, doc commands executed | docs/verification.md | done locally |
+| S.5 | Verification sweep: mutation testing (56/56, then 68/68 at `cc26cb2`), UBSan, hardened libc++, leaks, coverage, doc commands executed | docs/verification.md | done locally |
 | S.6 | GCC, ASan and TSan on the sprint code; clang-format | needs a push to CI (blocked in this environment) | outstanding |

@@ -71,8 +71,8 @@ are loopback measurements on this one machine. None is an exchange wire latency.
   amplification, a filter on the feed's source address, and a reorder-buffer memory bound
   that counts the capacity actually held.
 * **Mutation checks prove the tests can fail.** A scripted harness (`tools/mutation_check.py`)
-  kills 67/67 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
-  validation, journal, the UDP transport and server (full run at `3ab0ee2`). It found seven real
+  kills 68/68 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
+  validation, journal, the UDP transport and server (full run at `cc26cb2`). It found seven real
   test gaps, all now covered, and one real bug: a mutant that hung rather than failed exposed a
   receiver/sender pair that ran forever on a gap that could never be filled (fixed, `c19c56d`). One was a
   duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.

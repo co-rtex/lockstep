@@ -10,7 +10,7 @@ page records why, and the shortest way to get those results.
 
 | Check | Sprint status | Evidence or blocker |
 |---|---|---|
-| Release, Debug, UBSan (`-fno-sanitize-recover`), hardened libc++ | run | 523/523 each (verification.md); Debug and UBSan 3 consecutive runs each |
+| Release, Debug, UBSan (`-fno-sanitize-recover`), hardened libc++ | run | 531/531 each at `cc26cb2` (`verify_all.sh`; verification.md); Debug and UBSan 3 consecutive runs each earlier |
 | Leaks (`leaks --atExit`), guard malloc | run | 0 leaks over 501 gtests; MallocScribble/GuardEdges whole binary |
 | ASan, TSan on macOS | **blocked** | the sanitizer runtimes fail even on an empty `int main(){}`: ASan hangs, TSan exits 139 (verification.md) |
 | GCC 13 | **not run** | no GCC installed on this machine |

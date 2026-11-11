@@ -112,8 +112,9 @@ no test. `MoldUdp.OneRequestIsAnsweredOnlyUpToItsCap` and
 run at `3ab0ee2` scored **67/67** in 24.7 min. One mutant, an off-by-one `PacketStore::find`,
 was killed only by the harness's 900 s timeout: the run hung instead of failing. That exposed
 a real liveness bug, fixed in `c19c56d`: when no retransmission ever arrived, `mold-send` and
-`mold-recv` both ran forever. A 68th mutant removes the fix, and the new test kills it in
-an individual run. Run it with
+`mold-recv` both ran forever. A 68th mutant removes the fix. The latest full run (`cc26cb2`,
+inside `verify_all.sh`) scored **68/68** in 11 min, and the slowest mutant took 27 s:
+with the fix, the `find()` mutant now fails instead of hanging. Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with up to four failing tests
 per mutant (none listed when the test binary crashed), is in
@@ -216,7 +217,8 @@ UBSan passed 3 of 3 runs at load averages up to 12.
 | Environment | Compiler | Build | Result |
 |---|---|---|---|
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Debug (`cmake --preset debug`) | 375/375 tests pass (R3, commit `418d247`) |
-| macOS 26.6, Apple M3 (sprint, latest) | Apple clang 17.0.0 | `scripts/verify_all.sh --repeat 3 --real-data --mutation` | At `a505d51`, all 16 run steps passed:<br>• Release 525/525 three times; Debug, UBSan and hardened libc++ 525/525 each<br>• CLI smoke, exchange, ITCH and MoldUDP64 demos<br>• 1 302-run argument sweep, 200 000 fuzz inputs, fault injection<br>• real data on all 3 days, mutation 56/56<br>clang-format skipped (not available here). Summary: [`verify-all-a505d51-macos-m3.md`](../benchmarks/results/verify-all-a505d51-macos-m3.md) |
+| macOS 26.6, Apple M3 (sprint, latest) | Apple clang 17.0.0 | `scripts/verify_all.sh --repeat 3 --real-data --mutation` | At `cc26cb2` (2026-11-11, 27.5 min), all 16 run steps passed:<br>• Release 531/531 three times; Debug, UBSan and hardened libc++ 531/531 each<br>• CLI smoke, exchange, ITCH and MoldUDP64 demos<br>• 1 302-run argument sweep (0 suspicious, 7 timeouts from huge requested workloads), 200 000 fuzz inputs, fault injection<br>• real data on all 3 days, mutation **68/68** (11 min)<br>clang-format skipped (not available here). Summary: [`verify-all-cc26cb2-macos-m3.md`](../benchmarks/results/verify-all-cc26cb2-macos-m3.md) |
+| macOS 26.6, Apple M3 (sprint, earlier) | Apple clang 17.0.0 | the same | At `a505d51`, all 16 run steps passed:<br>• Release 525/525 three times; Debug, UBSan and hardened libc++ 525/525 each<br>• CLI smoke, exchange, ITCH and MoldUDP64 demos<br>• 1 302-run argument sweep, 200 000 fuzz inputs, fault injection<br>• real data on all 3 days, mutation 56/56<br>clang-format skipped (not available here). Summary: [`verify-all-a505d51-macos-m3.md`](../benchmarks/results/verify-all-a505d51-macos-m3.md) |
 | macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan | Release, Debug and Debug + UBSan (`-fno-sanitize-recover`): UBSan 524/524 at `88bcfea`; UBSan 523/523 at `4f3e363` (after D34 and the JSON key bound); 520/520 each at `05a1607` (Release at `447cc34`, same code); 519/519 each at `f8f605a`; 516/516 each at `383ca9e`; earlier 486/486 in each at `63a2475`. GCC/ASan/TSan not re-run for the sprint (see below) |
 | macOS 26.6, Apple M3 (sprint) | Apple clang 17.0.0 | Debug + hardened libc++ (`cmake --preset hardened`: `_LIBCPP_HARDENING_MODE_DEBUG`, bounds-checked containers, spans and iterators) | 524/524 at `88bcfea`; 523/523 at `4f3e363`; 520/520 at `447cc34`, plus `scripts/mold_udp_demo.sh` (lossy MoldUDP64 over loopback UDP, book hash equals the direct replay) and `scripts/itch_demo.sh` with the hardened binaries; 516/516 at `7a65a1a` + preset; one real day (21 051 558 messages) replayed at level-vector limits 8192 and 2 with no assertion and the Release state hash; `tools/exchange_pymodel.py` against the hardened binary: 4 × 50 000 commands, 20 × 3 000 in a 5-tick crossing band, 3 × 2 000 over TCP with journal and restart, all agreeing; fuzz: 160 000 standalone inputs (4 seeds × 40 000, ≈ 6 ms per input in this Debug build), no invariant violated, no assertion |
 | macOS 26.6.2, Apple M3 | Apple clang 17.0.0 | Release + `scripts/check.sh smoke` + `scripts/demo.sh` | pass |
