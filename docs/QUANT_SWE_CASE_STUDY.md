@@ -187,7 +187,7 @@ are loopback measurements on this one machine. None is an exchange wire latency.
     gave back 3.0–3.6 % on two days and in full replay. The price was 4.5 % on the hash-flood
     attack input, which is the one input that runs that code. Net against `562c56d`, no
     measurable difference remains (D35).
-13. *"How do your tests prove they can fail?"* A mutation harness (68 scripted bugs). The most
+13. *"How do your tests prove they can fail?"* A mutation harness (69 scripted bugs). The most
     useful result was not a survivor. One mutant hung for the 900 s timeout instead of
     failing, and that exposed a real liveness bug: a UDP receiver and sender that waited
     forever on a gap no retransmission could fill.

@@ -117,6 +117,8 @@ MUTANTS = [
     ("udp: receiver waits forever on a gap that is never filled", "src/itch/mold_udp.cpp",
      "if (s == Sequencer::State::Gap && now - last_progress > o_.idle_timeout) {",
      "if ((void)last_progress, false) {", 0, "Mold*"),
+    ("udp: stall clock not restarted when a gap opens", "src/itch/mold_udp.cpp",
+     "if (s == Sequencer::State::Gap && !in_gap) {", "if ((void)in_gap, false) {", 0, "Mold*"),
     ("udp: answer rate limit never applied", "src/itch/mold_udp.cpp",
      "if (answer_tokens_ < 1) {", "if (false) {", 0, "Mold*"),
     ("mold: trailing bytes accepted", "src/itch/moldudp64.cpp",
