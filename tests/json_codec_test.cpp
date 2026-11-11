@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 #include "enginex/json_codec.hpp"

@@ -7,6 +7,7 @@
 // Verified against the reference test vectors (tests/siphash_test.cpp).
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 

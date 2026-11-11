@@ -2,6 +2,8 @@
 // clang). Not coverage-guided: it mutates corpus files (bit flips, byte sets, inserts,
 // deletes, truncation, splices) with a portable PRNG, so a run is reproducible from its seed.
 //   enginex_fuzz_itch_standalone ITERATIONS SEED CORPUS_FILE...
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>

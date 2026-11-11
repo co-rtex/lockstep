@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>

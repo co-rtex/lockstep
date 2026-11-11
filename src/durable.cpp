@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <exception>
 #include <filesystem>
 
 #include "enginex/metrics.hpp"

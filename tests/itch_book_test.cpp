@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
+#include <utility>
 
 #include "enginex/itch/book.hpp"
 #include "enginex/itch/replay.hpp"

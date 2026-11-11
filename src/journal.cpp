@@ -9,6 +9,8 @@
 #include <charconv>
 #include <cstring>
 #include <filesystem>
+#include <system_error>
+#include <utility>
 
 #include "enginex/crc32c.hpp"
 

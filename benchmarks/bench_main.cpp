@@ -2,8 +2,10 @@
 // CSV. Equivalent to calling `enginex benchmark --scenario X` for each scenario.
 #include <charconv>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <string>
+#include <system_error>
 
 #include "harness.hpp"
 

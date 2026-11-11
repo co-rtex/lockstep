@@ -3,6 +3,7 @@
 // must agree. Seeds are fixed, so any failure is reproducible from its seed.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 

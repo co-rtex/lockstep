@@ -10,6 +10,7 @@
 
 #include <cerrno>
 #include <csignal>
+#include <cstddef>
 #include <cstring>
 #include <stdexcept>
 

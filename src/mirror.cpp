@@ -1,6 +1,7 @@
 #include "enginex/mirror.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <stdexcept>
 #include <thread>
 #include <vector>

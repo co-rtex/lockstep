@@ -6,9 +6,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <thread>

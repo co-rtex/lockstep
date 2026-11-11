@@ -4,6 +4,7 @@
 // shutdown and restart.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <memory>

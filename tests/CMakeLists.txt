@@ -69,6 +69,12 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME paired_ab_gate
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/paired_ab_test.py)
     set_tests_properties(paired_ab_gate PROPERTIES TIMEOUT 120 LABELS "tools")
+    # Every std:: symbol's header is included (directly or through a project header):
+    # libstdc++ provides far fewer headers transitively than libc++ (tools/include_audit.py).
+    add_test(NAME include_audit
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/include_audit.py
+                     ${PROJECT_SOURCE_DIR})
+    set_tests_properties(include_audit PROPERTIES TIMEOUT 60 LABELS "tools")
 endif()
 
 # ITCH CLI and fixture checks: the committed golden fixtures match their generator, a strict

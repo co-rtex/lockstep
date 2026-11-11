@@ -2,6 +2,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include "enginex/itch/byte_reader.hpp"
 #include "enginex/itch/decoder.hpp"

@@ -1,10 +1,13 @@
 // enginex: command-line entry point. See README.md for the full command reference.
 #include <charconv>
+#include <cstddef>
 #include <cstdio>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "cli.hpp"
