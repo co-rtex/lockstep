@@ -190,7 +190,9 @@ are loopback measurements on this one machine. None is an exchange wire latency.
 13. *"How do your tests prove they can fail?"* A mutation harness (69 scripted bugs). The most
     useful result was not a survivor. One mutant hung for the 900 s timeout instead of
     failing, and that exposed a real liveness bug: a UDP receiver and sender that waited
-    forever on a gap no retransmission could fill.
+    forever on a gap no retransmission could fill. My first fix had a bug of its own. A gap
+    revealed by a heartbeat after a quiet spell was abandoned at once, before any re-request.
+    An independent review caught it, and a test and a mutant now pin the corrected rule.
 
 ## Honest limits
 
