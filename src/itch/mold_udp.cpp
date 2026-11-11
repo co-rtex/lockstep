@@ -346,6 +346,8 @@ ReceiverReport Receiver::run(
     std::vector<std::uint8_t> buf(65536);
     const auto start = Clock::now();
     auto last_packet = start;
+    auto last_progress = start;
+    std::uint64_t accepted = 0;
     auto last_round = start - o_.request_interval;
     in_addr feed_ip{};
     const std::string feed_host = o_.feed_from.empty() ? o_.request_to.host : o_.feed_from;
@@ -394,8 +396,20 @@ ReceiverReport Receiver::run(
             break;
         }
         const auto now = Clock::now();
+        // Progress = a message accepted (delivered or held for reordering). Heartbeats, the
+        // sender's repeated end-of-session packets and duplicates are not progress: while a gap
+        // is open they would otherwise keep the run alive forever if it can never be filled.
+        if (const std::uint64_t a = q.stats().delivered + q.buffered(); a != accepted) {
+            accepted = a;
+            last_progress = now;
+        }
         if (now - last_packet > o_.idle_timeout) {
             r.timed_out = true;
+            break;
+        }
+        if (s == Sequencer::State::Gap && now - last_progress > o_.idle_timeout) {
+            r.timed_out = true;
+            r.gap_stalled = true;
             break;
         }
         if (!o_.recovery || s != Sequencer::State::Gap || now - last_round < o_.request_interval) {

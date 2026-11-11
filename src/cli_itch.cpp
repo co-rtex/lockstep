@@ -878,6 +878,7 @@ int cmd_mold_recv(const std::vector<std::string>& argv) {
                       {"requests_sent", r.requests_sent},
                       {"decode_errors", decode_errors},
                       {"timed_out", r.timed_out},
+                      {"gap_stalled", r.gap_stalled},
                       {"seconds", r.seconds},
                       {"book_hash", book.state_hash()}}
                      .dump()

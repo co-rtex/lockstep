@@ -147,7 +147,9 @@ struct ReceiverOptions {
     // flight). Without it every round re-requests every hole and the answers snowball.
     std::chrono::milliseconds retry_after{50};
     std::uint32_t max_request_messages = 4096;    // count per request
-    std::chrono::milliseconds idle_timeout{2000};  // stop after this long without a packet
+    // Stop after this long without a datagram, or, while a gap is open, without accepting a
+    // new message (heartbeats and repeated end-of-session packets do not count).
+    std::chrono::milliseconds idle_timeout{2000};
     int receive_buffer_bytes = 4 << 20;           // SO_RCVBUF request (the OS may cap it)
     Sequencer::Options sequencer;
 };
@@ -170,6 +172,8 @@ struct ReceiverReport {
     std::string failure;                // when failed: which bound (Sequencer::FailReason)
     std::uint64_t next_expected = 0;
     bool timed_out = false;
+    // Gave up on an open gap: no new message was accepted for `idle_timeout` (timed_out too).
+    bool gap_stalled = false;
     double seconds = 0;
 };
 

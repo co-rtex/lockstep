@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <functional>
 #include <stdexcept>
@@ -284,6 +286,49 @@ TEST(MoldUdp, DatagramsFromAnUnexpectedSourceAreRejected) {
     EXPECT_GT(o.received.foreign_source, 0U);
     EXPECT_EQ(o.received.delivered, 0U);
     EXPECT_TRUE(o.received.timed_out);
+}
+
+// A gap that can never be filled (every retransmission is lost) must end the run. It used to
+// run forever: the sender's repeated end-of-session packets kept resetting the receiver's
+// idle timer, and the receiver's requests kept extending the sender's linger. Now a receiver
+// in the gap state gives up after `idle_timeout` without accepting a new message. A watchdog
+// stops both sides after 15 s so a regression fails instead of hanging the suite.
+TEST(MoldUdp, AGapThatCanNeverBeFilledEndsTheRunInsteadOfWaitingForever) {
+    const Feed f = make_feed(5'000);
+    udp::ReceiverOptions ro;
+    ro.sequencer.session = kSession;
+    ro.idle_timeout = 1000ms;
+    udp::Receiver rx(ro);
+    udp::SenderOptions so;
+    so.dest.port = rx.port();
+    so.drop_percent = 10;
+    so.retransmit_drop_percent = 100;
+    so.seed = 3;
+    so.linger = 300ms;
+    udp::Sender tx(f.store, so);
+    rx.set_request_port(tx.port());
+    std::atomic<bool> stop{false};
+    std::atomic<bool> done{false};
+    std::thread watchdog([&] {
+        for (int i = 0; i < 150 && !done.load(); ++i) std::this_thread::sleep_for(100ms);
+        stop = true;
+    });
+    udp::SenderReport sent;
+    std::thread sender([&] { sent = tx.run(&stop); });
+    const auto t0 = std::chrono::steady_clock::now();
+    const udp::ReceiverReport r = rx.run([](std::uint64_t, std::span<const std::uint8_t>) {}, &stop);
+    const double receiver_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    sender.join();
+    const bool watchdog_fired = stop.load();
+    done = true;
+    watchdog.join();
+    EXPECT_FALSE(watchdog_fired) << "receiver " << receiver_s << " s: the run did not end by itself";
+    EXPECT_GT(sent.dropped, 0U);
+    EXPECT_GT(r.requests_sent, 0U);
+    EXPECT_EQ(r.final_state, "gap");
+    EXPECT_TRUE(r.timed_out);
+    EXPECT_TRUE(r.gap_stalled);
+    EXPECT_LT(r.delivered, f.stream.size());
 }
 
 // A UDP socket on 127.0.0.1 with an ephemeral port: sends datagrams, counts what comes back.

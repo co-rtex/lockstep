@@ -120,6 +120,17 @@ from its packet store. The receiver runs the `Sequencer`, decodes, applies to a
 `BookBuilder` and re-requests `missing()` ranges. `RequestPlanner` asks a requested range
 again only after 50 ms, even when part of its answer has arrived and the hole has shrunk or
 split.
+
+Both sides always finish. The receiver stops after `--idle-timeout-ms` (5 s) without a
+datagram. While a gap is open, it also stops after the same time without accepting a new
+message: it ends in `gap` with `"gap_stalled": true` and exits 1. Before that rule, a gap that
+could never be filled (for example, every retransmission lost) kept both processes running
+forever. The sender's repeated end-of-session packets reset the receiver's idle timer, and
+the receiver's requests extended the sender's linger.
+`MoldUdp.AGapThatCanNeverBeFilledEndsTheRunInsteadOfWaitingForever` covers it. Heavy but
+recoverable loss still ends exact: the demo rebuilds the exact book at 10, 50 and 80 %
+retransmission loss.
+
 `scripts/mold_udp_demo.sh [BUILD] [FILE]` runs both and compares the receiver's book hash with
 a direct replay. A sweep run (output abbreviated, counts rounded):
 
