@@ -1,580 +1,670 @@
-{
-  "git_sha": "52e96d737815",
-  "date_utc": "2026-11-10T22:20:55Z",
-  "machine": "Apple M3 MacBook Air, macOS 26.6, Apple clang 17, Release",
-  "command": "python3 tools/mutation_check.py build/release",
-  "killed": 56,
-  "valid": 56,
-  "total_seconds": 379.4,
-  "mutants": [
-    {
-      "mutant": "itch: order at zero shares not removed",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.8,
-      "failing_tests": [
-        "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
-        "ItchBook.ExecutionsAndPartialCancelKeepPriority",
-        "ItchFixture.LifecycleMatchesHandWrittenBook",
-        "ItchReplay.CorruptedFilesNeverBreakInvariants"
-      ]
-    },
-    {
-      "mutant": "itch: execution of all remaining shares rejected",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.8,
-      "failing_tests": [
-        "ItchBook.ExecutionsAndPartialCancelKeepPriority",
-        "ItchFixture.LifecycleMatchesHandWrittenBook",
-        "ItchReplay.DeterministicAcrossRunsAndChunkSizes",
-        "ItchSynthetic.CleanStreamsNeverLockOrCrossAndExecuteAtTheTop"
-      ]
-    },
-    {
-      "mutant": "itch: modify with wrong locate accepted",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.8,
-      "failing_tests": [
-        "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
-      ]
-    },
-    {
-      "mutant": "itch: non-printable C counted as printable",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.0,
-      "failing_tests": [
-        "ItchBook.ExecutionWithPriceDoesNotMoveTheOrderAndRespectsPrintable",
-        "ItchFixture.LifecycleMatchesHandWrittenBook"
-      ]
-    },
-    {
-      "mutant": "itch: add with zero shares accepted",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.0,
-      "failing_tests": [
-        "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
-      ]
-    },
-    {
-      "mutant": "itch: replace with zero shares accepted",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.9,
-      "failing_tests": [
-        "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
-      ]
-    },
-    {
-      "mutant": "itch: near-top scan off by one",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 2.2,
-      "failing_tests": [
-        "ItchBook.AddsBuildSortedLevelsWithFifo",
-        "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
-        "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
-        "ItchBook.DeleteRemovesOrderAndEmptyLevel"
-      ]
-    },
-    {
-      "mutant": "itch: level at the deep tier's best price routed to the vector",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.8,
-      "failing_tests": []
-    },
-    {
-      "mutant": "itch: empty level kept after its last order leaves",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.6,
-      "failing_tests": [
-        "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
-        "ItchBook.DeleteRemovesOrderAndEmptyLevel",
-        "ItchBook.ExecutionsAndPartialCancelKeepPriority",
-        "ItchBook.ExtremePricesKeepBestFirstOrderOnBothSides"
-      ]
-    },
-    {
-      "mutant": "itch: removal leaves level shares stale",
-      "file": "src/itch/book.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.6,
-      "failing_tests": [
-        "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
-        "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
-        "ItchBook.ReplaceLosesPriorityEvenAtTheSamePriceAndSize",
-        "ItchBook.ReplaceMayReuseItsOwnReference"
-      ]
-    },
-    {
-      "mutant": "index: backward-shift deletion moves the wrong entries",
-      "file": "include/enginex/itch/order_index.hpp",
-      "verdict": "KILLED",
-      "seconds": 7.0,
-      "failing_tests": [
-        "OrderIndex.DeletionInsideCollisionChains",
-        "OrderIndex.ExtremeKeysAndMixedHomeChains",
-        "OrderIndex.MatchesUnorderedMapUnderRandomOperations",
-        "PagedIndex.MatchesUnorderedMapIncludingFallbackAndPageFreeing"
-      ]
-    },
-    {
-      "mutant": "paged index: lookup ignores the hash fallback",
-      "file": "include/enginex/itch/paged_index.hpp",
-      "verdict": "KILLED",
-      "seconds": 7.2,
-      "failing_tests": [
-        "PagedIndex.KeyInFallbackStaysFindableWhenItsPageAppearsAndGoes",
-        "PagedIndex.MatchesUnorderedMapIncludingFallbackAndPageFreeing"
-      ]
-    },
-    {
-      "mutant": "paged index: page freed while an order is still live",
-      "file": "include/enginex/itch/paged_index.hpp",
-      "verdict": "KILLED",
-      "seconds": 6.9,
-      "failing_tests": [
-        "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
-        "ItchBook.DeleteRemovesOrderAndEmptyLevel",
-        "ItchBook.ExecutionsAndPartialCancelKeepPriority",
-        "ItchSynthetic.CleanStreamsNeverLockOrCrossAndExecuteAtTheTop"
-      ]
-    },
-    {
-      "mutant": "codec: timestamp read one byte early",
-      "file": "src/itch/codec.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.2,
-      "failing_tests": [
-        "ItchGolden.AddOrderLiteralBytes",
-        "ItchGolden.AddOrderWithMpid",
-        "ItchGolden.AuctionAndRetailMessages",
-        "ItchGolden.OrderCancelDeleteReplace"
-      ]
-    },
-    {
-      "mutant": "codec: stock directory IPO flag read one byte early",
-      "file": "src/itch/codec.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.7,
-      "failing_tests": [
-        "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
-      ]
-    },
-    {
-      "mutant": "codec: add-order side not validated",
-      "file": "src/itch/codec.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.7,
-      "failing_tests": [
-        "ItchMalformed.InvalidEnumeratedFields",
-        "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
-      ]
-    },
-    {
-      "mutant": "codec: add-order price read one byte early",
-      "file": "src/itch/codec.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.7,
-      "failing_tests": [
-        "ItchFixture.LifecycleMatchesHandWrittenBook",
-        "ItchGolden.AddOrderLiteralBytes",
-        "ItchGolden.AddOrderWithMpid",
-        "ItchMalformed.RandomValidOrderMessagesRoundTrip"
-      ]
-    },
-    {
-      "mutant": "codec: printable flag not validated",
-      "file": "src/itch/codec.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.7,
-      "failing_tests": [
-        "ItchMalformed.InvalidEnumeratedFields",
-        "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
-      ]
-    },
-    {
-      "mutant": "framer: zero-length prefix accepted",
-      "file": "include/enginex/itch/decoder.hpp",
-      "verdict": "KILLED",
-      "seconds": 8.9,
-      "failing_tests": [
-        "ItchReplay.CorruptedFilesNeverBreakInvariants",
-        "ItchReplay.TruncatedAndZeroLengthStreamsAreFatal",
-        "StreamFramer.ZeroLengthPrefixIsFatalWithOffset"
-      ]
-    },
-    {
-      "mutant": "mold: buffered duplicate not detected",
-      "file": "include/enginex/itch/moldudp64.hpp",
-      "verdict": "KILLED",
-      "seconds": 9.2,
-      "failing_tests": [
-        "MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity",
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic",
-        "MoldSequencer.PacketCopiesCountAgainstTheByteBound"
-      ]
-    },
-    {
-      "mutant": "mold: adjacent holes not merged",
-      "file": "src/itch/moldudp64.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.8,
-      "failing_tests": [
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic"
-      ]
-    },
-    {
-      "mutant": "mold: filling a hole loses its left part",
-      "file": "src/itch/moldudp64.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.5,
-      "failing_tests": [
-        "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic"
-      ]
-    },
-    {
-      "mutant": "mold: missing() skips a one-message hole",
-      "file": "src/itch/moldudp64.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.7,
-      "failing_tests": [
-        "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic"
-      ]
-    },
-    {
-      "mutant": "mold: closed gap not counted",
-      "file": "include/enginex/itch/moldudp64.hpp",
-      "verdict": "KILLED",
-      "seconds": 7.9,
-      "failing_tests": [
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic",
-        "MoldSequencer.ReorderedPacketsAreReleasedInOrder"
-      ]
-    },
-    {
-      "mutant": "mold: buffered chunk recycled while still referenced",
-      "file": "include/enginex/itch/moldudp64.hpp",
-      "verdict": "KILLED",
-      "seconds": 2.8,
-      "failing_tests": []
-    },
-    {
-      "mutant": "mold: hole for a packet ahead not opened",
-      "file": "include/enginex/itch/moldudp64.hpp",
-      "verdict": "KILLED",
-      "seconds": 7.8,
-      "failing_tests": [
-        "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
-        "MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity",
-        "MoldSequencer.MatchesASetModelUnderRandomTraffic"
-      ]
-    },
-    {
-      "mutant": "mold: packet copies not counted against the byte bound",
-      "file": "src/itch/moldudp64.cpp",
-      "verdict": "KILLED",
-      "seconds": 8.2,
-      "failing_tests": [
-        "MoldSequencer.PacketCopiesCountAgainstTheByteBound"
-      ]
-    },
-    {
-      "mutant": "mold: stale end of session accepted",
-      "file": "include/enginex/itch/moldudp64.hpp",
-      "verdict": "KILLED",
-      "seconds": 8.3,
-      "failing_tests": [
-        "MoldSequencer.EndOfSessionBelowSeenMessagesIsIgnored"
-      ]
-    },
-    {
-      "mutant": "udp: partly answered request asked again before its retry timer",
-      "file": "src/itch/mold_udp.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.9,
-      "failing_tests": [
-        "MoldRequestPlanner.RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills"
-      ]
-    },
-    {
-      "mutant": "udp: request runs over a later active request",
-      "file": "src/itch/mold_udp.cpp",
-      "verdict": "KILLED",
-      "seconds": 6.9,
-      "failing_tests": [
-        "MoldRequestPlanner.RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills"
-      ]
-    },
-    {
-      "mutant": "mold: trailing bytes accepted",
-      "file": "src/itch/moldudp64.cpp",
-      "verdict": "KILLED",
-      "seconds": 7.2,
-      "failing_tests": [
-        "MoldParse.MalformedPacketsDeliverNothing",
-        "MoldParse.RandomBytesNeverCrash"
-      ]
-    },
-    {
-      "mutant": "mirror: update applied when not live",
-      "file": "src/mirror.cpp",
-      "verdict": "KILLED",
-      "seconds": 2.7,
-      "failing_tests": [
-        "FeedMirror.FailedSubscribeNeverGoesLive",
-        "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
-        "FeedMirror.RandomMessagesNeverBreakTheRules",
-        "FeedMirror.UpdatesBeforeAnyBaselineAreRejected"
-      ]
-    },
-    {
-      "mutant": "mirror: forward gap accepted",
-      "file": "src/mirror.cpp",
-      "verdict": "KILLED",
-      "seconds": 1.9,
-      "failing_tests": [
-        "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
-        "FeedMirror.RandomMessagesNeverBreakTheRules"
-      ]
-    },
-    {
-      "mutant": "mirror: verification ignores watermark",
-      "file": "src/mirror.cpp",
-      "verdict": "KILLED",
-      "seconds": 2.3,
-      "failing_tests": [
-        "FeedMirror.ResyncDisconnectAndMismatchAllGoStale"
-      ]
-    },
-    {
-      "mutant": "engine: cancel leaves level aggregate stale",
-      "file": "src/engine.cpp",
-      "verdict": "KILLED",
-      "seconds": 5.1,
-      "failing_tests": [
-        "Cancel.CancelCommandSequenceIsNotAnOrder",
-        "Cancel.RepeatedInsertCancelLeavesNoDanglingState",
-        "CancelTest.CancelAllRemovesLevel",
-        "CancelTest.CancelFirst"
-      ]
-    },
-    {
-      "mutant": "engine: an order at exactly the resting price does not trade",
-      "file": "src/engine.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.4,
-      "failing_tests": [
-        "Batch.GroupCommitWritesOnceAndReleasesAfterSync",
-        "Cancel.CancelledOrderNeverTrades",
-        "Cancel.FilledOrderRejected",
-        "Cancel.PartiallyFilledOrderCancelsRemainder"
-      ]
-    },
-    {
-      "mutant": "engine: incoming sell hits the lowest bid",
-      "file": "src/engine.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.3,
-      "failing_tests": [
-        "Matching.MultiLevelSweepBestBidFirst",
-        "Matching.SweepStopsAtNonMarketableLevel",
-        "PropertyStress.LongRunKeepsInvariants",
-        "ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath"
-      ]
-    },
-    {
-      "mutant": "journal: corrupted length near EOF passed off as a torn write",
-      "file": "src/journal.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.6,
-      "failing_tests": [
-        "JournalScan.CorruptedLengthNearEofIsCorruptNotATornTail"
-      ]
-    },
-    {
-      "mutant": "journal: zero-filled tail treated as corruption",
-      "file": "src/journal.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.4,
-      "failing_tests": [
-        "JournalScan.ZeroFilledTailIsIncompleteNotCorrupt",
-        "Recovery.ZeroFilledTailIsRepaired"
-      ]
-    },
-    {
-      "mutant": "journal: torn tail not truncated",
-      "file": "src/journal.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.4,
-      "failing_tests": [
-        "Recovery.IncompleteFileHeaderIsRewritten",
-        "Recovery.ZeroFilledTailIsRepaired"
-      ]
-    },
-    {
-      "mutant": "core index: fingerprint match taken without comparing the request_id",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.5,
-      "failing_tests": [
-        "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord"
-      ]
-    },
-    {
-      "mutant": "core index: growth drops existing entries",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.7,
-      "failing_tests": [
-        "Harness.DurableAndRecoveryModes",
-        "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord",
-        "SipHash.RandomIndexKeysDoNotChangeResults"
-      ]
-    },
-    {
-      "mutant": "state: conflicting body treated as duplicate",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.7,
-      "failing_tests": [
-        "Idempotency.RetriesAfterRestartReturnOriginalResults",
-        "Idempotency.RetryCancelReturnsOriginal",
-        "Idempotency.ReuseWithDifferentBodyIsConflict",
-        "Recovery.RejectedAndDuplicateCommandsAreNotJournaled"
-      ]
-    },
-    {
-      "mutant": "state: price one tick above the maximum accepted",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 8.3,
-      "failing_tests": [
-        "Validation.RejectsInvalidPrice"
-      ]
-    },
-    {
-      "mutant": "state: zero quantity accepted",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 5.4,
-      "failing_tests": [
-        "Simulate.DemoMatchesCommittedExpectedOutput",
-        "Validation.RejectionOrderPrefersRequestThenSymbolThenFields",
-        "Validation.RejectsInvalidQuantity"
-      ]
-    },
-    {
-      "mutant": "state: open-order limit off by one",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.6,
-      "failing_tests": [
-        "Capacity.OpenOrderLimitRejectsAtomically"
-      ]
-    },
-    {
-      "mutant": "state: request_id at the length limit rejected",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.8,
-      "failing_tests": [
-        "Validation.RejectsInvalidRequestId"
-      ]
-    },
-    {
-      "mutant": "state: cancel may target a cancel command",
-      "file": "src/state.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.7,
-      "failing_tests": [
-        "Cancel.CancelCommandSequenceIsNotAnOrder"
-      ]
-    },
-    {
-      "mutant": "journal: record CRC not checked",
-      "file": "src/journal.cpp",
-      "verdict": "KILLED",
-      "seconds": 4.0,
-      "failing_tests": [
-        "JournalScan.ChecksumMismatchIsHardErrorAnywhere",
-        "Recovery.CorruptedRecordRefusesStartupAndLeavesFileUntouched",
-        "Recovery.RandomDamageNeverYieldsAStateOutsideThePrefixes"
-      ]
-    },
-    {
-      "mutant": "server: snapshot served after journal failure",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 8.8,
-      "failing_tests": [
-        "Server.JournalFailureFailStopsOverTheNetwork"
-      ]
-    },
-    {
-      "mutant": "server: snapshot served after internal fail-stop",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 8.7,
-      "failing_tests": [
-        "Server.SnapshotRefusedAfterInternalFailStop"
-      ]
-    },
-    {
-      "mutant": "server: event published although the flush failed",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 9.3,
-      "failing_tests": [
-        "Server.JournalFailureNeverPublishesTheUndurableEvent"
-      ]
-    },
-    {
-      "mutant": "server: reply after a failed flush claims success",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 9.1,
-      "failing_tests": [
-        "Server.JournalFailureFailStopsOverTheNetwork",
-        "Server.JournalFailureNeverPublishesTheUndurableEvent"
-      ]
-    },
-    {
-      "mutant": "server: batch flushed after an internal fail-stop",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 11.0,
-      "failing_tests": [
-        "Server.SnapshotRefusedAfterInternalFailStop"
-      ]
-    },
-    {
-      "mutant": "protocol: book_update order_count off by one",
-      "file": "src/protocol.cpp",
-      "verdict": "KILLED",
-      "seconds": 20.1,
-      "failing_tests": [
-        "FeedMirrorSession.DroppedEventIsDetectedAsGapAndRecoveredBySnapshot",
-        "FeedMirrorSession.FollowsLiveTrafficAndVerifiesInBand",
-        "FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook",
-        "Server.SubscribeHandoffUnderLoadHasNoGaps"
-      ]
-    },
-    {
-      "mutant": "server: slow-consumer notice reports stale watermark",
-      "file": "src/server.cpp",
-      "verdict": "KILLED",
-      "seconds": 16.9,
-      "failing_tests": [
-        "Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer"
-      ]
-    }
-  ]
-}
+[
+  {
+    "mutant": "itch: order at zero shares not removed",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.9,
+    "failing_tests": [
+      "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
+      "ItchBook.ExecutionsAndPartialCancelKeepPriority",
+      "ItchFixture.LifecycleMatchesHandWrittenBook",
+      "ItchReplay.CorruptedFilesNeverBreakInvariants"
+    ]
+  },
+  {
+    "mutant": "itch: execution of all remaining shares rejected",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.4,
+    "failing_tests": [
+      "ItchBook.ExecutionsAndPartialCancelKeepPriority",
+      "ItchFixture.LifecycleMatchesHandWrittenBook",
+      "ItchReplay.DeterministicAcrossRunsAndChunkSizes",
+      "ItchSynthetic.CleanStreamsNeverLockOrCrossAndExecuteAtTheTop"
+    ]
+  },
+  {
+    "mutant": "itch: modify with wrong locate accepted",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.3,
+    "failing_tests": [
+      "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
+    ]
+  },
+  {
+    "mutant": "itch: non-printable C counted as printable",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.5,
+    "failing_tests": [
+      "ItchBook.ExecutionWithPriceDoesNotMoveTheOrderAndRespectsPrintable",
+      "ItchFixture.LifecycleMatchesHandWrittenBook"
+    ]
+  },
+  {
+    "mutant": "itch: add with zero shares accepted",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.5,
+    "failing_tests": [
+      "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
+    ]
+  },
+  {
+    "mutant": "itch: replace with zero shares accepted",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.5,
+    "failing_tests": [
+      "ItchBook.AnomaliesAreRejectedWithoutChangingTheBook"
+    ]
+  },
+  {
+    "mutant": "itch: near-top scan off by one",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 2.0,
+    "failing_tests": [
+      "ItchBook.AddsBuildSortedLevelsWithFifo",
+      "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
+      "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
+      "ItchBook.DeleteRemovesOrderAndEmptyLevel"
+    ]
+  },
+  {
+    "mutant": "itch: level at the deep tier's best price routed to the vector",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.4,
+    "failing_tests": []
+  },
+  {
+    "mutant": "itch: empty level kept after its last order leaves",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.1,
+    "failing_tests": [
+      "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
+      "ItchBook.DeleteRemovesOrderAndEmptyLevel",
+      "ItchBook.ExecutionsAndPartialCancelKeepPriority",
+      "ItchBook.ExtremePricesKeepBestFirstOrderOnBothSides"
+    ]
+  },
+  {
+    "mutant": "itch: removal leaves level shares stale",
+    "file": "src/itch/book.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.1,
+    "failing_tests": [
+      "ItchBook.CapacityHintDoesNotChangeResultsAndUnknownLocatesAreEmpty",
+      "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
+      "ItchBook.ReplaceLosesPriorityEvenAtTheSamePriceAndSize",
+      "ItchBook.ReplaceMayReuseItsOwnReference"
+    ]
+  },
+  {
+    "mutant": "index: backward-shift deletion moves the wrong entries",
+    "file": "include/enginex/itch/order_index.hpp",
+    "verdict": "KILLED",
+    "seconds": 11.5,
+    "failing_tests": [
+      "OrderIndex.DeletionInsideCollisionChains",
+      "OrderIndex.ExtremeKeysAndMixedHomeChains",
+      "OrderIndex.MatchesUnorderedMapUnderRandomOperations",
+      "PagedIndex.MatchesUnorderedMapIncludingFallbackAndPageFreeing"
+    ]
+  },
+  {
+    "mutant": "paged index: lookup ignores the hash fallback",
+    "file": "include/enginex/itch/paged_index.hpp",
+    "verdict": "KILLED",
+    "seconds": 11.6,
+    "failing_tests": [
+      "PagedIndex.KeyInFallbackStaysFindableWhenItsPageAppearsAndGoes",
+      "PagedIndex.MatchesUnorderedMapIncludingFallbackAndPageFreeing"
+    ]
+  },
+  {
+    "mutant": "paged index: page freed while an order is still live",
+    "file": "include/enginex/itch/paged_index.hpp",
+    "verdict": "KILLED",
+    "seconds": 11.4,
+    "failing_tests": [
+      "ItchBook.DeepBooksStaySortedAtEveryInsertDepth",
+      "ItchBook.DeleteRemovesOrderAndEmptyLevel",
+      "ItchBook.ExecutionsAndPartialCancelKeepPriority",
+      "ItchSynthetic.CleanStreamsNeverLockOrCrossAndExecuteAtTheTop"
+    ]
+  },
+  {
+    "mutant": "codec: timestamp read one byte early",
+    "file": "src/itch/codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.8,
+    "failing_tests": [
+      "ItchGolden.AddOrderLiteralBytes",
+      "ItchGolden.AddOrderWithMpid",
+      "ItchGolden.AuctionAndRetailMessages",
+      "ItchGolden.OrderCancelDeleteReplace"
+    ]
+  },
+  {
+    "mutant": "codec: stock directory IPO flag read one byte early",
+    "file": "src/itch/codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.3,
+    "failing_tests": [
+      "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
+    ]
+  },
+  {
+    "mutant": "codec: add-order side not validated",
+    "file": "src/itch/codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.2,
+    "failing_tests": [
+      "ItchMalformed.InvalidEnumeratedFields",
+      "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
+    ]
+  },
+  {
+    "mutant": "codec: add-order price read one byte early",
+    "file": "src/itch/codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.3,
+    "failing_tests": [
+      "ItchFixture.LifecycleMatchesHandWrittenBook",
+      "ItchGolden.AddOrderLiteralBytes",
+      "ItchGolden.AddOrderWithMpid",
+      "ItchMalformed.RandomValidOrderMessagesRoundTrip"
+    ]
+  },
+  {
+    "mutant": "codec: printable flag not validated",
+    "file": "src/itch/codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.2,
+    "failing_tests": [
+      "ItchMalformed.InvalidEnumeratedFields",
+      "ItchMalformed.RandomBytesNeverCrashAndAreClassified"
+    ]
+  },
+  {
+    "mutant": "framer: zero-length prefix accepted",
+    "file": "include/enginex/itch/decoder.hpp",
+    "verdict": "KILLED",
+    "seconds": 13.4,
+    "failing_tests": [
+      "ItchReplay.CorruptedFilesNeverBreakInvariants",
+      "ItchReplay.TruncatedAndZeroLengthStreamsAreFatal",
+      "StreamFramer.ZeroLengthPrefixIsFatalWithOffset"
+    ]
+  },
+  {
+    "mutant": "mold: buffered duplicate not detected",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 14.0,
+    "failing_tests": [
+      "MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity",
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic",
+      "MoldSequencer.PacketCopiesCountAgainstTheByteBound"
+    ]
+  },
+  {
+    "mutant": "mold: adjacent holes not merged",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 12.3,
+    "failing_tests": [
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic"
+    ]
+  },
+  {
+    "mutant": "mold: filling a hole loses its left part",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.1,
+    "failing_tests": [
+      "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic"
+    ]
+  },
+  {
+    "mutant": "mold: missing() skips a one-message hole",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.2,
+    "failing_tests": [
+      "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic"
+    ]
+  },
+  {
+    "mutant": "mold: closed gap not counted",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 12.4,
+    "failing_tests": [
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic",
+      "MoldSequencer.ReorderedPacketsAreReleasedInOrder"
+    ]
+  },
+  {
+    "mutant": "mold: buffered chunk recycled while still referenced",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 2.7,
+    "failing_tests": []
+  },
+  {
+    "mutant": "mold: hole for a packet ahead not opened",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 12.3,
+    "failing_tests": [
+      "MoldEndToEnd.LossyChannelWithReRequestsRebuildsTheExactBook",
+      "MoldSequencer.DuplicatesOfBufferedMessagesUseNoCapacity",
+      "MoldSequencer.MatchesASetModelUnderRandomTraffic"
+    ]
+  },
+  {
+    "mutant": "mold: packet copies not counted against the byte bound",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 12.7,
+    "failing_tests": [
+      "MoldSequencer.PacketCopiesCountAgainstTheByteBound"
+    ]
+  },
+  {
+    "mutant": "mold: stale end of session accepted",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 12.3,
+    "failing_tests": [
+      "MoldSequencer.EndOfSessionBelowSeenMessagesIsIgnored"
+    ]
+  },
+  {
+    "mutant": "udp: partly answered request asked again before its retry timer",
+    "file": "src/itch/mold_udp.cpp",
+    "verdict": "KILLED",
+    "seconds": 12.2,
+    "failing_tests": [
+      "MoldRequestPlanner.RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills"
+    ]
+  },
+  {
+    "mutant": "udp: request runs over a later active request",
+    "file": "src/itch/mold_udp.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.3,
+    "failing_tests": [
+      "MoldRequestPlanner.RetriesOnlyAfterTheTimerEvenWhenAHolePartlyFills"
+    ]
+  },
+  {
+    "mutant": "udp: per-request cap not applied (reflection amplification)",
+    "file": "src/itch/mold_udp.cpp",
+    "verdict": "KILLED",
+    "seconds": 10.6,
+    "failing_tests": [
+      "MoldUdp.OneRequestIsAnsweredOnlyUpToItsCap"
+    ]
+  },
+  {
+    "mutant": "udp: requests answered from any source address",
+    "file": "src/itch/mold_udp.cpp",
+    "verdict": "KILLED",
+    "seconds": 10.6,
+    "failing_tests": [
+      "MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered"
+    ]
+  },
+  {
+    "mutant": "udp: answer rate limit never applied",
+    "file": "src/itch/mold_udp.cpp",
+    "verdict": "KILLED",
+    "seconds": 10.4,
+    "failing_tests": [
+      "MoldUdp.RateLimitedAnswersStillCompleteTheBook"
+    ]
+  },
+  {
+    "mutant": "mold: trailing bytes accepted",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.4,
+    "failing_tests": [
+      "MoldParse.MalformedPacketsDeliverNothing",
+      "MoldParse.RandomBytesNeverCrash"
+    ]
+  },
+  {
+    "mutant": "mold: buffered-bytes failure reported as the message-count bound",
+    "file": "include/enginex/itch/moldudp64.hpp",
+    "verdict": "KILLED",
+    "seconds": 12.5,
+    "failing_tests": [
+      "MoldSequencer.ByteBoundAndFarAheadPacketsFailInsteadOfGrowing"
+    ]
+  },
+  {
+    "mutant": "mold store: find() returns the packet after the one holding the sequence",
+    "file": "src/itch/moldudp64.cpp",
+    "verdict": "KILLED",
+    "seconds": 900.4,
+    "failing_tests": []
+  },
+  {
+    "mutant": "mold-sim: recovery skips the packet holding the first missing message",
+    "file": "src/itch/mold_sim.cpp",
+    "verdict": "KILLED",
+    "seconds": 11.6,
+    "failing_tests": [
+      "MoldSimulation.RecoversTheFullBookOrStopsExactlyAtTheHole"
+    ]
+  },
+  {
+    "mutant": "index: hash ignores the secret key",
+    "file": "include/enginex/itch/order_index.hpp",
+    "verdict": "KILLED",
+    "seconds": 11.8,
+    "failing_tests": [
+      "OrderIndex.TheKeyDecidesPlacementAndEachIndexDrawsItsOwn"
+    ]
+  },
+  {
+    "mutant": "index: random key is a constant",
+    "file": "include/enginex/itch/order_index.hpp",
+    "verdict": "KILLED",
+    "seconds": 11.7,
+    "failing_tests": [
+      "OrderIndex.TheKeyDecidesPlacementAndEachIndexDrawsItsOwn"
+    ]
+  },
+  {
+    "mutant": "json: nested objects share the parent's key set",
+    "file": "src/json_codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 2.1,
+    "failing_tests": [
+      "JsonCodec.KeyChecksArePerObjectAtEveryDepth"
+    ]
+  },
+  {
+    "mutant": "json: repeated key not reported",
+    "file": "src/json_codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 7.4,
+    "failing_tests": [
+      "JsonCodec.KeyChecksArePerObjectAtEveryDepth",
+      "JsonCodec.RepeatedKeysAreRejected"
+    ]
+  },
+  {
+    "mutant": "json: one key above the per-object limit accepted",
+    "file": "src/json_codec.cpp",
+    "verdict": "KILLED",
+    "seconds": 2.0,
+    "failing_tests": [
+      "JsonCodec.KeyChecksArePerObjectAtEveryDepth",
+      "JsonCodec.ObjectsWithTooManyKeysAreRejected"
+    ]
+  },
+  {
+    "mutant": "mirror: update applied when not live",
+    "file": "src/mirror.cpp",
+    "verdict": "KILLED",
+    "seconds": 2.0,
+    "failing_tests": [
+      "FeedMirror.FailedSubscribeNeverGoesLive",
+      "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
+      "FeedMirror.RandomMessagesNeverBreakTheRules",
+      "FeedMirror.UpdatesBeforeAnyBaselineAreRejected"
+    ]
+  },
+  {
+    "mutant": "mirror: forward gap accepted",
+    "file": "src/mirror.cpp",
+    "verdict": "KILLED",
+    "seconds": 1.7,
+    "failing_tests": [
+      "FeedMirror.GapGoesStaleAndNothingIsAppliedAfterwards",
+      "FeedMirror.RandomMessagesNeverBreakTheRules"
+    ]
+  },
+  {
+    "mutant": "mirror: verification ignores watermark",
+    "file": "src/mirror.cpp",
+    "verdict": "KILLED",
+    "seconds": 2.0,
+    "failing_tests": [
+      "FeedMirror.ResyncDisconnectAndMismatchAllGoStale"
+    ]
+  },
+  {
+    "mutant": "engine: cancel leaves level aggregate stale",
+    "file": "src/engine.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.5,
+    "failing_tests": [
+      "Cancel.CancelCommandSequenceIsNotAnOrder",
+      "Cancel.RepeatedInsertCancelLeavesNoDanglingState",
+      "CancelTest.CancelAllRemovesLevel",
+      "CancelTest.CancelFirst"
+    ]
+  },
+  {
+    "mutant": "engine: an order at exactly the resting price does not trade",
+    "file": "src/engine.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.0,
+    "failing_tests": [
+      "Batch.GroupCommitWritesOnceAndReleasesAfterSync",
+      "Cancel.CancelledOrderNeverTrades",
+      "Cancel.FilledOrderRejected",
+      "Cancel.PartiallyFilledOrderCancelsRemainder"
+    ]
+  },
+  {
+    "mutant": "engine: incoming sell hits the lowest bid",
+    "file": "src/engine.cpp",
+    "verdict": "KILLED",
+    "seconds": 3.9,
+    "failing_tests": [
+      "Matching.MultiLevelSweepBestBidFirst",
+      "Matching.SweepStopsAtNonMarketableLevel",
+      "PropertyStress.LongRunKeepsInvariants",
+      "ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath"
+    ]
+  },
+  {
+    "mutant": "journal: corrupted length near EOF passed off as a torn write",
+    "file": "src/journal.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.2,
+    "failing_tests": [
+      "JournalScan.CorruptedLengthNearEofIsCorruptNotATornTail"
+    ]
+  },
+  {
+    "mutant": "journal: zero-filled tail treated as corruption",
+    "file": "src/journal.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.0,
+    "failing_tests": [
+      "JournalScan.ZeroFilledTailIsIncompleteNotCorrupt",
+      "Recovery.ZeroFilledTailIsRepaired"
+    ]
+  },
+  {
+    "mutant": "journal: torn tail not truncated",
+    "file": "src/journal.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.2,
+    "failing_tests": [
+      "Recovery.IncompleteFileHeaderIsRewritten",
+      "Recovery.ZeroFilledTailIsRepaired"
+    ]
+  },
+  {
+    "mutant": "core index: fingerprint match taken without comparing the request_id",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord"
+    ]
+  },
+  {
+    "mutant": "core index: growth drops existing entries",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "Harness.DurableAndRecoveryModes",
+      "RequestIndex.FingerprintCollisionsStillResolveToTheRightRecord",
+      "SipHash.RandomIndexKeysDoNotChangeResults"
+    ]
+  },
+  {
+    "mutant": "state: conflicting body treated as duplicate",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.0,
+    "failing_tests": [
+      "Idempotency.RetriesAfterRestartReturnOriginalResults",
+      "Idempotency.RetryCancelReturnsOriginal",
+      "Idempotency.ReuseWithDifferentBodyIsConflict",
+      "Recovery.RejectedAndDuplicateCommandsAreNotJournaled"
+    ]
+  },
+  {
+    "mutant": "state: price one tick above the maximum accepted",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.0,
+    "failing_tests": [
+      "Validation.RejectsInvalidPrice"
+    ]
+  },
+  {
+    "mutant": "state: zero quantity accepted",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "Simulate.DemoMatchesCommittedExpectedOutput",
+      "Validation.RejectionOrderPrefersRequestThenSymbolThenFields",
+      "Validation.RejectsInvalidQuantity"
+    ]
+  },
+  {
+    "mutant": "state: open-order limit off by one",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "Capacity.OpenOrderLimitRejectsAtomically"
+    ]
+  },
+  {
+    "mutant": "state: request_id at the length limit rejected",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "Validation.RejectsInvalidRequestId"
+    ]
+  },
+  {
+    "mutant": "state: cancel may target a cancel command",
+    "file": "src/state.cpp",
+    "verdict": "KILLED",
+    "seconds": 4.1,
+    "failing_tests": [
+      "Cancel.CancelCommandSequenceIsNotAnOrder"
+    ]
+  },
+  {
+    "mutant": "journal: record CRC not checked",
+    "file": "src/journal.cpp",
+    "verdict": "KILLED",
+    "seconds": 3.6,
+    "failing_tests": [
+      "JournalScan.ChecksumMismatchIsHardErrorAnywhere",
+      "Recovery.CorruptedRecordRefusesStartupAndLeavesFileUntouched",
+      "Recovery.RandomDamageNeverYieldsAStateOutsideThePrefixes"
+    ]
+  },
+  {
+    "mutant": "server: snapshot served after journal failure",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 8.0,
+    "failing_tests": [
+      "Server.JournalFailureFailStopsOverTheNetwork"
+    ]
+  },
+  {
+    "mutant": "server: snapshot served after internal fail-stop",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 7.8,
+    "failing_tests": [
+      "Server.SnapshotRefusedAfterInternalFailStop"
+    ]
+  },
+  {
+    "mutant": "server: event published although the flush failed",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 7.8,
+    "failing_tests": [
+      "Server.JournalFailureNeverPublishesTheUndurableEvent"
+    ]
+  },
+  {
+    "mutant": "server: reply after a failed flush claims success",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 7.4,
+    "failing_tests": [
+      "Server.JournalFailureFailStopsOverTheNetwork",
+      "Server.JournalFailureNeverPublishesTheUndurableEvent"
+    ]
+  },
+  {
+    "mutant": "server: batch flushed after an internal fail-stop",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 7.8,
+    "failing_tests": [
+      "Server.SnapshotRefusedAfterInternalFailStop"
+    ]
+  },
+  {
+    "mutant": "protocol: book_update order_count off by one",
+    "file": "src/protocol.cpp",
+    "verdict": "KILLED",
+    "seconds": 17.2,
+    "failing_tests": [
+      "FeedMirrorSession.DroppedEventIsDetectedAsGapAndRecoveredBySnapshot",
+      "FeedMirrorSession.FollowsLiveTrafficAndVerifiesInBand",
+      "FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook",
+      "Server.SubscribeHandoffUnderLoadHasNoGaps"
+    ]
+  },
+  {
+    "mutant": "server: slow-consumer notice reports stale watermark",
+    "file": "src/server.cpp",
+    "verdict": "KILLED",
+    "seconds": 14.9,
+    "failing_tests": [
+      "Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer"
+    ]
+  }
+]

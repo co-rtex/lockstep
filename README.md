@@ -372,9 +372,10 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   duplicating and reordering channel, where the rebuilt book must hash-match a direct replay.
   A libFuzzer-compatible harness (`fuzz/`) also runs as a seeded standalone mutation fuzzer.
   See [docs/itch.md § Verification](docs/itch.md#verification).
-* `tools/mutation_check.py` injects 56 hand-chosen bugs one at a time (matching priority,
-  validation bounds, journal checks, sequencing, book rules, server fail-stop), and the tests
-  kill all of them. It found two real test gaps, both now covered. See
+* `tools/mutation_check.py` injects 68 hand-chosen bugs one at a time (matching priority,
+  validation bounds, journal checks, sequencing, book rules, server fail-stop, UDP reflection
+  limits); the last full run killed 67/67, and the 68th is killed on its own. It found seven
+  real test gaps, all now covered, and one liveness bug in the UDP transport (fixed). See
   [docs/verification.md](docs/verification.md#do-the-tests-catch-bugs).
 * `tools/cli_arg_sweep.py` gives hostile values to every CLI flag (1 302 runs). It and a
   hostile-JSON pass found four defects, all fixed with regression tests:

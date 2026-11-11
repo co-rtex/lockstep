@@ -97,7 +97,7 @@ failed, no test noticed, and subscribers would have seen an event that a restart
 lose. `Server.JournalFailureNeverPublishesTheUndurableEvent` now kills it. One mutant
 was equivalent and is excluded with a comment in the script: dropping the event-watermark
 rollback after a failed commit cannot be observed, because both failure modes are permanent
-fail-stops. The last full run scored **56/56** (≈ 5.8 min on the M3 with an incremental release
+fail-stops. Full runs scored **56/56** (≈ 5.8 min on the M3 with an incremental release
 build). Eight mutants were added afterwards for the newest code: a constant or ignored key in
 the ITCH order index's keyed hash, nested JSON objects sharing their parent's key set, an
 unreported repeated key, a key limit off by one, a wrong sequencer failure reason, an
@@ -108,8 +108,12 @@ and `JsonCodec.KeyChecksArePerObjectAtEveryDepth` were added to kill them. Three
 the retransmission server's reflection limits: no per-request cap, answers to any source
 address, and no answer rate limit. Before this, removing the cap or the source check failed
 no test. `MoldUdp.OneRequestIsAnsweredOnlyUpToItsCap` and
-`MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` now kill them. All 11 new
-mutants were killed in individual runs; the next full run covers all 67. Run it with
+`MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` now kill them. The full
+run at `3ab0ee2` scored **67/67** in 24.7 min. One mutant, an off-by-one `PacketStore::find`,
+was killed only by the harness's 900 s timeout: the run hung instead of failing. That exposed
+a real liveness bug, fixed in `c19c56d`: when no retransmission ever arrived, `mold-send` and
+`mold-recv` both ran forever. A 68th mutant removes the fix, and the new test kills it in
+an individual run. Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with up to four failing tests
 per mutant (none listed when the test binary crashed), is in
