@@ -104,7 +104,12 @@ unreported repeated key, a key limit off by one, a wrong sequencer failure reaso
 off-by-one `PacketStore::find`, and mold-sim recovery skipping a packet. Each was run on its
 own (`--only`) and killed. Two of them, the constant and the ignored key, and the
 nested-object mutant first survived every existing test. `OrderIndex.TheKeyDecidesPlacementAndEachIndexDrawsItsOwn`
-and `JsonCodec.KeyChecksArePerObjectAtEveryDepth` were added to kill them. Run it with
+and `JsonCodec.KeyChecksArePerObjectAtEveryDepth` were added to kill them. Three more cover
+the retransmission server's reflection limits: no per-request cap, answers to any source
+address, and no answer rate limit. Before this, removing the cap or the source check failed
+no test. `MoldUdp.OneRequestIsAnsweredOnlyUpToItsCap` and
+`MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` now kill them. All 11 new
+mutants were killed in individual runs; the next full run covers all 67. Run it with
 `python3 tools/mutation_check.py [build/release] [--only NAME]`; per-mutant results go to
 `mutation_results.json` in the build directory. The latest full run, with up to four failing tests
 per mutant (none listed when the test binary crashed), is in

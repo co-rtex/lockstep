@@ -286,6 +286,93 @@ TEST(MoldUdp, DatagramsFromAnUnexpectedSourceAreRejected) {
     EXPECT_TRUE(o.received.timed_out);
 }
 
+// A UDP socket on 127.0.0.1 with an ephemeral port: sends datagrams, counts what comes back.
+struct ScriptedPeer {
+    net::Socket s{::socket(AF_INET, SOCK_DGRAM, 0)};
+    std::uint16_t port = 0;
+    ScriptedPeer() {
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t len = sizeof a;
+        if (!s.valid() || ::bind(s.fd(), reinterpret_cast<const sockaddr*>(&a), sizeof a) != 0 ||
+            ::getsockname(s.fd(), reinterpret_cast<sockaddr*>(&a), &len) != 0) {
+            throw std::runtime_error("scripted peer socket");
+        }
+        port = ntohs(a.sin_port);
+    }
+    void send_to(std::uint16_t to, const std::vector<std::uint8_t>& bytes) const {
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_port = htons(to);
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (::sendto(s.fd(), bytes.data(), bytes.size(), 0, reinterpret_cast<const sockaddr*>(&a),
+                     sizeof a) != static_cast<ssize_t>(bytes.size())) {
+            throw std::runtime_error("scripted peer send");
+        }
+    }
+    [[nodiscard]] std::size_t drain() const {
+        std::size_t n = 0;
+        std::uint8_t buf[2048];
+        while (::recv(s.fd(), buf, sizeof buf, MSG_DONTWAIT) >= 0) ++n;
+        return n;
+    }
+};
+
+// Reflection limits of the retransmission server, with a scripted requester and the feed sent
+// to a socket nobody reads. One request asking for 60 000 messages is answered only up to the
+// per-request cap (the packets holding messages 1..10), not with the whole store.
+TEST(MoldUdp, OneRequestIsAnsweredOnlyUpToItsCap) {
+    const Feed f = make_feed(20'000);
+    const ScriptedPeer sink;
+    const ScriptedPeer requester;
+    udp::SenderOptions so;
+    so.dest.port = sink.port;
+    so.linger = 300ms;
+    so.max_request_messages = 10;
+    udp::Sender tx(f.store, so);
+    requester.send_to(tx.port(), build_request(kSession, 1, 60'000));  // queued before run()
+    const udp::SenderReport r = tx.run();
+    std::uint64_t expected = 0;
+    for (std::size_t i = 0; i < f.store.size() && f.store.first(i) < 1 + 10; ++i) ++expected;
+    ASSERT_GE(f.store.size(), 100U * expected);  // the uncapped answer would be far larger
+    EXPECT_EQ(r.requests, 1U);
+    EXPECT_EQ(r.retransmitted + r.answers_rate_limited, expected);
+    EXPECT_EQ(requester.drain(), r.retransmitted);
+}
+
+// Anti-reflection: the sender answers only the receiver's address (`dest.host`). The receiver
+// is configured as 0.0.0.0: a UDP connect() there reaches the local host (macOS and Linux),
+// but no datagram ever comes from 0.0.0.0, so the requester at 127.0.0.1 is "another
+// address". (127.0.0.2 would be more natural, but macOS has only 127.0.0.1 on lo0.) The same
+// request with `answer_any_source` is answered, so the refusal is the source check alone.
+TEST(MoldUdp, RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered) {
+    const Feed f = make_feed(2'000);
+    const ScriptedPeer sink;
+    for (const bool any_source : {false, true}) {
+        const ScriptedPeer requester;
+        udp::SenderOptions so;
+        so.dest.host = "0.0.0.0";
+        so.dest.port = sink.port;
+        so.linger = 300ms;
+        so.answer_any_source = any_source;
+        udp::Sender tx(f.store, so);
+        requester.send_to(tx.port(), build_request(kSession, 1, 5));
+        const udp::SenderReport r = tx.run();
+        if (!any_source) {
+            EXPECT_EQ(r.foreign_requests, 1U);
+            EXPECT_EQ(r.requests, 0U);
+            EXPECT_EQ(r.retransmitted, 0U);
+            EXPECT_EQ(requester.drain(), 0U);
+        } else {
+            EXPECT_EQ(r.foreign_requests, 0U);
+            EXPECT_EQ(r.requests, 1U);
+            EXPECT_GE(r.retransmitted, 1U);
+            EXPECT_EQ(requester.drain(), r.retransmitted);
+        }
+    }
+}
+
 // The request socket allows SO_REUSEPORT (answer sockets share its port), but a second
 // sender must not silently share an explicitly chosen port.
 TEST(MoldUdp, ASecondSenderCannotTakeAPortInUse) {
