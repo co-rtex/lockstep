@@ -14,6 +14,9 @@ with bounded queues and snapshot resynchronization. EngineX is a standalone pers
 inspired by the club's [TradeGrid](https://github.com/co-rtex/tradegrid) Go exchange. It is
 not a replacement for it and not real trading software.
 
+**Release v1.0.0** (2026-11-12) contains R1–R3, the optional R4 allocation work, and the
+market-data path described next. What was verified for the release, and how: [docs/RELEASE.md](docs/RELEASE.md).
+
 A second, independent system decodes **Nasdaq TotalView-ITCH 5.0** binary market data and
 rebuilds per-symbol order books from it ([docs/itch.md](docs/itch.md); the engineering story,
 with rejected options and measurements, is in [docs/case-study.md](docs/case-study.md), and a
@@ -35,8 +38,8 @@ runs).
 | Property tests against an independent reference model; TradeGrid common fixtures | R1 | **Implemented, passing** |
 | `enginex simulate` CLI with demo and golden output | R1 | **Implemented, tested** |
 | Seeded benchmark suite (6 workloads), CSV output, recorded results | R1 | **Implemented, measured** |
-| Linux builds: GCC, Clang ASan/UBSan, TSan | R1 | **Passing on GitHub-hosted Ubuntu 24.04 runners** and in a local Ubuntu 24.04 container |
-| GitHub Actions CI workflow | R1 | **Passing on GitHub**: all 5 jobs green on commit `418d247` ([run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221)); also reproducible locally with `act` (`scripts/ci_local.sh`) |
+| Linux builds: GCC 13 Debug and Release, Clang 18 ASan/UBSan, Clang 18 TSan | R1 | **Passing on GitHub-hosted Ubuntu 24.04 runners** for the whole code base, market-data path included |
+| GitHub Actions CI workflow (5 jobs, including clang-format 19.1.7) | R1 | **Passing**: all 5 jobs green on `ae20847` ([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592)), the first run covering the sprint code; the release's own runs are in [docs/RELEASE.md](docs/RELEASE.md). R1–R3 first passed at `418d247`. Reproducible locally with `act` (`scripts/ci_local.sh`) |
 | Versioned append-only journal (EXJ1, CRC32C framing), ack after `fdatasync`/`F_FULLFSYNC` | R2 | **Implemented, tested** |
 | Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
 | Idempotent retries across restarts | R2 | **Implemented, tested** |
@@ -54,11 +57,12 @@ runs).
 | MoldUDP64 over real UDP (`itch mold-send` / `mold-recv`): paced feed, re-request answers, receiver gap recovery; exact book on all three real sample days at 50 k packets/s with 5 % live and 10 % retransmission loss | ITCH | **Implemented, tested on loopback only** (`scripts/mold_udp_demo.sh`) |
 | UDP multicast, a separate re-request server, SoupBinTCP, full-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
-The CI and Linux results in this table cover R1–R3 at commit `418d247`. The rows marked
-*ITCH* and *Sprint* have been verified locally only: macOS, Apple clang 17, release suite,
-UBSan, hardened libc++ (bounds-checked containers), coverage and fuzz runs. GCC, ASan,
-TSan and clang-format have not run on them yet. Why, and how to close the gap:
-[docs/linux-validation.md](docs/linux-validation.md).
+Linux CI covers every row in this table. Each test job builds the whole repository and
+runs the whole suite. Every test passes except one, which is skipped: the opt-in real-data
+test, whose input file is not redistributed. CI cannot run three things, which ran on macOS
+only (Apple M3, Apple clang 17): the real Nasdaq data checks, the MoldUDP64 runs over UDP
+on real days, and every published benchmark. Details, including the failed CI runs before
+the first green one: [docs/linux-validation.md](docs/linux-validation.md).
 
 ## Architecture
 
@@ -101,7 +105,9 @@ complexity, iterator safety, threading), [docs/journaling.md](docs/journaling.md
 
 ## Supported platforms and prerequisites
 
-* macOS (Apple clang 17 tested) and Linux (GCC 13, Clang 18 tested in Ubuntu 24.04 at `418d247`, before the sprint; the sprint code has run on macOS only, see [docs/linux-validation.md](docs/linux-validation.md)).
+* macOS (Apple Silicon, Apple clang 17) and Linux (Ubuntu 24.04: GCC 13.3 and Clang 18.1 in
+  GitHub Actions on x86_64; R1–R3 also in an aarch64 container). See
+  [docs/linux-validation.md](docs/linux-validation.md).
 * CMake ≥ 3.24, Ninja, a C++20 compiler, Python 3 (for tools and smoke tests).
 * Network access on first configure: GoogleTest 1.15.2 and nlohmann/json 3.11.3 are fetched
   with pinned URLs and SHA-256 hashes.
@@ -110,7 +116,8 @@ complexity, iterator safety, threading), [docs/journaling.md](docs/journaling.md
 
 ```bash
 cmake --preset debug && cmake --build --preset debug
-ctest --preset debug                         # all unit, property, fixture, journal and CLI tests
+ctest --preset debug                         # all unit, property, fixture, journal, network,
+                                             # ITCH and CLI tests: 534 registered, 1 skipped
 
 cmake --preset release && cmake --build --preset release
 ./build/release/enginex simulate --input examples/demo_orders.jsonl --output demo-results.json
@@ -184,6 +191,9 @@ and restart, corruption handling and a slow consumer.
 
 The spec's equivalent raw commands also work:
 `cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_ENABLE_TESTS=ON`.
+The skipped test, `ItchRealData.MatchesReferenceModelIfAvailable`, runs only when
+`ENGINEX_ITCH_REAL_FILE` points at a local Nasdaq sample file (`scripts/real_data_check.sh`
+downloads and checks three).
 
 ## Example
 
@@ -391,6 +401,20 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
 See [docs/verification.md](docs/verification.md) for the full test matrix, the environments
 where each suite ran, and known limitations. One of those is that macOS 26.6 + Apple clang 17
 sanitizer runtimes fail even on an empty program, so ASan/TSan evidence comes from Linux.
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/RELEASE.md](docs/RELEASE.md) | v1.0.0 scope, release evidence, known limitations |
+| [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md) | the engineering contract and R1–R4 acceptance criteria |
+| [docs/architecture.md](docs/architecture.md) | sequencer, book structures, iterator safety, threading |
+| [docs/journaling.md](docs/journaling.md), [docs/protocol.md](docs/protocol.md) | durability contract and crash matrix; wire protocol, ordering, backpressure |
+| [docs/itch.md](docs/itch.md) | ITCH 5.0 decoding, book reconstruction, MoldUDP64, real-data validation |
+| [docs/benchmarks.md](docs/benchmarks.md) | methodology, every published number, raw CSVs in `benchmarks/results/` |
+| [docs/verification.md](docs/verification.md), [docs/linux-validation.md](docs/linux-validation.md) | test matrix, where each suite ran, Linux CI record |
+| [docs/QUANT_SWE_CASE_STUDY.md](docs/QUANT_SWE_CASE_STUDY.md), [docs/case-study.md](docs/case-study.md) | one-page summary for reviewers; the full engineering story |
+| [docs/DECISIONS.md](docs/DECISIONS.md), [docs/PROGRESS.md](docs/PROGRESS.md) | design decisions D1–D37; progress log with commands and results |
 
 ## Relationship to TradeGrid and authorship
 

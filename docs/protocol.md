@@ -26,8 +26,10 @@ feed and makes no low-latency claims. Implementation: `include/enginex/protocol.
 * An invalid length (0 or over the limit) is a fatal stream error. The server replies with an
   `error` (`INVALID_REQUEST`, "protocol error: invalid frame length …") and closes the
   connection, because the byte stream cannot be resynchronized.
-* A client that sends part of a frame and stalls longer than 10 s is disconnected the same
-  way (`partial_frame_timeout`).
+* A frame must complete within 10 s of the read in which it started
+  (`partial_frame_timeout`). Otherwise the client is disconnected the same way. The deadline
+  is per frame: a client that keeps completing frames is never cut off, even if every read
+  ends inside the next frame (D37).
 
 ## 2. Common fields
 

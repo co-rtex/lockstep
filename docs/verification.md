@@ -55,11 +55,11 @@ Commands and results are logged in [PROGRESS.md](PROGRESS.md).
 | Reconnect gets fresh snapshot and later events in order | `Server.ReconnectGetsFreshSnapshotAndContinues` |
 | Duplicate command on timeout/retry → one logical mutation | `Server.RetryAfterDisconnectProducesOneMutation`; `tools/fault_injection.py` network scenario (SIGKILL server, retries) |
 | Clean shutdown with outstanding clients, queue saturation, journal flush | `Server.ShutdownDrainsQueuedWorkAndRestartRecovers`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce` |
-| Connection cap; partial-frame (slowloris) timeout; loopback-only bind | `Server.ConnectionLimitIsEnforced`, `Server.TrickledFrameIsDisconnectedAtDeadline`, `Server.RefusesNonLoopbackBindWithoutOptIn` |
+| Connection cap; partial-frame (slowloris) timeout, per frame (D37); loopback-only bind | `Server.ConnectionLimitIsEnforced`, `Server.TrickledFrameIsDisconnectedAtDeadline`, `Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut`, `Server.RefusesNonLoopbackBindWithoutOptIn` |
 | Journal failure over the network | `Server.JournalFailureFailStopsOverTheNetwork` |
 | Restart after crash: acknowledged commands present, state correct | `tools/fault_injection.py` network kill -9 scenario (also in `scripts/check.sh smoke`) |
 | Bounded queue semantics under concurrency | `BoundedQueue.*` (8 producers, per-producer FIFO) |
-| No observed races | full suite under ThreadSanitizer (Linux, Clang 18): 375/375 pass, no reports |
+| No observed races | full suite under ThreadSanitizer (Linux, Clang 18): 375/375 at `418d247`; whole sprint suite at `ae20847` (532 passed, 1 opt-in skip of 533), no reports |
 
 The network tests were repeated 15× in a row locally with no failures, to check for
 flakiness. One test made a platform assumption about socket buffer sizes that held on macOS
@@ -227,15 +227,17 @@ UBSan passed 3 of 3 runs at load averages up to 12.
 | Linux (Docker) | Clang 18.1.3 | Debug + ASan + UBSan (LeakSanitizer on, `halt_on_error`) | 375/375 |
 | Linux (Docker) | Clang 18.1.3 | RelWithDebInfo + TSan | 375/375, no race reports |
 | Linux (Docker) | GCC 13.3.0 | Release + CLI smoke (R1–R3) + seeded benchmark | pass |
+| GitHub-hosted Actions (`ubuntu-24.04` image 20261101.360.1, x86_64), [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) on commit `ae20847` (whole sprint code) | GCC 13.3.0 / Clang 18.1.3 / clang-format 19.1.7 | all 5 jobs: gcc-debug, clang-asan-ubsan (LSan on), clang-tsan, release (+ smoke, ITCH demo, benchmark, artifact upload), format | **all 5 jobs succeeded** (2026-11-11, ≈ 7.5 min); 533 tests per test job, 532 passed, 1 skipped (opt-in real data); no ASan/UBSan/LSan/TSan reports in any log; `smoke OK`; `format OK`. The sprint runs before it failed; causes and fixes in [linux-validation.md](linux-validation.md#how-it-got-there). The release candidate's runs are in [RELEASE.md](RELEASE.md) |
+| macOS 26.6, Apple M3 (v1.0.0 audit) | Apple clang 17.0.0 | Release, Debug, Debug + UBSan; smoke; ITCH demo; clang-format 19.1.7; server mutants | At `71e469c` (with D37): 534 tests in each build, 533 passed, 1 skipped, 0 UBSan runtime errors; `smoke OK`; ITCH demo exit 0; `format OK`; 6/6 server mutants killed |
 | `.github/workflows/ci.yml` executed with `act` 0.2.89 (Docker, `catthehacker/ubuntu:act-24.04`, arm64) | GCC 13 / Clang 18 as installed by the workflow | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded**, 375/375 tests in each test job (`scripts/ci_local.sh`) |
-| GitHub-hosted Actions (`ubuntu-24.04` image 20261021.618, x86_64), [run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221) on commit `418d247` | GCC 13.3.0 / Clang 18.1.3 | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded** (2026-10-25, 3 min 27 s); 375/375 tests in each of the 4 test jobs; no ASan/UBSan/LSan/TSan reports in any log; `smoke OK`; `format OK`; `ci-benchmark` artifact uploaded |
+| GitHub-hosted Actions (`ubuntu-24.04` image 20261021.618, x86_64), [run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221) on commit `418d247` (R1–R3) | GCC 13.3.0 / Clang 18.1.3 | all 5 jobs: gcc-debug, clang-asan-ubsan, clang-tsan, release (+ smoke, benchmark, artifact upload), format | **all 5 jobs succeeded** (2026-10-25, 3 min 27 s); 375/375 tests in each of the 4 test jobs; no ASan/UBSan/LSan/TSan reports in any log; `smoke OK`; `format OK`; `ci-benchmark` artifact uploaded |
 
 `scripts/linux_check.sh [gcc-debug|clang-asan|clang-tsan|release]` reproduces the Linux rows,
 and `scripts/ci_local.sh` runs the actual workflow file with `act`. Running it under `act`
 exposed a workflow bug (it relied on CMake being preinstalled on the runner image), which is
 now fixed: every job installs its own toolchain.
 The container is the same Ubuntu release as the CI runners, but it is not the GitHub runner
-itself; the GitHub-hosted row above is the authoritative CI result. The seeded benchmark in
+itself; the GitHub-hosted rows above are the authoritative CI results. The seeded benchmark in
 the release job has no performance thresholds: shared runners are noisy, so its numbers are a
 smoke check only and are not quoted anywhere as results. The only annotation on the run is
 GitHub's notice that `actions/checkout@v4.2.2` targets the deprecated Node.js 20 runtime

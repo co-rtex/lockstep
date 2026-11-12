@@ -1,6 +1,7 @@
 # Progress
 
-Last updated: 2026-11-10 (sprint section below); R1–R3 sections unchanged from 2026-10-25.
+Last updated: 2026-11-12 (v1.0.0 release, final section). The R1–R3 and sprint sections are
+kept as they were recorded, with notes where a later result superseded them.
 Status vocabulary: **done** (verified by a run whose output was
 observed), **in progress**, **blocked** (external reason), **outstanding**.
 
@@ -15,6 +16,10 @@ observed), **in progress**, **blocked** (external reason), **outstanding**.
   (the release job's smoke step runs serve + client + graceful shutdown + replay; TSan job
   375/375 with no reports).
 * Final end-to-end pass: see "Final verification" below.
+* Market-data sprint (ITCH 5.0, MoldUDP64, feed mirror, R4): **done**. Linux CI passed on it
+  at `ae20847`: all 5 jobs ([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592)).
+* **v1.0.0: released** (2026-11-12). See "v1.0.0 release" at the end and
+  [RELEASE.md](RELEASE.md).
 
 ## R1 acceptance (spec §16)
 
@@ -84,7 +89,7 @@ python3 tools/fault_injection.py --enginex build/debug/enginex --rounds 8 --seed
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | R3.1 | All R2 acceptance remains true | done | full suite 375/375 on macOS, in each Linux container job and in each GitHub CI test job; fault harness passes (locally and in the CI smoke step) |
-| R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline` |
+| R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline`, `Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut` (added at v1.0.0, D37) |
 | R3.3 | Concurrent clients cannot mutate state out of sequence | done | single sequencer thread (only state owner); `Server.ConcurrentClientsGetUniqueContiguousSequences` (replay in ack-sequence order = server state) |
 | R3.4 | Snapshot/feed handoff has correct watermark/gap policy | done | D15; `Server.SubscribeHandoffUnderLoadHasNoGaps` (contiguous `W+1…`, mirrored book = snapshot), `Server.ReconnectGetsFreshSnapshotAndContinues`; docs/protocol.md §5 |
 | R3.5 | Bounded queues and slow-consumer disconnect/recovery tested | done | `Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer`, `Server.OutboundByteBudgetDisconnectsSnapshotHoarder`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce`, `Server.ConnectionLimitIsEnforced` |
@@ -160,12 +165,15 @@ Acceptance audit: every R1–R3 row above was rechecked against the evidence it 
 started.
 
 Documentation-only commits made after `418d247` (recording this result) have not been pushed,
-so GitHub has no run for them. They change no code, build file or workflow.
+so GitHub has no run for them. They change no code, build file or workflow. (Later pushed:
+[run 40244516875](https://github.com/co-rtex/enginex/actions/runs/40244516875) on `863ad4a`,
+all 5 jobs green.)
 
 ## Market-data sprint (2026-11-10, branch `enginex-quant-sprint-20261109`)
 
-Local evidence only (macOS, Apple clang 17.0.0 clang-1700.6.4.2). These commits have not been
-pushed, so GitHub CI has not run on them.
+Recorded during the sprint, when only local evidence existed (macOS, Apple clang 17.0.0
+clang-1700.6.4.2). Linux CI results were added afterwards: the GCC/ASan/TSan/clang-format row
+below, and [linux-validation.md](linux-validation.md).
 
 | Item | Status | Evidence |
 |---|---|---|
@@ -207,7 +215,7 @@ pushed, so GitHub CI has not run on them.
 | Performance acceptance gates | done | `tools/paired_ab.py` (sign test + 2 % minimum effect, calibrated A/A and Debug-vs-Release); benchmarks.md "Acceptance gates" |
 | UDP bottleneck characterization | done | `recv()` cost per call (13–15 µs, 64 B–9 KB); 8 KB datagrams 2× lossless, 1.25× with loss; `Sequencer::FailReason` reported by `mold-recv`/`mold-sim` |
 | Flakiness audit | fixed | 5 repeated full runs found a load-dependent UDP test flake (reorder bound); 6/6 after; Debug/UBSan 3/3 each |
-| Linux GCC/ASan/TSan/clang-format | **outstanding** | blocked here (no GCC; Docker socket and gh denied; clang-format `-i` refused); dry run shows 802 format violations; plan in [linux-validation.md](linux-validation.md) |
+| Linux GCC/ASan/TSan/clang-format | done (2026-11-11) | blocked inside the sprint sandbox, so CI was the check. Every sprint run failed until `ae20847`: formatting (`6d93043`), GCC false-positive warnings (`3625d9a`, D36), a GCC unused-result error, the TSan link and a sanitizer timeout (`ae20847`, D36). [Run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) on `ae20847`: all 5 jobs green, 532 passed + 1 skipped of 533 in each test job, 0 sanitizer reports ([linux-validation.md](linux-validation.md)) |
 
 Commands and results (latest):
 
@@ -261,7 +269,7 @@ Commands and results (latest):
   network benchmark): `smoke OK`. `scripts/demo.sh`: exit 0 (crash recovery, retry idempotency,
   corruption refusal, slow-consumer cut-off, graceful shutdown).
 
-Outstanding (needs the owner):
+Outstanding at the end of the sprint (needs the owner). **Both resolved; see "v1.0.0 release".**
 
 * **Residual processes.** Three in-memory test servers started during the sprint are still
   running, each bound to loopback only:
@@ -280,7 +288,9 @@ Outstanding (needs the owner):
   `pip install clang-format==19.1.7 && git ls-files '*.cpp' '*.hpp' | xargs clang-format -i`
   and commits the result (formatting only; then re-run the test suite).
 
-Blocked in this environment (exact symptoms), so they are not claimed for the sprint commits:
+Blocked in the sprint environment (exact symptoms). These were not claimed for the sprint
+commits at the time. Linux CI later covered GCC, ASan and TSan (row above). The macOS
+sanitizer and profiler limits still apply on that machine:
 
 * ASan: even `int main(){}` built with `-fsanitize=address` hangs after
   `==N==FindDynamicShadowStart, space_size = 0x0fffffffffff` (seen with `verbosity=3`). The
@@ -307,16 +317,55 @@ Blocked in this environment (exact symptoms), so they are not claimed for the sp
   translation units: 0 findings.
 * Not verified here: clang-format 19.1.7 (`format OK`), GCC 13, Linux ASan/TSan. The formatting
   pass is committed (`6d93043`); the GitHub CI run on it is the check (docs/linux-validation.md).
+  *Later:* CI run 43098677254 on `6d93043` passed clang-format and failed three other jobs.
+  `ae20847` fixed them, and run 43115996592 passed all 5.
 
 ## Blocked / external
 
-* None for R1–R3.
+* None.
 * macOS sanitizers: Apple clang 17 ASan/TSan runtimes fail on macOS 26.6.2 for any program.
   GitHub CI and Linux container evidence are used instead.
 
-## Next tasks
+## v1.0.0 release (2026-11-12)
 
-1. Push the sprint branch and confirm CI (ASan/UBSan/TSan on Linux) covers the ITCH and P0
-   changes; this needs the owner (pushing was out of scope for the sprint).
-2. ~~Optional R4: allocation/layout experiment on the order book~~. Done in the sprint (D26).
-3. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.
+Release audit of the sprint branch at `ae20847`, then merge into `main` and tag `v1.0.0`.
+Summary and evidence table: [RELEASE.md](RELEASE.md).
+
+| Item | Status | Evidence |
+|---|---|---|
+| CI on the sprint code | done | run 43115996592 on `ae20847`: 5/5 jobs; log read for test counts, skips, sanitizer reports (0) and warnings (two known GCC false positives, D36) |
+| CI fixes in `ae20847` keep coverage | done | the only changes are a stronger assertion in one test, a 600 s per-test timeout for sanitizer builds (ProtocolFuzz took 165 s under ASan), and no TSan build for the two allocation-counting benchmarks. Every test runs in every job |
+| Independent code review (server/journal; ITCH/MoldUDP64) | done | one real defect, in the server: the partial-frame deadline cut off clients that kept completing frames. Fixed with a regression test (D37, `71e469c`). ITCH/MoldUDP64: no release-critical defect |
+| Documentation reconciled with the CI results | done | README, linux-validation, verification, itch, protocol, case studies, implementation plan, DECISIONS D36–D37, RELEASE.md |
+| Residual sprint test servers (PIDs 62482, 11913, 72536) | resolved | none of those PIDs exists, and `lsof -nP -iTCP -sTCP:LISTEN` shows no EngineX listener (2026-11-12) |
+| clang-format | resolved | CI `format OK` at `ae20847`; locally clang-format 19.1.7 `format OK` at `71e469c` |
+| Stale worktree metadata | cleaned | `git worktree prune` removed 4 entries whose directories under the temp folder no longer existed |
+
+Commands and results (macOS, Apple M3, Apple clang 17):
+
+```text
+cmake --preset release && cmake --build --preset release && ctest --preset release -j6
+  at ae20847: 100% tests passed out of 533 (1 skipped: ItchRealData.MatchesReferenceModelIfAvailable)
+  at 71e469c: 100% tests passed out of 534 (same skip)
+cmake --preset debug ...; ctest --preset debug -j6         at 71e469c: 534, 533 passed, 1 skipped
+cmake -S . -B build/ubsan ... -DENGINEX_SANITIZER=undefined; UBSAN_OPTIONS=...halt_on_error=1 ctest
+                                                           at 71e469c: 534, 533 passed, 1 skipped;
+                                                           0 "runtime error" lines
+CLANG_FORMAT=<clang-format 19.1.7> scripts/check.sh format -> format OK
+scripts/check.sh smoke build/release                       -> smoke OK
+scripts/itch_demo.sh build/release                         -> exit 0
+enginex_tests --gtest_filter='Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut'
+  before the fix: FAILED (write 8: connection closed by the deadline); after: passed 5/5
+python3 tools/mutation_check.py build/release --only "server:"   -> mutation score: 6/6 killed
+```
+
+The heavy local campaigns (real data, mutation 69/69, fuzzing, hardened libc++) were not
+re-run. Their last full run, `verify_all.sh` at `6d93043`, covered production sources that
+are identical to `ae20847`. The only later source change is D37, in the server's read loop.
+
+Optional future work (not part of v1.0.0, not required by the spec):
+
+1. Move `actions/checkout` to a Node.js 24 release.
+2. Run the coverage-guided libFuzzer build on Linux.
+3. Profile a full-day real-data replay with `perf` on Linux.
+4. Rate-limit duplicate replays of large results and full-depth snapshots.

@@ -81,11 +81,14 @@ The tests are designed so that the code and the tests cannot share one mistake:
   an unreachable server. In-process: a lossy, duplicating, reordering channel with lossy
   re-requests, after which the rebuilt book hash equals a direct replay.
 
-What could not be verified here: ASan and TSan do not start in this sandboxed macOS
-environment. Even an empty program hangs or segfaults; the exact symptoms are in
-PROGRESS.md. GCC has not compiled the sprint code. UBSan, libmalloc guard modes and the full
-suite pass locally. The Linux CI jobs (GCC, ASan/UBSan, TSan) will run once the branch is
-pushed.
+What could not be verified on the development machine: ASan and TSan do not start in that
+macOS environment. Even an empty program hangs or segfaults; the exact symptoms are in
+PROGRESS.md. UBSan, libmalloc guard modes and the full suite passed locally. Linux CI
+later ran the whole suite under GCC 13, Clang 18 ASan+UBSan and TSan with no reports
+([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) at
+`ae20847`). Every sprint run before it had failed: formatting, two GCC-only diagnostics, a
+TSan link error and a sanitizer timeout ([linux-validation.md](linux-validation.md)). None
+was a bug in the product code.
 
 ## 5. Two service defects found and fixed (P0)
 

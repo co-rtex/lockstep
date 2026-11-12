@@ -482,3 +482,52 @@ so no measurable difference. D32's ≈ 2 % has some other cause, so the change w
 (patch `itch-d32-cold-deep-tier-rejected.patch`, pairs
 `itch-d32-cold-deep-tier-rejected-macos-m3.csv`). It is the accepted price of the worst-case
 bound.
+
+## D36. Release CI fixes and GCC flow-sensitive warnings
+
+**Context.** The sprint was written without GCC, Linux sanitizers or access to CI results.
+When the logs could be read, every sprint run had failed. The causes and fixes are listed in
+[linux-validation.md](linux-validation.md#how-it-got-there). Three of the fixes change how
+the build checks the code, so they are recorded here.
+
+**Decisions.**
+
+* *GCC flow-sensitive warnings print but do not fail the build* (`3625d9a`,
+  `cmake/Warnings.cmake`). Under GCC only, `maybe-uninitialized`, `stringop-overflow`,
+  `array-bounds`, `null-dereference` and `dangling-reference` are passed as
+  `-Wno-error=…`. They stay enabled and appear in the log. These warnings depend on the
+  optimizer, and GCC 13 at `-O3` reported two `-Wnull-dereference` false positives in test
+  code (`tests/itch_codec_test.cpp`, a vector sized by `*message_length(t)` and then
+  indexed at 0). Every other warning is still an error under GCC and Clang, and Clang
+  builds keep `-Wnull-dereference` fatal. *Cost:* a real GCC-only finding of these five
+  kinds would not stop CI. So the GCC Release log is read at release time. The passing
+  run (43115996592) contains exactly those two warnings and no others.
+* *Sanitizer builds use a 600 s per-test timeout, other builds 120 s* (`ae20847`).
+  `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` took 165 s under ASan+UBSan on
+  the hosted runner. Inputs and assertions are unchanged.
+* *TSan builds skip `enginex_core_alloc_probe` and `enginex_itch_bench`* (`ae20847`). Both
+  replace the global `operator new`/`delete` to count allocations, which does not link
+  against TSan's interceptors. They are measurement tools, not tests, and every test target
+  still builds and runs under TSan.
+
+**Rejected:** dropping the slow test from sanitizer jobs, lowering its input count further,
+or turning off `-Werror` for GCC.
+
+## D37. The partial-frame deadline is per frame
+
+**Problem.** An independent review during the release audit found that the slowloris
+deadline (`partial_frame_timeout`) was measured from the first read that left a partial
+frame, and reset only when a read left none. A client that kept completing frames, but
+whose reads each ended inside the next frame, was disconnected after one deadline. This
+happens with a pipelining client on a network that splits frames at arbitrary points. A
+regression test reproduced it: with a 300 ms deadline and one frame completed every 50 ms,
+the connection was closed at the eighth write.
+
+**Decision.** The deadline restarts whenever a read completes at least one frame, so it
+bounds each frame from the read in which that frame started. A frame that never completes
+(the slowloris pattern) is still cut off at the deadline. Tests:
+`Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut` (new) and
+`Server.TrickledFrameIsDisconnectedAtDeadline` (unchanged). *Tradeoff:* a client can keep a
+connection open by completing one frame per deadline. That is ordinary low-rate traffic.
+Connections are capped (`--max-clients`), and each partial frame is bounded by the frame
+limit.

@@ -73,8 +73,9 @@ rationale is in DECISIONS.md D19–D32.
 |---|---|---|---|
 | S.0 | Audit; fix the two server defects (subscribe without baseline, snapshot after fail-stop) | regression tests that failed before the fix | done |
 | S.1 | ITCH 5.0 decoder (23 types) and book reconstruction, with a strict anomaly policy | goldens, malformed inputs, reference-model differential, fuzzing, independent Python decoder and book (final state and mid-stream checkpoints), 3 real sample days | done |
-| S.2 | Read-only feed mirror; MoldUDP64 sequencing, simulation and loopback UDP transport | gap/refusal/resubscribe tests, lossy relays, set-model differential, real days over UDP | done (macOS loopback only) |
+| S.2 | Read-only feed mirror; MoldUDP64 sequencing, simulation and loopback UDP transport | gap/refusal/resubscribe tests, lossy relays, set-model differential, real days over UDP | done (loopback only; tests on macOS and Linux CI, real-day UDP runs on macOS) |
 | S.3 | Performance work driven by measurement: ITCH layout, exchange request index (D31), bounded level vector (D32) | interleaved A/B runs with identical state hashes; raw CSVs in `benchmarks/results/` | done |
 | S.4 | Independent checks of the exchange: Python model over simulate, TCP, journal and restart | ctest `exchange_pymodel_*` | done |
 | S.5 | Verification sweep: mutation testing (56/56, then 69/69 at `15cfbde`), UBSan, hardened libc++, leaks, coverage, doc commands executed | docs/verification.md | done locally |
-| S.6 | GCC, ASan and TSan on the sprint code; clang-format | needs a push to CI (blocked in this environment) | outstanding |
+| S.6 | GCC, ASan and TSan on the sprint code; clang-format | GitHub Actions [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) on `ae20847`, all 5 jobs ([linux-validation.md](linux-validation.md)) | done |
+| S.7 | v1.0.0 release audit: independent review, fix found defects, reconcile docs, merge, tag | [RELEASE.md](RELEASE.md); D36, D37 | done |

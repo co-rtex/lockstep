@@ -1,7 +1,8 @@
 # EngineX: a quant/infrastructure SWE case study
 
 A one-page orientation for interviewers, and talking points for the author. Everything here
-is implemented and was measured or tested in this repository. The detailed engineering story
+is implemented and was measured or tested in this repository. Status: **v1.0.0**, the final
+release ([RELEASE.md](RELEASE.md)). The detailed engineering story
 is in [case-study.md](case-study.md). Specifications are in [itch.md](itch.md),
 [protocol.md](protocol.md) and [journaling.md](journaling.md). Raw numbers are in
 [benchmarks.md](benchmarks.md) and `benchmarks/results/`.
@@ -32,34 +33,59 @@ ITCH data never become orders in the exchange. They have different types (`itch:
   books whose price levels are sorted vectors with intrusive FIFO queues. Output is
   depth/top plus a SHA-256 over the canonical book.
 
+## How to read the numbers
+
+* **In-process vs network.** The ITCH and matching-core rows are single-threaded, in-process
+  timings with no I/O. The durable-ack, TCP and UDP rows go through the kernel, with client
+  and server on one laptop (loopback). None is a wire latency on an exchange network.
+* **Synthetic vs real data.** The exchange has no real order flow, so its numbers come from
+  seeded synthetic workloads. ITCH rows marked *real* use three public Nasdaq sample days,
+  run locally; committed tests use synthetic fixtures only.
+* **Current vs historical.** Each row names the commit it was measured at. *Current* means
+  the final sprint code. Earlier results are kept because they justify each change. The
+  v1.0.0 closeout re-measured nothing ([RELEASE.md](RELEASE.md)).
+* **One machine:** an Apple M3 MacBook Air (fanless), macOS 26.6, Apple clang 17, `-O3`.
+  The CI benchmark is a smoke run with no thresholds, and no CI number is quoted.
+
 ## Results that are measured, not asserted
 
-Machine: Apple M3 MacBook Air (fanless), macOS 26.6, Apple clang 17, `-O3`. The ITCH and
-matching-core numbers are in-process and single-threaded. The TCP, durable-ack and UDP rows
-are loopback measurements on this one machine. None is an exchange wire latency.
+| What | Kind | Result | Evidence |
+|---|---|---|---|
+| ITCH decode | in-process, real (3 days) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 heap allocations | `itch-real-current-quiet-macos-m3.csv` |
+| ITCH full replay (decode + book; 8.7 k symbols, 1.5–1.6 M live orders) | in-process, real | **current** (`b50a73f`, quiet host): 55.3–57.2 ns/msg over 3 days. **History:** 99 → 55–59 ns/msg from data-driven layout changes (at `562c56d`). Later worst-case and hash-flood fixes cost ≈ 5 % on book apply, and D35 won it back (talking point 12) | `itch-real-sample-macos-m3.csv`, `itch-apply-bisect-quiet-macos-m3.csv`, `itch-cold-fallback-d35-macos-m3.csv`, `itch-real-current-quiet-macos-m3.csv` |
+| ITCH book apply per message | in-process, real | **current** (`b50a73f`, quiet host): mean 41.7–45.0 ns; p50 41–42 ns, p99 291–292 ns, p99.9 417–459 ns (timer included). Earlier, at `dd78a8d` under more load: p99 292–333 ns, p99.9 458–541 ns | `itch-real-current-quiet-macos-m3.csv`, `itch-real-latency-macos-m3.csv` |
+| Book memory | in-process, real | ≈ 188–211 bytes per live order for the whole process at 1.5–1.65 M live orders. The book's own structures are 115–122 B of that: index pages 52–59 B (≈ 7 % occupied), order nodes 41 B, levels ≈ 20 B | `itch-real-memory-macos-m3.csv`, `itch-real-memory-breakdown-macos-m3.csv` |
+| Real-data correctness | real, ≈ 64 M messages | 0 decode errors and 0 anomalies under `--strict`. Every live order equals an independent reference model. Every field of every message equals an independent Python decoder. Every price level equals an independent Python book (final books, and every book's best bid/ask every 100 k messages) | `scripts/real_data_check.sh`, `tools/itch_pydecode.py`, `tools/itch_pybook.py` |
+| Structural worst cases | in-process, real | A ≈ 10 ms vector-growth copy was removed. A ≈ 95 µs chunk value-initialization on the day's first add went to ≈ 30–38 µs. Both were found by locating the max sample | benchmarks.md, `itch-node-chunk-ab-macos-m3.txt` |
+| Exchange matching core | in-process, synthetic | **current** `mixed`: 10.69 M commands/s, p99 208 ns. The pmr pool gave +14–28 % throughput where book nodes recycle. Every change ends in identical state hashes | `r4-core-pool-macos-m3.csv`, `core-request-index-ab-macos-m3.csv` |
+| Exchange core vs history size | in-process, synthetic | The idempotency index was rebuilt as a keyed flat table: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196, p99 ≈ halved, identical state hashes | `core-request-index-ab-macos-m3.csv` |
+| Durable ack | disk, one process | p50 3.12 ms with `F_FULLFSYNC`. Over TCP, group commit gives 8 clients 3.7× the throughput of 1 (4.0 commands per sync) | R2/R3 tables in benchmarks.md |
+| TCP round trip | loopback network | p50 33.1 µs (1 client, in-memory server, includes JSON) | R3 table |
+| MoldUDP64 over UDP | loopback network, real | All 3 sample days exact at 50 k packets/s with 5 % live and 10 % retransmission loss. Reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv`; re-run after the gap-stall fixes (`5d0658f`, `b680e75`): `mold-udp-real-days-5d0658f-macos-m3.txt` |
 
-| What | Result | Evidence |
-|---|---|---|
-| ITCH decode (real data) | ≈ 13 ns/msg, ≈ 2.3 GiB/s, 0 allocations | 3 sample days |
-| ITCH full replay (real data, 8.7 k symbols, 1.5–1.6 M live orders) | 99 → 55–59 ns/msg after data-driven layout changes (3 days, two runs, at `562c56d`). Later commits made book apply **≈ 5 % slower** (20-pair gates on a quiet host, p < 1e-4). A bisect attributed it to D32's worst-case bound (≈ 2 %, accepted) and to D34's keyed fallback (≈ 2.7 %). That code never runs on real data; its inlined SipHash grew the hot paths. **D35 moved it out of line**: real-data apply/replay ≈ 3 % faster, and net against `562c56d`, no measurable difference (1.012, p = 0.12). Final code (`b50a73f`), quiet host: replay 55.3–57.2, apply 41.7–45.0 ns/msg (apply p99.9 417–459 ns) | `itch-real-sample-macos-m3.csv`, `itch-apply-bisect-quiet-macos-m3.csv`, `itch-cold-fallback-d35-macos-m3.csv`, `itch-real-current-quiet-macos-m3.csv` |
-| Book memory (real data) | ≈ 188–211 bytes per live order for the whole process, at 1.5–1.65 M live orders. The book's own structures account for 115–122 B of it: index pages 52–59 B (≈ 7 % occupied), order nodes 41 B, levels ≈ 20 B | `itch-real-memory-macos-m3.csv`, `itch-real-memory-breakdown-macos-m3.csv` |
-| Real-data correctness | ≈ 64 M messages over 3 days: 0 decode errors, 0 anomalies under `--strict`, every live order equal to an independent reference model; every field of every message equal to an independent Python decoder, and every price level equal to an independent Python book (final books, plus best bid/ask of every book every 100 k messages) | `scripts/real_data_check.sh`, `tools/itch_pydecode.py`, `tools/itch_pybook.py` |
-| Book apply per message, real data | p50 41–42 ns, p99 291–292 ns, p99.9 417–459 ns at the final code (`b50a73f`, quiet host); earlier, at `dd78a8d` under more load, p99 292–333 ns and p99.9 458–541 ns (3 days, timer included) | `itch-real-current-quiet-macos-m3.csv`, `itch-real-latency-macos-m3.csv` |
-| Structural worst cases on real data | ≈ 10 ms vector-growth copy removed. A ≈ 95 µs chunk value-initialization on the day's first add was cut to ≈ 30–38 µs. Both found by locating the max sample | benchmarks.md, `itch-node-chunk-ab-macos-m3.txt` |
-| Exchange matching core | +14–28 % throughput where nodes recycle (pmr pool), identical state hashes | `r4-core-pool-macos-m3.csv` |
-| Exchange core vs history size | idempotency index rebuilt as a keyed flat table: 1 M commands 198 → 119 ns/cmd, 3 M 296 → 196, p99 ≈ halved, identical state hashes | `core-request-index-ab-macos-m3.csv` |
-| Durable ack | ≈ 3 ms p50 with `F_FULLFSYNC`; group commit 3.7× throughput with 8 clients | R2/R3 tables |
-| Loopback TCP round trip | ≈ 33 µs p50 (1 client, in-memory) | R3 table |
-| MoldUDP64 over loopback UDP, real data | all 3 sample days exact at 50 k packets/s with 5 % live / 10 % retransmission loss; reorder buffer 121–147 → 20–21 ns/msg | `mold-udp-loopback-macos-m3.csv`, `mold-sequencer-macos-m3.csv`; re-run after the gap-stall fixes (`5d0658f`, `b680e75`): `mold-udp-real-days-5d0658f-macos-m3.txt` |
+## Verification at a glance
+
+| Check | Result |
+|---|---|
+| Linux CI, 5 jobs: GCC 13 Debug and Release, Clang 18 ASan+UBSan+LSan, Clang 18 TSan, clang-format | all green on the whole code base, with no sanitizer reports. The first green run on the sprint code is [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) at `ae20847`; the release runs are in [RELEASE.md](RELEASE.md) |
+| Test suite | 534 tests at v1.0.0. All pass except one opt-in real-data test, which skips without its local file |
+| Mutation testing | 69/69 hand-written bugs killed (`6d93043`); the 6 server mutants re-killed after the release fix |
+| Fuzzing | ≈ 66.7 M distinct standalone inputs, no violation. Not coverage-guided |
+| Independent models | Python ITCH decoder and book on real data; Python exchange model over CLI, TCP, journal restart and 32 concurrent clients |
 
 ## Correctness work that found real bugs
 
 * **Two server bugs, reproduced before fixing.** A subscriber whose snapshot was too large
   was registered with no baseline. A snapshot after an internal fail-stop could expose
   never-durable state.
-* **Eight independent adversarial reviews**. Six led to fixes with regression tests. The
-  reviews of the request-id index and of the bounded price levels found no defect. Findings
+* **Eight independent adversarial reviews during the sprint, two more at release.** Six of
+  the sprint reviews led to fixes with regression tests. The reviews of the request-id index
+  and of the bounded price levels found no defect. At release, the ITCH/MoldUDP64 review
+  found no release-critical defect. The server review found the one below. Findings
   included:
+  * a slowloris deadline that ran per *streak* of partial reads rather than per frame. A
+    pipelining client whose reads all ended mid-frame was cut off although every frame
+    arrived promptly. A test reproduced it before the fix (D37);
   * strict-replay counters drifting after a stop;
   * mirror exceptions escaping a session, and partial application of a malformed update;
   * unclamped directory growth in the paged index;
@@ -194,16 +220,29 @@ are loopback measurements on this one machine. None is an exchange wire latency.
     revealed by a heartbeat after a quiet spell was abandoned at once, before any re-request.
     An independent review caught it, and a test and a mutant now pin the corrected rule.
 
+14. *"What did CI catch that your machine could not?"* The sprint was built on macOS, where
+    ASan and TSan do not start. Every sprint CI run failed, for five reasons:
+    * formatting;
+    * two GCC `-O3` null-dereference false positives in test code;
+    * GCC refusing a `(void)`-discarded warn-unused-result call;
+    * a TSan link clash with my allocation-counting `operator new`;
+    * a fuzz test taking 165 s under ASan against a 120 s limit.
+
+    None was a product bug. Each fix kept the coverage: the test now checks the parsed value,
+    and sanitizer builds get a longer timeout instead of fewer inputs. The benchmarks that
+    replace `operator new` are not built under TSan, and every test still is. The
+    false-positive warnings are printed but not fatal, which is a documented trade-off (D36).
+
 ## Honest limits
 
 * MoldUDP64 over UDP has only run on loopback (unicast, the sender doubles as the re-request
   server). There is no multicast and no SoupBinTCP. Here it is exact up to ≈ 50 k packets/s,
   a limit consistent with a measured ≈ 12.8 µs per `recv()` (the receiver was not profiled).
-* Real data covers the first ≈ 6.5 h of three days, not full sessions or closing crosses.
-* GCC, ASan, TSan and clang-format have not run on the sprint's code. The sandbox blocked
-  them locally, and the branch has not been pushed to CI. UBSan, a hardened-libc++ build
-  (bounds-checked containers and spans: whole suite, a real day, 160 k fuzz inputs), coverage,
-  fuzzing and leak checks ran.
+* Real data covers the first 256 MiB of three days: pre-market through ≈ 09:33–09:37 ET,
+  ≈ 21 M messages each. It does not cover full trading sessions or closing crosses.
+* Platform split. ASan and TSan run only on Linux CI, because the macOS sanitizer runtimes
+  fail. Real data, the mutation harness and every benchmark ran only on the M3, never on
+  Linux or server hardware.
 * The price-level structure is tuned for real books (≤ 3.8 k levels per side here). Its
   adversarial worst case was measured at 25 µs/msg and is now bounded (96 ns/msg, D32), but a
   monotone-improving 200 k-level side is slower than before (54 vs 17 ns/msg).

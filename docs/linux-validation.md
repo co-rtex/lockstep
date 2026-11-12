@@ -1,122 +1,110 @@
-# Linux validation plan for the sprint code
+# Linux validation
 
-The R1–R3 code passed every Linux job in CI at `418d247`: GCC 13 Debug, Clang 18 ASan+UBSan,
-Clang 18 TSan, Release and clang-format (see [verification.md](verification.md)). The code
-added on the `enginex-quant-sprint-20261109` branch has been built and tested on macOS only,
-with Apple clang 17. **No Linux, GCC, ASan, TSan or clang-format result exists for it.** This
-page records why, and the shortest way to get those results.
+**Status: passed.** The sprint code (ITCH 5.0, MoldUDP64, feed mirror, server fixes, R4
+pool, request-id index) passed all five Linux CI jobs on GitHub-hosted runners. This page
+records that run, the failed runs before it and how each blocker was fixed, and the pre-CI
+risk list with what actually happened. The R1–R3 code had already passed the same five jobs
+at `418d247` ([run 40243146221](https://github.com/co-rtex/enginex/actions/runs/40243146221)).
 
-## What ran, and what could not run here
+## The passing run
 
-| Check | Sprint status | Evidence or blocker |
+[Run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592), push of
+`ae208476f778` on `enginex-quant-sprint-20261109`, 2026-11-11 22:57–23:04 UTC.
+GitHub-hosted `ubuntu-24.04`, image version 20261101.360.1, runner 2.338.2, x86_64.
+
+| Job | Toolchain | Result |
 |---|---|---|
-| Release, Debug, UBSan (`-fno-sanitize-recover`), hardened libc++ | run | 531/531 each at `cc26cb2` (`verify_all.sh`; verification.md); Debug and UBSan 3 consecutive runs each earlier |
-| Leaks (`leaks --atExit`), guard malloc | run | 0 leaks over 510 gtests at `7e5af9c`; MallocScribble/GuardEdges whole binary |
-| ASan, TSan on macOS | **blocked** | the sanitizer runtimes fail even on an empty `int main(){}`: ASan hangs, TSan exits 139 (verification.md) |
-| GCC 13 | **not run** | no GCC installed on this machine |
-| Docker (`scripts/linux_check.sh`) | **blocked** | `docker` is installed, but the sandbox denies the socket: `dial unix /var/run/docker.sock: connect: operation not permitted` |
-| GitHub Actions on the branch | **not read** | `gh` cannot read its config in the sandbox (`open ~/.config/gh/config.yml: operation not permitted`). The branch is pushed by the owner's own sync process, not from this session |
-| clang-format 19.1.7 | **dry run only: fails** | A read-only review ran the PyPI wheel's clang-format 19.1.7 with `--dry-run`; the binary's SHA-256 matches the wheel's RECORD. It reports **802 violations in 43 files**, many of them lines over 100 columns. Every file was clean at `418d247`. Applying it (`-i`) from this session was refused by the sandbox (`[Code from External]`), so the formatting commit was left to the owner (step 1 below). **Update:** a formatting pass landed as `6d93043` (43 files, whitespace and `#include` order only; non-whitespace characters identical per file; 533/533 tests in Release, Debug, UBSan and hardened). It touches the same 43 files as the dry run, but no clang-format 19.1.7 binary was available here to confirm `format OK`; the CI format job on `6d93043` is the check |
-| Python tools on Python 3.8–3.12 | checked statically | every tracked `.py` parses with `ast.parse(feature_version=(3, 8))`, `(3, 10)` and `(3, 12)`; no f-string reuses its own quote (PEP 701 syntax) |
+| Linux GCC Debug | GCC 13.3.0, `-Werror` | success: 533 tests, 532 passed, 1 skipped (see below), 0 failed; 63 s |
+| Linux Release, CLI smoke and seeded benchmark | GCC 13.3.0, `-O3 -Werror` | success: 533 / 532 passed / 1 skipped; `smoke OK`; `scripts/itch_demo.sh` exit 0; six seeded benchmark scenarios; `ci-benchmark` artifact uploaded |
+| Linux Clang Debug + ASan/UBSan | Clang 18.1.3, `detect_leaks=1`, `halt_on_error=1` | success: 533 / 532 passed / 1 skipped; 271 s |
+| Linux Clang + ThreadSanitizer | Clang 18.1.3, RelWithDebInfo | success: 533 / 532 passed / 1 skipped; 114 s |
+| clang-format check | clang-format 19.1.7 (PyPI wheel) | success: `format OK` |
 
-Partial proxies run here: a clang build with `-Wshadow-all` (0 warnings), a scripted search
-for compound assignments to narrow types, explicit standard headers for libstdc++, and a
-source-level portability review of the sprint diff. None of these replaces a GCC build.
+* `grep -c -E 'WARNING: ThreadSanitizer|ERROR: AddressSanitizer|runtime error:|ERROR: LeakSanitizer'`
+  over the whole run log: **0**.
+* The skipped test is `ItchRealData.MatchesReferenceModelIfAvailable`. It is opt-in: it
+  needs a local copy of a Nasdaq sample file (`ENGINEX_ITCH_REAL_FILE`), which is not
+  redistributed. Real-data validation is local only (see [itch.md](itch.md)).
+* Compiler warnings: the GCC Debug log has none. The GCC Release log has exactly two, both
+  `-Wnull-dereference` in test code (`tests/itch_codec_test.cpp:379` and `:416`): a
+  `std::vector` sized by `*message_length(t)` and then indexed at 0. They are false
+  positives; `message_length` returns the fixed length (≥ 1) of a known message type. They
+  are printed but not fatal because of the GCC-only rule in `cmake/Warnings.cmake`
+  ([DECISIONS.md D36](DECISIONS.md#d36-release-ci-fixes-and-gcc-flow-sensitive-warnings)).
+  Every other warning is an error under GCC and Clang.
+* Two benchmark executables, `enginex_core_alloc_probe` and `enginex_itch_bench`, are not
+  built under TSan: they replace global `operator new`/`delete` to count allocations, which
+  does not link with TSan's interceptors. Every test target builds and runs under TSan.
+* Sanitizer builds use a 600 s per-test timeout (120 s otherwise). The slowest tests under
+  ASan/UBSan were `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` (165 s) and
+  `fuzz_itch_standalone_smoke` (86 s, own 300 s limit).
 
-## How to close the gap, cheapest first
+The same checks reproduced locally on macOS (Apple M3, Apple clang 17) at `ae20847` on
+2026-11-12: Release, Debug and UBSan 533 / 532 passed / 1 skipped each, 0 UBSan runtime
+errors; `scripts/check.sh smoke` OK; `scripts/itch_demo.sh` exit 0; clang-format 19.1.7
+`format OK`. ASan and TSan cannot start on that macOS version (see
+[verification.md](verification.md#sanitizers-on-macos-known-toolchain-problem)), so Linux CI
+is their only evidence.
 
-1. **Formatting** (the CI format job fails until this is done). On any machine with Python:
+The v1.0.0 release closeout then added one server fix and its regression test
+([D37](DECISIONS.md#d37-the-partial-frame-deadline-is-per-frame)); the CI runs on that code are
+recorded in [RELEASE.md](RELEASE.md).
 
-   ```bash
-   python3 -m venv /tmp/cf && /tmp/cf/bin/pip install clang-format==19.1.7
-   git ls-files '*.cpp' '*.hpp' | xargs /tmp/cf/bin/clang-format -i
-   CLANG_FORMAT=/tmp/cf/bin/clang-format scripts/check.sh format     # must print "format OK"
-   cmake --build build/release && ctest --test-dir build/release -j8  # formatting only: still all pass
-   ```
+## How it got there
 
-   Commit the result on its own ("style: clang-format 19.1.7"), so the formatting diff is
-   reviewable apart from any logic change.
+The sprint was developed in a sandbox without GCC, Docker or GitHub access, and macOS
+sanitizers do not run there. The branch was pushed by a sync job, so CI ran on many sprint
+commits, but nobody could read the results during the sprint. Every run from `4f3e363`
+(2026-11-10) to `6d93043` (2026-11-11) failed. The causes, read from the logs afterwards:
 
-2. **GitHub Actions** on the pushed branch runs all five jobs (`.github/workflows/ci.yml`).
-   Read each job's log, not just the status icon. ASan, UBSan and TSan print reports, and a
-   test that exits 0 after a report still counts as a failure here.
+| Cause | Jobs | First seen | Fixed in |
+|---|---|---|---|
+| clang-format violations in the sprint's new files (802 in 43 files by a later dry run) | format | run 42904632801 (`4f3e363`) | `6d93043`: formatting only (whitespace and `#include` order) |
+| GCC `-Werror=null-dereference` false positives in `tests/itch_codec_test.cpp` (Release, `-O3`) | release | run 42904632801 | `3625d9a`: made non-fatal for GCC in `cmake/Warnings.cmake` (D36) |
+| GCC: "ignoring return value" of `Json::parse` inside `EXPECT_NO_THROW` (nlohmann/json marks it warn-unused-result, which GCC does not let a `(void)` cast silence) | gcc-debug, release | run 42904632801 | `ae20847`: the parsed body is kept and checked |
+| TSan link failure: allocation-counting benchmarks replace `operator new` | tsan | run 42904632801 | `ae20847`: those two benchmarks are not built under TSan |
+| `ProtocolFuzz.HostileRequestsNeverBreakTheCommandPath` over the 120 s per-test timeout under ASan/UBSan | asan-ubsan | run 42904632801 | `ae20847`: 600 s timeout for sanitizer builds; no input or test removed |
 
-3. **Locally in Docker**, on a machine where the socket is usable (results are not identical
-   to the hosted runner, but close):
+The last failed run, [43098677254](https://github.com/co-rtex/enginex/actions/runs/43098677254)
+on `6d93043`, had only the last three causes left. `ae20847` fixed them, and the next run
+passed. No test, sanitizer, input count or warning flag was removed to get there, and
+`ae20847` changed no production source file (only `CMakeLists.txt`, `tests/CMakeLists.txt`
+and one test).
 
-   ```bash
-   scripts/linux_check.sh gcc-debug clang-asan clang-tsan release   # ubuntu:24.04 container
-   scripts/ci_local.sh                                              # the workflow itself, via act
-   ```
+## Pre-CI risk list, and what happened
 
-## Where failures are most likely
+Before any CI log could be read, a portability review listed the places most likely to fail
+on Linux. Outcomes from the passing run:
 
-These are the riskiest places, from the portability review and from what is new since
-`418d247`. If a job fails, check them first.
+| Predicted risk | Outcome on Linux CI |
+|---|---|
+| GCC-only warnings under `-Werror` (`-Wconversion` on narrow types, `-Wdangling-reference`, `-Wmaybe-uninitialized` around `std::optional`) | Only `-Wnull-dereference` fired (two false positives in test code, above). The `[[nodiscard]]` error was not predicted |
+| `MoldUdp.UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook` (Linux doubles `SO_RCVBUF`) | passed in all 4 test jobs (2.5 s Release, 6.3 s ASan, 4.2 s TSan) |
+| `FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook` (larger Linux socket buffers) | passed in all 4 |
+| `MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` (`connect()` to `0.0.0.0` reaching the local host) | passed in all 4 |
+| `MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered` (receiver starvation under TSan) | passed in all 4 |
+| LeakSanitizer had never run on the sprint code | 0 reports |
+| `fuzz_itch_standalone_smoke` against the sanitizer time limit | passed (2 000 inputs in sanitizer builds: 86 s under ASan/UBSan) |
+| Missing standard includes under libstdc++ (45 added by `tools/include_audit.py`) | GCC builds compiled |
+| A sanitizer-slow test over its timeout | yes: `ProtocolFuzz`, fixed by the 600 s sanitizer timeout |
 
-* **GCC-only warnings under `-Werror`** in new code. Examples: `-Wconversion` on arithmetic
-  with `uint16_t`, `-Wdangling-reference` (new in GCC 13), and `-Wmaybe-uninitialized`
-  around `std::optional`.
-* **UDP behaviour on Linux** (`src/itch/mold_udp.cpp`, `MoldUdp.*` tests). The per-peer answer
-  sockets share the request port through `SO_REUSEPORT` and are `connect()`ed. Linux prefers
-  the connected socket for that peer, which the sender handles (`via_fd`), but this has never
-  run there. Linux also doubles `SO_RCVBUF`, which changes how many datagrams the
-  small-buffer test drops (it asserts recovery, not a drop count).
-* **Specific tests named by the portability review**, all plausible rather than certain:
-  * `MoldUdp.UnpacedBurstIntoASmallSocketBufferStillRebuildsTheExactBook`. Linux charges
-    each datagram's full kernel buffer against `SO_RCVBUF`, so a 32 KiB buffer (64 KiB after
-    doubling) holds only ≈ 20–30 datagrams. The receiver's request socket uses the same size,
-    so retransmission bursts are mostly dropped again, and recovery advances about one buffer
-    per 50 ms retry. It should converge (idle timeout 5 s). If it times out under TSan,
-    either size the request socket separately or lengthen the timeouts.
-  * `FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook`. It needs ≈ 1.5 s of
-    traffic to overflow an 8-frame queue plus the socket buffers, which are larger on Linux.
-    If the traders are too slow under TSan, the slow-consumer assertion fails. Fix by
-    lowering the client's `SO_RCVBUF` or lengthening the stall.
-  * The ASan job runs LeakSanitizer, which has never run on the sprint code. A read-through
-    found no leak; macOS `leaks` reported 0 over 510 gtests.
-  * GCC Release at `-O3 -Werror` can raise `-Wmaybe-uninitialized` and
-    `-Wstringop-overflow` false positives that the `-O0` Debug job cannot. The review named
-    two candidate patterns: `std::optional<Session>` in `Sequencer::Options`, and the sized
-    `std::vector` plus insert in MoldUDP64 packet building. **Done pre-emptively (2026-11-11,
-    `cmake/Warnings.cmake`):** under GCC, `maybe-uninitialized`, `stringop-overflow`,
-    `array-bounds`, `null-dereference` and `dangling-reference` are still enabled and printed,
-    but do not fail the build. Each is probed with `check_cxx_compiler_flag` first. Every
-    other warning is still an error. This targets the most likely GCC Release failure. It
-    cannot be confirmed without the CI log, and those warnings should still be read in it.
-* **The fuzz smoke test against the sanitizer job's time limit (most concrete candidate).**
-  `fuzz_itch_standalone_smoke` (20 000 inputs, TIMEOUT 300 s) took 4 s in Release, 71 s in
-  Debug, 85 s in hardened Debug and **151 s under UBSan Debug** on the M3. The CI
-  `clang-asan-ubsan` job adds ASan on a slower runner, so it would very likely time out.
-  Since 2026-11-11, Debug and sanitizer builds run 2 000 inputs: 15 s under UBSan here.
-  Release keeps 20 000. This is not confirmed against the CI log.
-* **Missing standard includes (libstdc++).** `tools/include_audit.py` (ctest
-  `include_audit`) reported 45 `std::` symbols whose header was not in the file's include
-  closure, and they were added. libc++ supplies many of these transitively, libstdc++ fewer.
-  Most were in files that already passed GCC CI at `418d247`, so this is hardening.
-* **UDP tests added on 2026-11-11, macOS only so far.**
-  * `MoldUdp.RequestsFromAnAddressOtherThanTheReceiversAreNotAnswered` sets the receiver to
-    `0.0.0.0`. It relies on a UDP `connect()` there reaching the local host. That was checked
-    on macOS only. Linux is expected to behave the same, since it treats a destination of
-    `INADDR_ANY` as the local host, but this has not run there. Linux can bind 127.0.0.2, so if
-    it fails, switch that platform to a receiver at 127.0.0.2.
-  * `MoldUdp.AGapRevealedAfterAQuietSpellIsStillRecovered` sends 900 ms of heartbeats
-    against a 500 ms idle timeout, then expects a re-request within 1 s. Under TSan, if the
-    receiver thread is starved past 1 s, raise the `wait(1000ms)`.
-  * `MoldUdp.AGapThatCanNeverBeFilledEndsTheRunInsteadOfWaitingForever` uses a 15 s watchdog
-    against a run that ends in ≈ 1.4 s.
-* **Timing-sensitive tests under sanitizers.** The TSan build is several times slower. Socket
-  tests with timeouts (`MoldUdp.*`, `Server.*Timeout*`, `FeedMirrorSession.*`) are the
-  candidates. `ctest -R 'MoldUdp|Server\.|FeedMirrorSession|exchange_pymodel'` reruns just
-  those. The gtests carry no ctest labels, so `-L net` selects only the three Python network
-  checks.
-* **The Python checkers in ctest** (`exchange_pymodel_*`, `itch_pydecode_*`,
-  `itch_pybook_lifecycle`, `cli_itch_generate_replay_dump`) need `python3` on the runner. The
-  workflow installs it.
+## Reproducing
 
-## Done when
+```bash
+scripts/linux_check.sh gcc-debug clang-asan clang-tsan release   # ubuntu:24.04 in Docker
+scripts/ci_local.sh                                              # the workflow itself, via act
+python3 -m venv /tmp/cf && /tmp/cf/bin/pip install clang-format==19.1.7
+CLANG_FORMAT=/tmp/cf/bin/clang-format scripts/check.sh format    # "format OK"
+```
 
-All five jobs pass and no sanitizer report appears in any log. Then add a row for the sprint
-commit to the "Where suites have run" table in [verification.md](verification.md), with the
-run link, the runner image version and the test counts. Until then, every document must say
-that GCC, ASan, TSan and clang-format have not run on the sprint code.
+The container and `act` runs are close to, but not the same as, the hosted runner. The
+GitHub-hosted runs are the authoritative result.
+
+## Not covered on Linux
+
+* Real Nasdaq data (local files, macOS only) and the MoldUDP64 real-day runs over UDP.
+* Benchmarks: the CI benchmark is a smoke run with no thresholds. Every published number is
+  from the Apple M3 ([benchmarks.md](benchmarks.md)).
+* The coverage-guided libFuzzer build (`-DENGINEX_FUZZ_LIBFUZZER=ON`) has not been run.
+  The standalone seeded fuzzer runs in every CI test job (`fuzz_itch_standalone_smoke`).
+* The mutation harness (`tools/mutation_check.py`) has run on macOS only.
