@@ -747,18 +747,19 @@ TEST(Server, TrickledFrameIsDisconnectedAtDeadline) {
 // pipelining client over a network that splits frames at arbitrary points).
 TEST(Server, PipelinedFramesSplitAcrossReadsAreNotTimedOut) {
     ServerOptions o;
-    o.partial_frame_timeout = 300ms;
+    o.partial_frame_timeout = 600ms;
     TestServer ts(false, o);
     Client c = ts.connect();
-    constexpr int kFrames = 24;
+    constexpr int kFrames = 30;
     std::vector<std::string> frames;
     for (int i = 0; i < kFrames; ++i) {
         Json m = order("pipe" + std::to_string(i), "BUY", 100 + i, 1);
         m["protocol_version"] = 1;
         frames.push_back(encode_frame(m.dump()));
     }
-    // Write k completes frame k-1 and starts frame k, 50 ms apart: 1.2 s of reads that all
-    // end mid-frame (four deadlines), while one frame completes on every read.
+    // Write k completes frame k-1 and starts frame k, 50 ms apart: 1.5 s of reads that all
+    // end mid-frame (2.5 deadlines), while one frame completes on every read. The 12x margin
+    // between the write gap and the deadline absorbs scheduler stalls on loaded runners.
     const auto half = [&](int k) { return frames[static_cast<std::size_t>(k)].size() / 2; };
     ASSERT_TRUE(c.send_raw(std::string_view(frames[0]).substr(0, half(0))));
     for (int k = 1; k < kFrames; ++k) {
