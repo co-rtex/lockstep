@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <tuple>
 
 #include "enginex/canonical.hpp"
 #include "enginex/json_codec.hpp"

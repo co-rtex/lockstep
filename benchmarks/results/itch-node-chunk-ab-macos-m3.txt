@@ -1,0 +1,96 @@
+== round 1: itch_bench_control
+enginex_itch_bench: git 8edf201f6e4b-dirty, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.6 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 19.01 M msg/s; trials median 23.01 M msg/s [min 21.48, max 23.83] = 43.5 ns/msg
+  heap allocations in timed region: median 125911 (0.006 per message), first pass 125911
+  per-message latency (ns, median of trials, includes one now() call): mean 44.3 p50 41 p90 84 p99 292 p99.9 459 max 92625
+  trial 1: largest sample 138666 ns at message 20386914 (type A)
+  trial 2: largest sample 92625 ns at message 219328 (type A)
+  trial 3: largest sample 401042 ns at message 7044664 (type D)
+  trial 4: largest sample 91833 ns at message 219328 (type A)
+  trial 5: largest sample 91958 ns at message 219328 (type A)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2562 MiB (process high-water mark so far, includes the workload)
+== round 1: enginex_itch_bench
+enginex_itch_bench: git dd78a8d24644, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.7 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 17.49 M msg/s; trials median 23.29 M msg/s [min 16.07, max 23.48] = 42.9 ns/msg
+  heap allocations in timed region: median 125886 (0.006 per message), first pass 125886
+  per-message latency (ns, median of trials, includes one now() call): mean 44.8 p50 41 p90 84 p99 292 p99.9 500 max 216208
+  trial 1: largest sample 923042 ns at message 14888049 (type A)
+  trial 2: largest sample 30916 ns at message 219328 (type A)
+  trial 3: largest sample 216208 ns at message 640341 (type D)
+  trial 4: largest sample 30166 ns at message 219328 (type A)
+  trial 5: largest sample 282333 ns at message 15325639 (type D)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2360 MiB (process high-water mark so far, includes the workload)
+== round 2: itch_bench_control
+enginex_itch_bench: git 8edf201f6e4b-dirty, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.4 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 18.60 M msg/s; trials median 22.99 M msg/s [min 21.09, max 23.38] = 43.5 ns/msg
+  heap allocations in timed region: median 125911 (0.006 per message), first pass 125911
+  per-message latency (ns, median of trials, includes one now() call): mean 45.1 p50 41 p90 84 p99 292 p99.9 500 max 99583
+  trial 1: largest sample 184958 ns at message 20386914 (type A)
+  trial 2: largest sample 2284667 ns at message 20213987 (type U)
+  trial 3: largest sample 99583 ns at message 219328 (type A)
+  trial 4: largest sample 96584 ns at message 219328 (type A)
+  trial 5: largest sample 94750 ns at message 219328 (type A)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2562 MiB (process high-water mark so far, includes the workload)
+== round 2: enginex_itch_bench
+enginex_itch_bench: git dd78a8d24644, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.3 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 19.26 M msg/s; trials median 23.73 M msg/s [min 22.80, max 23.91] = 42.1 ns/msg
+  heap allocations in timed region: median 125886 (0.006 per message), first pass 125886
+  per-message latency (ns, median of trials, includes one now() call): mean 43.3 p50 41 p90 84 p99 292 p99.9 458 max 34458
+  trial 1: largest sample 38541 ns at message 219328 (type A)
+  trial 2: largest sample 34458 ns at message 219328 (type A)
+  trial 3: largest sample 32375 ns at message 219328 (type A)
+  trial 4: largest sample 37209 ns at message 219328 (type A)
+  trial 5: largest sample 30541 ns at message 219328 (type A)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2560 MiB (process high-water mark so far, includes the workload)
+== round 3: itch_bench_control
+enginex_itch_bench: git 8edf201f6e4b-dirty, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.4 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 19.29 M msg/s; trials median 23.42 M msg/s [min 22.11, max 23.84] = 42.7 ns/msg
+  heap allocations in timed region: median 125911 (0.006 per message), first pass 125911
+  per-message latency (ns, median of trials, includes one now() call): mean 43.2 p50 41 p90 84 p99 292 p99.9 458 max 102375
+  trial 1: largest sample 750375 ns at message 20455723 (type D)
+  trial 2: largest sample 1774500 ns at message 14461383 (type A)
+  trial 3: largest sample 94500 ns at message 219328 (type A)
+  trial 4: largest sample 102375 ns at message 219328 (type A)
+  trial 5: largest sample 95333 ns at message 219328 (type A)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2555 MiB (process high-water mark so far, includes the workload)
+== round 3: enginex_itch_bench
+enginex_itch_bench: git dd78a8d24644, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: FILE build/realdata/03272019.prefix256.itch, 21375302 messages, 679082679 bytes (in memory); 5 trials + 1 warm-up
+book reserve hint: 0 orders; order index: paged_direct; level nodes: sorted_vector; cache flush before each pass: 0 MiB
+timer: now() ~15.3 ns, smallest tick 41 ns
+[itch_book_apply]
+  first pass 19.57 M msg/s; trials median 22.92 M msg/s [min 22.74, max 23.24] = 43.6 ns/msg
+  heap allocations in timed region: median 125886 (0.006 per message), first pass 125886
+  per-message latency (ns, median of trials, includes one now() call): mean 44.5 p50 41 p90 84 p99 292 p99.9 459 max 36250
+  trial 1: largest sample 38375 ns at message 219328 (type A)
+  trial 2: largest sample 1929042 ns at message 19672632 (type D)
+  trial 3: largest sample 36250 ns at message 219328 (type A)
+  trial 4: largest sample 35750 ns at message 219328 (type A)
+  trial 5: largest sample 31459 ns at message 219328 (type A)
+  live orders at end 1578860 (peak 1578930); state hash 8cbb4baaf680ec45 (identical across trials)
+  peak RSS 2560 MiB (process high-water mark so far, includes the workload)

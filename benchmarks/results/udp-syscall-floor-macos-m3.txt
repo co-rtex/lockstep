@@ -1,0 +1,6 @@
+enginex_udp_syscall_bench: git 7c2ae17eb7b6, Darwin-arm64, 4000 datagrams of 1400 bytes, 5 trials
+  sendto (unconnected)  median  69.35 us/datagram
+  send (connected)      median   1.65 us/datagram
+  recv                  median  12.85 us/datagram
+  recvfrom              median  12.72 us/datagram
+  datagrams not received (buffer overflow): 0

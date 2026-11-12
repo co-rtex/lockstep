@@ -5,8 +5,10 @@
 // vector in acceptance order and finds the best counterparty by linear scan, so it shares no
 // data structures or loop structure with MatchingEngine.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "enginex/types.hpp"

@@ -1,7 +1,11 @@
 # Progress
 
-Last updated: 2026-10-25. Status vocabulary: **done** (verified by a run whose output was
-observed), **in progress**, **blocked** (external reason), **outstanding**.
+Last updated: 2026-11-12 (v1.0.0 release, final section). The R1–R3 and sprint sections are
+kept as they were recorded, with notes where a later result superseded them.
+Status vocabulary: **done** (verified by a run whose output was
+observed), **in progress**, **blocked** (external reason), **outstanding**. Test counts written
+N/N are ctest's "passed out of N". From the sprint on, N includes one opt-in real-data test
+that is skipped without its local file, so 533/533 means 532 passed and 1 skipped.
 
 ## Current state
 
@@ -14,6 +18,10 @@ observed), **in progress**, **blocked** (external reason), **outstanding**.
   (the release job's smoke step runs serve + client + graceful shutdown + replay; TSan job
   375/375 with no reports).
 * Final end-to-end pass: see "Final verification" below.
+* Market-data sprint (ITCH 5.0, MoldUDP64, feed mirror, R4): **done**. Linux CI passed on it
+  at `ae20847`: all 5 jobs ([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592)).
+* **v1.0.0: released** (2026-11-12). See "v1.0.0 release" at the end and
+  [RELEASE.md](RELEASE.md).
 
 ## R1 acceptance (spec §16)
 
@@ -83,7 +91,7 @@ python3 tools/fault_injection.py --enginex build/debug/enginex --rounds 8 --seed
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | R3.1 | All R2 acceptance remains true | done | full suite 375/375 on macOS, in each Linux container job and in each GitHub CI test job; fault harness passes (locally and in the CI smoke step) |
-| R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline` |
+| R3.2 | TCP framing handles arbitrary segmentation, rejects oversized messages | done | `Framing.*`, `Server.HandlesFragmentedAndCoalescedFrames`, `Server.OversizedFrameIsRejectedAndConnectionClosed`, `Server.TrickledFrameIsDisconnectedAtDeadline`, `Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut` (added at v1.0.0, D37) |
 | R3.3 | Concurrent clients cannot mutate state out of sequence | done | single sequencer thread (only state owner); `Server.ConcurrentClientsGetUniqueContiguousSequences` (replay in ack-sequence order = server state) |
 | R3.4 | Snapshot/feed handoff has correct watermark/gap policy | done | D15; `Server.SubscribeHandoffUnderLoadHasNoGaps` (contiguous `W+1…`, mirrored book = snapshot), `Server.ReconnectGetsFreshSnapshotAndContinues`; docs/protocol.md §5 |
 | R3.5 | Bounded queues and slow-consumer disconnect/recovery tested | done | `Server.SlowConsumerIsDisconnectedWithoutStallingTheSequencer`, `Server.OutboundByteBudgetDisconnectsSnapshotHoarder`, `Server.IngressOverloadAnswersEveryRequestExactlyOnce`, `Server.ConnectionLimitIsEnforced` |
@@ -159,15 +167,210 @@ Acceptance audit: every R1–R3 row above was rechecked against the evidence it 
 started.
 
 Documentation-only commits made after `418d247` (recording this result) have not been pushed,
-so GitHub has no run for them. They change no code, build file or workflow.
+so GitHub has no run for them. They change no code, build file or workflow. (Later pushed:
+[run 40244516875](https://github.com/co-rtex/enginex/actions/runs/40244516875) on `863ad4a`,
+all 5 jobs green.)
+
+## Market-data sprint (2026-11-10, branch `enginex-quant-sprint-20261109`)
+
+Recorded during the sprint, when only local evidence existed (macOS, Apple clang 17.0.0
+clang-1700.6.4.2). Linux CI results were added afterwards: the GCC/ASan/TSan/clang-format row
+below, and [linux-validation.md](linux-validation.md).
+
+| Item | Status | Evidence |
+|---|---|---|
+| P0: subscribe with oversized snapshot no longer registers the subscriber | done | `Server.OversizedSubscribeSnapshotDoesNotRegisterSubscriber` (failed before the fix: event 41 delivered with no baseline) |
+| P0: snapshot refused after internal fail-stop | done | `Server.SnapshotRefusedAfterInternalFailStop`; with the guard removed, the snapshot exposed a never-durable bid (`200x7`) |
+| P0: fail-stop reply echoes request_id | done | same test (the client previously timed out) |
+| ITCH 5.0 decoder, 23 message types, file framing | done | `ItchGolden.*`, `ItchMalformed.*`, `StreamFramer.*`, `ItchFixture.*` |
+| ITCH book reconstruction + replay policy | done | `ItchBook.*`, `ItchDifferential.*` (12 seeds), `ItchReplay.*`, `ItchSynthetic.*` |
+| Independent review of the ITCH code (separate agent, read-only) | done | 1 confirmed defect (strict replay counters after stop), fixed with regression tests in `ffec5ac`; test-coverage and comment findings addressed |
+| Order index optimization, measured | done | docs/benchmarks.md § ITCH; `benchmarks/results/itch-macos-m3.csv` |
+| Read-only feed mirror with gap refusal, resubscribe, in-band verification | done | `tests/mirror_test.cpp` (incl. a lossy TCP relay that drops one event, a stalled consumer, an oversized baseline, an unreachable server) |
+| MoldUDP64 packet parsing + sequencing (duplicates, reordering, gaps, re-request ranges, fail-stop) | done | `tests/itch_moldudp64_test.cpp` (lossy-channel end-to-end book hash equality; mutation check) |
+| Second independent review (mirror, order index, arena, server P0, bench) | done | fixed in `799e7c4`; server ordering guarantee and index/arena correctness confirmed by the reviewer |
+| Price-level node arena, symbol-count scaling | done | `benchmarks/results/itch-scaling-macos-m3.csv` |
+| Source-based coverage | done | `scripts/coverage.sh`: 94.8 % lines, 85.6 % branches over ITCH/mirror/server/CLI-ITCH (commit `2881634`); 94.7 % lines, 86.0 % branches at `8aaac44`; 94.8 % lines, 86.4 % branches at `bf5ff30` |
+| Optional R4: pmr pool for the matching core's book nodes | done | `enginex_core_alloc_probe` (2.0–3.5 → ≈ 1.0 allocs/cmd; 0.03 after D31); `benchmarks/results/r4-core-pool-macos-m3.csv`: +14–28 % where nodes recycle, identical hashes; release and UBSan 472/472 |
+| Real-data validation (public Nasdaq sample prefix, local only): 21.26 M msgs decode, 0 anomalies under --strict, reference model agrees on all 1.54 M live orders | done | `ENGINEX_ITCH_REAL_FILE=… ctest`-style run of `ItchRealData.*`; docs/itch.md |
+| Real-data-driven layout: sorted-vector levels + paged direct index (replay 99.3 → 62.1 ns/msg) | done | `benchmarks/results/itch-real-sample-macos-m3.csv`, `itch-structures-macos-m3.csv` |
+| Real data on three sample days (2019-01-30, 2019-03-27, 2020-01-30): 0 decode errors, 0 anomalies, reference model agrees; all crossed books halted/paused | done | `scripts/real_data_check.sh` (all three dates) |
+| Third independent review (sorted-vector levels, paged index) | done | no correctness bug in the new layout; directory growth clamped, spare page, memory bound documented in `deb39c3` |
+| Fourth independent review (latest changes): confirmed JSON crash on non-ASCII wire bytes | fixed | `f6f2ffe`; hostile-bytes regression + CLI-level mutation fuzz in `tests/cli_itch_smoke.py` |
+| Fifth independent review (UDP transport, reorder buffer) | fixed | `a8225d0`: retry timer keyed by requested range (`RequestPlanner`), POLLERR spin, port sharing, stale end of session, CLI ranges; no Sequencer contract break found |
+| Independent Python decoder and book on real data | done | `tools/itch_pydecode.py` (63.7 M messages, every field), `tools/itch_pybook.py` (every level of every final book, plus live orders and every book's best bid/ask every 100 k messages: 210–213 checkpoints per day, identical), 3 days; whole `scripts/real_data_check.sh` re-run at `9028f57` (after D31/D32 and lazy nodes): all checks pass on all 3 days; again at `fee7b06` (with 100 k checkpoints and the day's fixes): exit 0, all checks pass on all 3 days (7.5 min); and at `16d7c70` (after the keyed order index D34 and the JSON key bound): exit 0 on all 3 days |
+| Layout variants reconstruct identical books | done | ctest `itch_layout_variants_agree` |
+| MoldUDP64 over UDP on loopback (D29): sender with re-request answers, receiver, `RequestPlanner`, source filter, answer budget | done | `MoldUdp.*`, `MoldRequestPlanner.*`, `tests/cli_itch_smoke.py`, `scripts/mold_udp_demo.sh`, `mold-udp-loopback-macos-m3.csv` (3 real days exact at 50 k packets/s with 5 %/10 % loss); macOS only |
+| Reorder buffer redesign (D30) | done | `mold-sequencer-macos-m3.csv`: 121–147 → 20–21 ns/msg behind holes; set-model differential unchanged |
+| R1 core benchmark reproducibility | done | `benchmarks/results/r1-core-macos-m3-rerun-20261110.csv`: same state hashes, medians +0.3 %…+3.6 % |
+| Exchange core request-id index (D31): deque of records + keyed flat index | done | `core-request-index-ab-macos-m3.csv`: 198 → 119 ns/cmd at 1 M, 296 → 196 at 3 M, identical state hashes; recovery of 1 M records 2.09 → 4.06 M rec/s |
+| Independent Python exchange model | done | `tools/exchange_pymodel.py`; ctest `exchange_pymodel_differential`, `exchange_pymodel_network_restart` (responses, feed events, restart) |
+| ITCH order nodes constructed on first use | done | `itch-node-chunk-ab-macos-m3.txt`: first-add sample 92–102 → 30–39 µs; percentiles unchanged |
+| Bounded ITCH level vector (D32): adversarial worst case | done | `itch-level-bound-macos-m3.csv`: hostile pattern 25 130 → 96 ns/msg; `ItchLevelBound.*`; real day identical hash at limits 2/16/8192 |
+| R2 durable/recovery benchmark reproducibility | done | `r2-durable-macos-m3-rerun-20261110.csv` |
+| R3 network benchmark reproducibility after the sprint's server changes | done | `benchmarks/results/r3-network-macos-m3-rerun-20261110.csv`: medians within 1.5 % of the R3 rows (sync p99 −3 %) |
+| ITCH mid-stream checkpoints vs the Python book | done | `itch replay --checkpoint-every/--checkpoint-out`; 210–213 identical checkpoints per real day |
+| Hostile inputs: CLI arguments, JSON content, connections | fixed | `tools/cli_arg_sweep.py` (1 302 runs); two unbounded allocations, zero send timeout hang (`788e1b1`), repeated JSON keys (D33), key-count bound; `exchange_pymodel.py --chaos` |
+| Concurrency without TSan | done | `exchange_pymodel.py --clients K`: linearizability check, 32 clients; ctest `exchange_pymodel_concurrent`, `exchange_pymodel_chaos` |
+| Complexity audit (input-triggered super-linear work) | fixed / documented | D34 keyed ITCH fallback index (43 µs → 83 ns/msg on crafted refs), JSON key bound, `mold-sim` binary search; amplification limits measured in verification.md |
+| Memory accounting | done | `BookBuilder::memory_usage()`: 115–122 B/live order in structures (index pages 52–59 B), `itch-real-memory-breakdown-macos-m3.csv` |
+| Performance acceptance gates | done | `tools/paired_ab.py` (sign test + 2 % minimum effect, calibrated A/A and Debug-vs-Release); benchmarks.md "Acceptance gates" |
+| UDP bottleneck characterization | done | `recv()` cost per call (13–15 µs, 64 B–9 KB); 8 KB datagrams 2× lossless, 1.25× with loss; `Sequencer::FailReason` reported by `mold-recv`/`mold-sim` |
+| Flakiness audit | fixed | 5 repeated full runs found a load-dependent UDP test flake (reorder bound); 6/6 after; Debug/UBSan 3/3 each |
+| Linux GCC/ASan/TSan/clang-format | done (2026-11-11) | blocked inside the sprint sandbox, so CI was the check. Every sprint run failed until `ae20847`: formatting (`6d93043`), GCC false-positive warnings (`3625d9a`, D36), a GCC unused-result error, the TSan link and a sanitizer timeout (`ae20847`, D36). [Run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) on `ae20847`: all 5 jobs green, 532 passed + 1 skipped of 533 in each test job, 0 sanitizer reports ([linux-validation.md](linux-validation.md)) |
+
+Commands and results (latest):
+
+* `cmake --preset release && cmake --build --preset release && ctest --preset release`:
+  516/516 passed (commit `383ca9e`; 1 opt-in real-data test skips without its file). Debug
+  build (`cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+  -DENGINEX_ENABLE_TESTS=ON`, local dependency cache): 516/516 at `383ca9e`. UBSan
+  (below): 516/516 at `383ca9e`, no runtime errors. Re-run at `f8f605a` after the day's
+  fixes: Release, Debug and UBSan 519/519 each.
+* `python3 tools/mutation_check.py`: 56/56 mutants killed (≈ 5.8 min, release build, commit `c7b0fc6`); re-run at `9908922` (after the day's fixes to book, server and CLI): 56/56 again (5.9 min); and at `e785758` (after the keyed ITCH index, D34): 56/56 (6.0 min); at `52e96d7` (sequencer failure reasons): 56/56 (6.3 min).
+* UBSan (`cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENGINEX_SANITIZER=undefined`,
+  `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ctest --test-dir build/ubsan`): 471/471
+  at `799e7c4`; ITCH tests were also re-run under UBSan after every ITCH change.
+* UBSan after the real-data layout change (`83bb670`): 476/476, and the opt-in real-data
+  differential under UBSan (21.26 M messages, 65 s): passed, no runtime errors. After the
+  chunked node pool (`8a40818`): UBSan 479/479, plus 1 000 000 standalone fuzz inputs with
+  no violation. At `033e3f9` (after D32, lazy nodes, D34 and the sequencer failure reasons):
+  the UBSan binary replayed 2019-03-27 strictly (21 375 302 messages) at level-vector limits
+  8192 and 2, with 0 runtime errors and the Release state hash. `mold-sim` on the 2.87 M-message
+  real prefix (5 % loss, 3 % duplicates, reorder window 16) ended exact, also with 0 runtime
+  errors. The hardened-libc++ binary at `be2fe5a` did the same checks: 2019-01-30 strict at
+  level limit 2 (21 255 695 messages) with no assertion and the Release state hash, and
+  `mold-sim` with 8 % loss, 4 % duplicates and reorder window 32, which ended exact.
+* Leak checks with macOS `leaks --atExit` (LeakSanitizer cannot run here). The full test
+  binary minus the fork-based crash-point tests (their `_exit` children hang under the tool):
+  466 tests passed, **0 leaks**. Also 0 leaks for `enginex itch replay` of the real sample
+  prefix, 20 000 fuzz inputs, and `itch mold-sim`.
+* `scripts/real_data_check.sh` (opt-in; network): strict replay of 21 255 695 real messages
+  with 0 decode errors and 0 anomalies; reference-model differential OK.
+* `MallocScribble=1 MallocGuardEdges=1 MallocCheckHeapStart=1000 MallocCheckHeapEach=10000`
+  on the ITCH tests (UBSan build): passed. Re-run at `9ab4162` on the whole gtest binary
+  (hardened build, all but the opt-in real-data test): 502 passed. `leaks --atExit` at
+  `9ab4162`: 498 tests (fork crash tests and real-data test excluded), 0 leaks; CLI replay with
+  `--level-vector-limit 2 --checkpoint-every`, a failing `--strict` replay and `mold-sim`: 0 leaks.
+* `python3 tools/itch_fixture.py --check` (ctest `itch_fixtures_up_to_date`): up to date.
+* Hardened libc++ (`cmake --preset hardened`, `_LIBCPP_HARDENING_MODE_DEBUG`; a deliberate
+  out-of-range `span` index in a scratch program aborts with exit 134 under the same flag):
+  516/516 at `7a65a1a` plus the preset; one real day (21 051 558 messages) at level-vector
+  limits 8192 and 2: no assertion, Release state hash; `tools/exchange_pymodel.py` with the
+  hardened binary (4 × 50 000 simulate, 20 × 3 000 in a 5-tick band, 3 × 2 000 TCP + journal +
+  restart): agree; standalone fuzz: 4 seeds × 40 000 inputs, no invariant violated and no assertion. The preset was configured with
+  `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=… -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=…` pointing at
+  the Release build's downloaded sources (the sandbox blocks the download).
+
+* Fresh clone (`git clone` of this repository into a temporary directory, Release, pinned
+  dependencies from the local download cache): 471/471 passed; `scripts/itch_demo.sh` exit 0.
+  Again at `c565469`: 520/520, and the binary reports `git c565469badf4` (not dirty).
+  Again at `db24e67` (2026-11-11): 532/532, binary reports `git db24e67a0114` (not dirty).
+  Again at `6d93043` (2026-11-11, final): 533/533.
+* `scripts/check.sh smoke build/release` (R1–R3 CLI smoke incl. kill -9 harness, serve/client,
+  network benchmark): `smoke OK`. `scripts/demo.sh`: exit 0 (crash recovery, retry idempotency,
+  corruption refusal, slow-consumer cut-off, graceful shutdown).
+
+Outstanding at the end of the sprint (needs the owner). **Both resolved; see "v1.0.0 release".**
+
+* **Residual processes.** Three in-memory test servers started during the sprint are still
+  running, each bound to loopback only:
+  * PID 62482 on 127.0.0.1:53158, confirmed by a snapshot request on 2026-11-10 ~05:40 EST;
+  * PID 11913 on 127.0.0.1:47311;
+  * PID 72536 on 127.0.0.1:57375, left by a shutdown test that raised before its cleanup on
+    2026-11-10 ~14:40 EST.
+
+  All three were listed by `lsof -nP -iTCP -sTCP:LISTEN` at 14:40. The sandbox denies signals
+  to them, and the protocol has no remote shutdown. Stop them with `kill 62482 11913 72536`.
+
+* **clang-format.** CI's format job runs clang-format 19.1.7 with `--dry-run --Werror` over all
+  tracked C++ files. clang-format is not installed here, and running the downloaded binary was
+  refused by the sandbox ("Code from External"), so the sprint's new files have **not** been
+  formatted and that job will fail until someone runs
+  `pip install clang-format==19.1.7 && git ls-files '*.cpp' '*.hpp' | xargs clang-format -i`
+  and commits the result (formatting only; then re-run the test suite).
+
+Blocked in the sprint environment (exact symptoms). These were not claimed for the sprint
+commits at the time. Linux CI later covered GCC, ASan and TSan (row above). The macOS
+sanitizer and profiler limits still apply on that machine:
+
+* ASan: even `int main(){}` built with `-fsanitize=address` hangs after
+  `==N==FindDynamicShadowStart, space_size = 0x0fffffffffff` (seen with `verbosity=3`). The
+  `asan` preset's test discovery therefore times out.
+* TSan: a trivial two-thread program exits 139 (SIGSEGV) with no report.
+* Sampling profilers: `sample <pid>` reports the target as not running, and `pgrep` is denied.
+  The ITCH optimization used allocation counts and per-type timing instead (docs/benchmarks.md).
+* Linux/Docker and GitHub CI: no Docker here, and pushing is not permitted in this sprint.
+  In particular, **GCC 13 has not compiled the sprint code**. The CI workflow builds with
+  `-Werror` on GCC, and only Apple clang 17 was available locally. Partial mitigation for two
+  known GCC-stricter warnings, at `90afbc4`: a clang build with `-Wshadow-all` (GCC's
+  `-Wshadow` also covers fields and constructor parameters) gave 0 warnings in project code;
+  a scripted search for compound assignments to sub-`int` types (`uint16_t x; x += y`, which
+  GCC's `-Wconversion` flags and clang's does not) found none. This does not replace a GCC
+  build.
+
+## Sprint final status (2026-11-11, 17:30 EST, commit `6d93043` code / `dee4c16` docs)
+
+* `scripts/verify_all.sh --repeat 3 --real-data --mutation`: exit 0, all 16 run steps passed
+  (Release 533/533 ×3; Debug, UBSan, hardened 533/533; demos; argument sweep; 200 000 fuzz
+  inputs; fault injection; real data on 3 days identical; mutation 69/69). Summary:
+  `benchmarks/results/verify-all-6d93043-macos-m3.md`.
+* Fresh clone at `6d93043`: Release build and 533/533. `clang --analyze` over 70 project
+  translation units: 0 findings.
+* Not verified here: clang-format 19.1.7 (`format OK`), GCC 13, Linux ASan/TSan. The formatting
+  pass is committed (`6d93043`); the GitHub CI run on it is the check (docs/linux-validation.md).
+  *Later:* CI run 43098677254 on `6d93043` passed clang-format and failed the four test jobs
+  (three causes). `ae20847` fixed them, and run 43115996592 passed all 5.
 
 ## Blocked / external
 
-* None for R1–R3.
+* None.
 * macOS sanitizers: Apple clang 17 ASan/TSan runtimes fail on macOS 26.6.2 for any program.
   GitHub CI and Linux container evidence are used instead.
 
-## Next tasks
+## v1.0.0 release (2026-11-12)
 
-1. Optional R4 (only with measured evidence): allocation/layout experiment on the order book.
-2. Optional: move `actions/checkout` to a Node.js 24 release once a push can verify it.
+Release audit of the sprint branch at `ae20847`, then merge into `main` and tag `v1.0.0`.
+Summary and evidence table: [RELEASE.md](RELEASE.md).
+
+| Item | Status | Evidence |
+|---|---|---|
+| CI on the sprint code | done | run 43115996592 on `ae20847`: 5/5 jobs; log read for test counts, skips, sanitizer reports (0) and warnings (two known GCC false positives, D36) |
+| CI fixes in `ae20847` keep coverage | done | the only changes are a stronger assertion in one test, a 600 s per-test timeout for sanitizer builds (ProtocolFuzz took 165 s under ASan), and no TSan build for the two allocation-counting benchmarks. Every test runs in every job |
+| Independent code review (server/journal; ITCH/MoldUDP64) | done | one real defect, in the server: the partial-frame deadline cut off clients that kept completing frames. Fixed with a regression test (D37, `71e469c`). ITCH/MoldUDP64: no release-critical defect |
+| Documentation reconciled with the CI results | done | README, linux-validation, verification, itch, protocol, case studies, implementation plan, DECISIONS D36–D37, RELEASE.md |
+| CI on the release candidate | done | `65993a5`: push run 43286314612 and pull_request run 43286328504, 5/5 each, 534 tests per test job (533 passed, 1 skipped), 0 sanitizer reports |
+| Flaky test on Linux CI (`FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook`, once in run 43282157156) | fixed | test-only fix `65993a5`: traffic stops 500 ms after the stall, assertions unchanged; not reproduced in 118 local runs (macOS and a Linux container), 40/40 with the fix in the container ([linux-validation.md](linux-validation.md#release-candidate-runs-and-one-flaky-test)) |
+| Residual sprint test servers (PIDs 62482, 11913, 72536) | resolved | none of those PIDs exists, and `lsof -nP -iTCP -sTCP:LISTEN` shows no EngineX listener (2026-11-12) |
+| clang-format | resolved | CI `format OK` at `ae20847`; locally clang-format 19.1.7 `format OK` at `71e469c` |
+| Stale worktree metadata | cleaned | `git worktree prune` removed 4 entries whose directories under the temp folder no longer existed |
+
+Commands and results (macOS, Apple M3, Apple clang 17):
+
+```text
+cmake --preset release && cmake --build --preset release && ctest --preset release -j6
+  at ae20847: 100% tests passed out of 533 (1 skipped: ItchRealData.MatchesReferenceModelIfAvailable)
+  at 71e469c: 100% tests passed out of 534 (same skip)
+cmake --preset debug ...; ctest --preset debug -j6         at 71e469c: 534, 533 passed, 1 skipped
+cmake -S . -B build/ubsan ... -DENGINEX_SANITIZER=undefined; UBSAN_OPTIONS=...halt_on_error=1 ctest
+                                                           at 71e469c: 534, 533 passed, 1 skipped;
+                                                           0 "runtime error" lines
+CLANG_FORMAT=<clang-format 19.1.7> scripts/check.sh format -> format OK
+scripts/check.sh smoke build/release                       -> smoke OK
+scripts/itch_demo.sh build/release                         -> exit 0
+enginex_tests --gtest_filter='Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut'
+  without the fix (compiling mutant of the condition): FAILED at write 14, one 600 ms deadline
+  in; with it: passed 5/5. (First version of the test, 300 ms deadline: failed at write 8.)
+python3 tools/mutation_check.py build/release --only "server:"   -> mutation score: 6/6 killed
+```
+
+The heavy local campaigns (real data, mutation 69/69, fuzzing, hardened libc++) were not
+re-run. Their last full run, `verify_all.sh` at `6d93043`, covered production sources that
+are identical to `ae20847`. The only later source change is D37, in the server's read loop.
+
+Optional future work (not part of v1.0.0, not required by the spec):
+
+1. Move `actions/checkout` and `actions/upload-artifact` to Node.js 24 releases (CI shows a deprecation warning, not a failure).
+2. Run the coverage-guided libFuzzer build on Linux.
+3. Profile a full-day real-data replay with `perf` on Linux.
+4. Rate-limit duplicate replays of large results and full-depth snapshots.

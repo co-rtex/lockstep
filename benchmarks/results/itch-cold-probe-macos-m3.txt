@@ -1,0 +1,10 @@
+enginex_itch_bench: git f516b0516c93, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: synthetic ITCH 5.0, seed 42, 1000014 messages (1000000 lifecycle), 8 symbols, 32726249 bytes; 7 trials + 1 warm-up
+[itch_cold_probe] book built from 998014 messages, then 2000 messages timed one by one; 64 MiB flush before the cold runs; 7 repetitions each
+  warm: median over repetitions of: mean 25.9 ns, p50 41, p99 83, p99.9 84, max 125 (includes one ~15 ns timer call; 41.7 ns tick)
+  cold: median over repetitions of: mean 67.0 ns, p50 42, p99 250, p99.9 459, max 667 (includes one ~15 ns timer call; 41.7 ns tick)
+enginex_itch_bench: git f516b0516c93, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+workload: synthetic ITCH 5.0, seed 42, 1005006 messages (1000000 lifecycle), 5000 symbols, 32970379 bytes; 7 trials + 1 warm-up
+[itch_cold_probe] book built from 1003006 messages, then 2000 messages timed one by one; 64 MiB flush before the cold runs; 7 repetitions each
+  warm: median over repetitions of: mean 65.4 ns, p50 42, p99 209, p99.9 292, max 292 (includes one ~15 ns timer call; 41.7 ns tick)
+  cold: median over repetitions of: mean 188.4 ns, p50 167, p99 625, p99.9 875, max 958 (includes one ~15 ns timer call; 41.7 ns tick)

@@ -17,6 +17,14 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ENGINEX_SANITIZER": "address,undefined" }
     },
     {
+      "name": "hardened",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG -D_GLIBCXX_ASSERTIONS"
+      }
+    },
+    {
       "name": "tsan",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "ENGINEX_SANITIZER": "thread" }
@@ -26,11 +34,13 @@
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
+    { "name": "hardened", "configurePreset": "hardened" },
     { "name": "tsan", "configurePreset": "tsan" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "hardened", "configurePreset": "hardened", "output": { "outputOnFailure": true } },
     {
       "name": "asan",
       "configurePreset": "asan",

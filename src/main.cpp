@@ -1,9 +1,13 @@
 // enginex: command-line entry point. See README.md for the full command reference.
 #include <charconv>
+#include <cstddef>
 #include <cstdio>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "cli.hpp"
@@ -65,6 +69,16 @@ std::uint64_t Args::get_u64(const std::string& name, std::uint64_t fallback) con
     return out;
 }
 
+std::chrono::milliseconds Args::get_ms(const std::string& name, std::uint64_t fallback,
+                                       std::uint64_t min_ms, std::uint64_t max_ms) const {
+    const std::uint64_t v = get_u64(name, fallback);
+    if (v < min_ms || v > max_ms) {
+        throw UsageError("--" + name + " must be in [" + std::to_string(min_ms) + ", " +
+                         std::to_string(max_ms) + "] ms");
+    }
+    return std::chrono::milliseconds(static_cast<std::int64_t>(v));
+}
+
 std::vector<std::string> split_list(const std::string& text) {
     std::vector<std::string> out;
     std::size_t start = 0;
@@ -108,6 +122,24 @@ Usage:
   enginex client subscribe [--host H] [--port P] [--count N] [--duration-ms MS]
                            [--slow-ms MS] [--quiet]
   enginex client snapshot  [--host H] [--port P] [--symbol S] [--depth D]
+  enginex client mirror    [--host H] [--port P] [--duration-ms MS] [--verify-ms MS]
+                           [--max-resubscribes N]
+  enginex itch generate --out FILE [--seed N] [--messages N] [--symbols N]
+                        [--anomalies-per-million N]
+  enginex itch replay   --input FILE [--strict] [--json] [--depth N] [--symbol SYM]
+                        [--metrics-out FILE.json] [--expected-orders N]
+                        [--level-vector-limit N] [--checkpoint-every N --checkpoint-out FILE]
+  enginex itch dump     --input FILE [--limit N] [--all-fields]
+  enginex itch mold-sim --input FILE [--seed N] [--loss-percent P] [--duplicate-percent P]
+                        [--reorder-window N] [--mtu BYTES] [--no-recovery]   (simulation)
+  enginex itch mold-send --input FILE --dest-port P [--dest-host H] [--port P]
+                        [--drop-percent P] [--retransmit-drop-percent P] [--rate-pps N]
+                        [--linger-ms MS] [--mtu BYTES] [--seed N] [--session NAME]
+                        [--allow-remote]                                 (UDP, loopback)
+  enginex itch mold-recv --port P --request-port P [--request-host H] [--no-recovery]
+                        [--idle-timeout-ms MS] [--request-interval-ms MS]
+                        [--max-buffered-messages N] [--max-ahead N] [--session NAME]
+                        [--allow-remote]
   enginex version
   enginex help
 
@@ -121,6 +153,14 @@ serve:  TCP server (length-prefixed JSON, protocol_version 1). Prints a "listeni
         Without --journal it runs in memory (no durability).
 replay: validates and replays a journal from an empty state and prints the state hash.
         Exit 0 clean, 1 corrupt/unreadable, 3 incomplete tail (use --repair-tail).
+itch:   Nasdaq TotalView-ITCH 5.0 market-data tools (outbound market data, not order entry).
+        Input files use the 2-byte big-endian length-prefixed convention. `generate` writes
+        a seeded synthetic fixture. `replay` rebuilds per-symbol order books; exit 1 on a
+        framing error or (with --strict) the first decode error or book anomaly.
+        `mold-sim` is a simulated channel. `mold-send`/`mold-recv` carry MoldUDP64 over real
+        UDP sockets (loopback unless --allow-remote): the sender answers re-requests, the
+        receiver re-requests gaps and exits 0 only if the session ended with every message
+        delivered in order.
 )";
 }
 
@@ -152,6 +192,9 @@ int main(int argc, char** argv) {
         }
         if (command == "client") {
             return enginex::cli::cmd_client(rest);
+        }
+        if (command == "itch") {
+            return enginex::cli::cmd_itch(rest);
         }
         if (command == "version") {
             namespace bi = enginex::build_info;

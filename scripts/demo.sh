@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN=${1:-build/release}/enginex
 [ -x "$BIN" ] || { echo "build first: cmake --preset release && cmake --build --preset release"; exit 2; }
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/enginex-demo.XXXXXX")
 trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$TMP"' EXIT
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 report() { python3 tools/demo_report.py "$@"; }

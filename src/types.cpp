@@ -2,6 +2,8 @@
 
 #include <array>
 #include <charconv>
+#include <cstddef>
+#include <system_error>
 #include <utility>
 
 namespace enginex {

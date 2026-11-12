@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 #include "enginex/json_codec.hpp"
@@ -96,6 +97,79 @@ TEST(JsonCodec, NegativeAndHugeIntegersReachStateValidation) {
     EXPECT_EQ(order.quantity, std::numeric_limits<Quantity>::max());
     ExchangeStateMachine s;
     EXPECT_EQ(s.process(Command{order}).error, ErrorCode::InvalidPrice);
+}
+
+// A repeated key makes a command ambiguous: a reader that keeps the first value and one that
+// keeps the last would disagree, e.g. about the idempotency key. The parser used to keep the
+// last value silently and accept the command.
+TEST(JsonCodec, RepeatedKeysAreRejected) {
+    for (
+        const char* text :
+        {R"({"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":1})",
+         R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"price":6,"quantity":1})",
+         R"({"type":"cancel","request_id":"c","order_id":"ord-1","type":"cancel"})"}) {
+        EXPECT_EQ(parse_error_code_of(text), ErrorCode::InvalidRequest) << text;
+    }
+    // The same key in different objects is not a repeat.
+    EXPECT_TRUE(std::holds_alternative<codec::Input>(codec::parse_input(
+        R"({"type":"new_limit","request_id":"r","symbol":"AAPL","side":"BUY","price":5,"quantity":1})")));
+}
+
+// ordered_json inserts keys by linear scan, so one object with k keys cost O(k^2) to parse
+// (40 000 keys: 1.4 s). Objects are limited to kMaxKeysPerObject keys, at any depth.
+TEST(JsonCodec, ObjectsWithTooManyKeysAreRejected) {
+    auto object_with = [](std::size_t keys) {
+        std::string s = "{";
+        for (std::size_t i = 0; i < keys; ++i) {
+            s += (i ? ",\"k" : "\"k") + std::to_string(i) + "\":1";
+        }
+        return s + "}";
+    };
+    auto message_of = [](const std::string& text) {
+        const auto parsed = codec::parse_input(text);
+        return std::holds_alternative<ParseError>(parsed) ? std::get<ParseError>(parsed).message
+                                                          : std::string("accepted");
+    };
+    const std::size_t limit = codec::kMaxKeysPerObject;
+    EXPECT_EQ(message_of(object_with(limit + 1)), "too many fields in one object");
+    EXPECT_EQ(message_of(object_with(200'000)), "too many fields in one object");
+    EXPECT_NE(message_of(object_with(limit)), "too many fields in one object");  // other error
+    EXPECT_EQ(message_of(R"({"type":"new_limit","x":)" + object_with(limit + 1) + "}"),
+              "too many fields in one object");
+    codec::KeyIssue issue = codec::KeyIssue::None;
+    (void)codec::parse_json(object_with(limit), issue);
+    EXPECT_EQ(issue, codec::KeyIssue::None);
+}
+
+// Keys are tracked per object: each nested object, sibling and array element starts afresh,
+// and its keys count neither as repeats of nor towards the limit of the enclosing object.
+TEST(JsonCodec, KeyChecksArePerObjectAtEveryDepth) {
+    auto issue_of = [](const std::string& text) {
+        codec::KeyIssue issue = codec::KeyIssue::None;
+        (void)codec::parse_json(text, issue);
+        return issue;
+    };
+    using codec::KeyIssue;
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"b":{"k":1}})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"a":[{"k":1},{"k":1}]})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"k":{"k":{"k":1}}})"), KeyIssue::None);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"a":{"k":1}})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1,"k":2}})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":[{"x":1},{"k":1,"k":2}]})"), KeyIssue::RepeatedKey);
+    EXPECT_EQ(issue_of(R"({"a":{"k":1},"k":2,"k":3})"), KeyIssue::RepeatedKey);  // after a child
+
+    // Two sibling children with the limit each: 2 x 64 keys below one parent is fine.
+    auto keys = [](std::size_t n) {
+        std::string s = "{";
+        for (std::size_t i = 0; i < n; ++i) {
+            s += (i ? ",\"k" : "\"k") + std::to_string(i) + "\":1";
+        }
+        return s + "}";
+    };
+    const std::size_t limit = codec::kMaxKeysPerObject;
+    EXPECT_EQ(issue_of(R"({"a":)" + keys(limit) + R"(,"b":)" + keys(limit) + "}"), KeyIssue::None);
+    EXPECT_EQ(issue_of("[" + keys(limit) + "," + keys(limit) + "]"), KeyIssue::None);
+    EXPECT_EQ(issue_of("[" + keys(limit) + "," + keys(limit + 1) + "]"), KeyIssue::TooManyKeys);
 }
 
 TEST(JsonCodec, ErrorEchoesRequestIdAndType) {

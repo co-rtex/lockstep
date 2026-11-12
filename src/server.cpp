@@ -4,11 +4,16 @@
 #include <poll.h>
 #include <sys/socket.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdio>
+#include <exception>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "enginex/bounded_queue.hpp"
@@ -163,6 +168,11 @@ public:
         if (opts_.max_clients == 0 || opts_.ingress_capacity == 0 || opts_.outbound_capacity == 0 ||
             opts_.max_batch == 0 || opts_.outbound_byte_limit == 0) {
             throw std::invalid_argument("server limits must be positive");
+        }
+        // Zero would mean "never time out" to SO_SNDTIMEO and disables the per-frame budget,
+        // so a reader that stops reading could block its writer (and shutdown) forever.
+        if (opts_.send_timeout.count() <= 0 || opts_.partial_frame_timeout.count() <= 0) {
+            throw std::invalid_argument("server timeouts must be positive");
         }
         const bool loopback = opts_.host == "localhost" || opts_.host.rfind("127.", 0) == 0;
         if (!loopback && !opts_.allow_remote) {
@@ -333,6 +343,7 @@ private:
             if (n > 0) {
                 decoder.feed(buf.data(), static_cast<std::size_t>(n));
                 bool fatal = false;
+                bool completed_frame = false;
                 while (true) {
                     const auto status = decoder.next(payload);
                     if (status == FrameDecoder::Status::NeedMore) {
@@ -347,13 +358,15 @@ private:
                         fatal = true;
                         break;
                     }
+                    completed_frame = true;
                     counters_.requests.fetch_add(1);
                     auto parsed = parse_client_message(payload);
                     if (auto* err = std::get_if<codec::ParseError>(&parsed)) {
                         submit(s, ReplyOnly{make_frame(error_message(*err))});
                     } else {
-                        std::visit([&](auto&& m) { submit(s, Message{std::move(m)}); },
-                                   std::get<ClientMessage>(std::move(parsed)));
+                        std::visit(
+                            [&](auto&& m) { submit(s, Message{std::forward<decltype(m)>(m)}); },
+                            std::get<ClientMessage>(std::move(parsed)));
                     }
                 }
                 if (fatal) {
@@ -361,7 +374,9 @@ private:
                 }
                 if (!decoder.has_partial()) {
                     partial_since.reset();
-                } else if (!partial_since) {
+                } else if (!partial_since || completed_frame) {
+                    // The deadline is per frame: a frame completed in this read, so the
+                    // partial one left over started in it too and gets a fresh deadline.
                     partial_since = Clock::now();
                 } else if (Clock::now() - *partial_since > opts_.partial_frame_timeout) {
                     // A frame trickled in slower than the deadline (slowloris): disconnect.
@@ -467,7 +482,7 @@ private:
                 try {
                     std::visit([&](auto& m) { handle(req.session, m); }, req.message);
                 } catch (const std::exception& e) {
-                    internal_failure(req.session, e.what());
+                    internal_failure(req, e.what());
                 }
             }
             safe_commit();
@@ -478,14 +493,29 @@ private:
     // Unexpected exceptions must not terminate the process (std::thread boundary). State may
     // be inconsistent afterwards, so the server stops accepting commands (fail-stop) and
     // answers INTERNAL_ERROR; operators restart it to recover from the journal.
-    void internal_failure(const SessionPtr& s, const char* what) {
+    // The reply echoes the request's correlation fields so clients can match it.
+    void internal_failure(const Request& req, const char* what) {
         counters_.internal_errors.fetch_add(1);
         std::fprintf(stderr, "enginex server: internal error, now fail-stop: %s\n", what);
         fatal_ = true;
+        std::string request_id;
+        std::string request_type;
+        if (const auto* cmd = std::get_if<Command>(&req.message)) {
+            request_id = request_id_of(*cmd);
+            request_type = std::string(to_string(type_of(*cmd)));
+        } else if (const auto* snap = std::get_if<SnapshotRequest>(&req.message)) {
+            request_id = snap->request_id;
+            request_type = "snapshot_request";
+        } else if (const auto* sub = std::get_if<SubscribeRequest>(&req.message)) {
+            request_id = sub->request_id;
+            request_type = "subscribe";
+        }
         Pending p;
-        p.session = s;
-        p.reply = make_frame(
-            error_message(ErrorCode::InternalError, "internal server error; server is fail-stop"));
+        p.session = req.session;
+        p.reply = make_frame(error_message(ErrorCode::InternalError,
+                                           "internal server error; outcome unknown, server is "
+                                           "fail-stop; retry the request_id after restart",
+                                           request_id, request_type));
         pending_.push_back(std::move(p));
     }
 
@@ -552,6 +582,10 @@ private:
         }
         backend_.stage(cmd, scratch_);
         counters_.commands_staged.fetch_add(1);
+        if (opts_.fault_internal_error_after_stage != 0 &&
+            counters_.commands_staged.load() == opts_.fault_internal_error_after_stage) {
+            throw std::runtime_error("injected internal error after stage");
+        }
         p.state_dependent = true;
         p.request_id = scratch_.request_id;
         p.command_type = std::string(to_string(scratch_.type));
@@ -588,13 +622,18 @@ private:
 
     // Reads see exactly the durable, published state: flush and publish the batch first.
     void handle(const SessionPtr& s, SnapshotRequest& r) {
-        commit_pending();
+        safe_commit();  // an exception here fail-stops and is answered below, not leaked
         Frame f;
         if (backend_.failed()) {
             f = make_frame(error_message(
                 ErrorCode::JournalIoError,
                 "journal failed (" + backend_.failure() + "); state unavailable until restart",
                 r.request_id, "snapshot_request"));
+        } else if (fatal_) {
+            // The in-memory state may hold staged commands that were never made durable.
+            f = make_frame(error_message(ErrorCode::InternalError,
+                                         "server is fail-stop after an internal error",
+                                         r.request_id, "snapshot_request"));
         } else {
             std::optional<SymbolId> symbol;
             if (r.symbol) {
@@ -605,6 +644,9 @@ private:
                                              r.request_id, "snapshot_request"));
             } else {
                 f = snapshot_frame(r.request_id, symbol, r.depth, false);
+                if (!f) {
+                    f = snapshot_too_large(r.request_id, "snapshot_request");
+                }
             }
         }
         (void)s->enqueue(f, counters_);
@@ -612,7 +654,7 @@ private:
     }
 
     void handle(const SessionPtr& s, SubscribeRequest& r) {
-        commit_pending();
+        safe_commit();
         Frame f;
         bool subscribe = false;
         if (backend_.failed()) {
@@ -626,31 +668,37 @@ private:
         } else if (s->subscribed.load()) {
             f = make_frame(error_message(ErrorCode::InvalidRequest, "already subscribed",
                                          r.request_id, "subscribe"));
-        } else {
-            f = snapshot_frame(r.request_id, std::nullopt, 0, true);
+        } else if ((f = snapshot_frame(r.request_id, std::nullopt, 0, true))) {
             subscribe = true;
+        } else {
+            // No baseline could be sent: the connection must not receive increments.
+            f = snapshot_too_large(r.request_id, "subscribe");
         }
         // Snapshot and registration happen together on this thread: no event can fall between.
         s->last_event_queued = published_event_;
         if (s->enqueue(f, counters_) && subscribe) {
+            subscribers_.push_back(s);  // first: if this throws, the session is not marked
             s->subscribed = true;
-            subscribers_.push_back(s);
         }
         s->in_flight.fetch_sub(1);
     }
 
+    // The snapshot frame, or nullptr when it does not fit in one frame. Callers must treat
+    // nullptr as failure: in particular a subscribe without a baseline must not register.
     Frame snapshot_frame(const std::string& request_id, std::optional<SymbolId> symbol,
                          std::size_t depth, bool subscribed) {
         try {
-            if (Frame f = bounded_frame(snapshot_message(backend_.state(), request_id, symbol,
-                                                         depth, published_event_, subscribed))) {
-                return f;
-            }
+            return bounded_frame(snapshot_message(backend_.state(), request_id, symbol, depth,
+                                                  published_event_, subscribed));
         } catch (const std::length_error&) {
+            return nullptr;
         }
+    }
+
+    static Frame snapshot_too_large(const std::string& request_id, const char* request_type) {
         return make_frame(error_message(ErrorCode::InternalError,
                                         "snapshot exceeds the frame limit; request less depth",
-                                        request_id, subscribed ? "subscribe" : "snapshot_request"));
+                                        request_id, request_type));
     }
 
     void publish(EventSeq seq, const Frame& f) {

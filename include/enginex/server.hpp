@@ -50,6 +50,10 @@ struct ServerOptions {
     // Largest server→client frame (≤ protocol limit of 16 MiB). An ack or event that would be
     // larger is sent in a bounded form with "executions_truncated": true (see protocol.md).
     std::size_t max_frame_bytes = 16 * 1024 * 1024;
+    // Fault injection for tests (0 = never): the sequencer throws an unexpected exception right
+    // after staging the Nth command (state already mutated, not yet durable), driving the
+    // server into its fail-stop path exactly as an unanticipated internal bug would.
+    std::uint64_t fault_internal_error_after_stage = 0;
 };
 
 struct ServerStats {

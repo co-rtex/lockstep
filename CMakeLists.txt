@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(EngineX VERSION 0.1.0 LANGUAGES CXX)
+project(EngineX VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,21 +38,21 @@ set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
-# Build metadata recorded in benchmark output.
+# Build metadata recorded in benchmark output. Compiler and build type are fixed per build
+# directory (configure time); the git revision is refreshed on every build (cmake/git_info.cmake).
 find_package(Git QUIET)
-set(ENGINEX_GIT_SHA "unknown")
-if(GIT_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE ENGINEX_GIT_SHA
-        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if(NOT ENGINEX_GIT_SHA)
-        set(ENGINEX_GIT_SHA "unknown")
-    endif()
-endif()
 configure_file(cmake/build_info.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/build_info.hpp
                @ONLY)
+add_custom_target(enginex_git_info
+    COMMAND ${CMAKE_COMMAND}
+        -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DIN=${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_info.hpp.in
+        -DOUT=${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/git_info.hpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_info.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/generated/enginex/git_info.hpp
+    COMMENT "Recording the git revision"
+    VERBATIM)
 
 # ---------------------------------------------------------------------------
 # Libraries
@@ -69,6 +69,11 @@ target_include_directories(enginex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 enginex_set_warnings(enginex_core)
+add_dependencies(enginex_core enginex_git_info)  # everything that reads build_info links core
+option(ENGINEX_CORE_STD_ALLOC "Benchmark baseline: book nodes use operator new, not the engine pool" OFF)
+if(ENGINEX_CORE_STD_ALLOC)
+    target_compile_definitions(enginex_core PRIVATE ENGINEX_CORE_STD_ALLOC)
+endif()
 
 # enginex_codec: JSON at the command/transport boundary (simulate, wire protocol).
 add_library(enginex_codec src/json_codec.cpp src/simulate.cpp)
@@ -82,9 +87,37 @@ enginex_set_warnings(enginex_journal)
 
 # enginex_net: wire protocol, bounded queues, TCP server and client (R3).
 find_package(Threads REQUIRED)
-add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/client.cpp)
+add_library(enginex_net src/protocol.cpp src/socket.cpp src/server.cpp src/client.cpp src/mirror.cpp)
 target_link_libraries(enginex_net PUBLIC enginex_codec enginex_journal Threads::Threads)
 enginex_set_warnings(enginex_net)
+
+# enginex_itch: Nasdaq TotalView-ITCH 5.0 decoding and order-book reconstruction from historical
+# market data. Independent of the synthetic exchange (it only reuses SHA-256 from the core).
+add_library(enginex_itch src/itch/codec.cpp src/itch/book.cpp src/itch/replay.cpp src/itch/synthetic.cpp
+    src/itch/moldudp64.cpp src/itch/mold_sim.cpp)
+target_link_libraries(enginex_itch PUBLIC enginex_core)
+enginex_set_warnings(enginex_itch)
+option(ENGINEX_ITCH_HASH_INDEX "Benchmark baseline: open-addressing hash order index only" OFF)
+if(ENGINEX_ITCH_HASH_INDEX)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_HASH_INDEX)
+endif()
+option(ENGINEX_ITCH_STD_INDEX "Benchmark baseline: std::unordered_map order index" OFF)
+if(ENGINEX_ITCH_STD_INDEX)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_INDEX)
+endif()
+option(ENGINEX_ITCH_MAP_LEVELS "Benchmark baseline: std::map price levels instead of sorted vectors" OFF)
+if(ENGINEX_ITCH_MAP_LEVELS)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_MAP_LEVELS)
+endif()
+option(ENGINEX_ITCH_STD_LEVEL_ALLOC "With ENGINEX_ITCH_MAP_LEVELS: map nodes use std::allocator" OFF)
+if(ENGINEX_ITCH_STD_LEVEL_ALLOC)
+    target_compile_definitions(enginex_itch PRIVATE ENGINEX_ITCH_STD_LEVEL_ALLOC)
+endif()
+
+# enginex_itch_udp: MoldUDP64 over real UDP sockets (sender with re-request answers, receiver).
+add_library(enginex_itch_udp src/itch/mold_udp.cpp)
+target_link_libraries(enginex_itch_udp PUBLIC enginex_itch enginex_net)
+enginex_set_warnings(enginex_itch_udp)
 
 # enginex_bench_lib: workload generation and the in-process measurement harness.
 add_library(enginex_bench_lib benchmarks/scenarios.cpp benchmarks/harness.cpp src/metrics.cpp)
@@ -96,13 +129,66 @@ enginex_set_warnings(enginex_bench_lib)
 # Executables
 # ---------------------------------------------------------------------------
 add_executable(enginex src/main.cpp src/cli_simulate.cpp src/cli_benchmark.cpp src/cli_journal.cpp
-    src/cli_net.cpp)
-target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib)
+    src/cli_net.cpp src/cli_itch.cpp)
+target_link_libraries(enginex PRIVATE enginex_net enginex_bench_lib enginex_itch enginex_itch_udp)
 enginex_set_warnings(enginex)
 
 add_executable(enginex_bench benchmarks/bench_main.cpp)
 target_link_libraries(enginex_bench PRIVATE enginex_bench_lib)
 enginex_set_warnings(enginex_bench)
+
+# These two benchmarks replace global operator new/delete to count allocations, which
+# conflicts with ThreadSanitizer's allocator interceptors at link time, so a TSan build skips
+# them (they are measurement tools, not tests; every test target still builds under TSan).
+if(NOT ENGINEX_SANITIZER MATCHES "thread")
+# Exchange core: heap allocations per command by outcome (evidence for layout work).
+add_executable(enginex_core_alloc_probe benchmarks/core_alloc_probe.cpp)
+target_link_libraries(enginex_core_alloc_probe PRIVATE enginex_bench_lib)
+enginex_set_warnings(enginex_core_alloc_probe)
+
+# ITCH decode / book / replay measurements (counts heap allocations via operator new).
+add_executable(enginex_itch_bench benchmarks/itch_bench.cpp src/metrics.cpp)
+target_link_libraries(enginex_itch_bench PRIVATE enginex_itch)
+enginex_set_warnings(enginex_itch_bench)
+endif()
+
+# MoldUDP64 sequencer cost in process (reorder buffer vs in order).
+add_executable(enginex_mold_bench benchmarks/mold_bench.cpp)
+target_link_libraries(enginex_mold_bench PRIVATE enginex_itch)
+enginex_set_warnings(enginex_mold_bench)
+
+# Per-datagram cost of the UDP system calls on loopback (the transport's environment floor).
+add_executable(enginex_udp_syscall_bench benchmarks/udp_syscall_bench.cpp)
+target_link_libraries(enginex_udp_syscall_bench PRIVATE enginex_core)
+enginex_set_warnings(enginex_udp_syscall_bench)
+
+# Cross-layout check: the ITCH book sources compiled a second time with the earlier layout
+# (std::map levels + open-addressing hash index), each linked into its own small executable.
+set(ENGINEX_ITCH_SOURCES src/itch/codec.cpp src/itch/book.cpp src/itch/replay.cpp
+    src/itch/synthetic.cpp src/itch/moldudp64.cpp src/itch/mold_sim.cpp)
+add_library(enginex_itch_maphash STATIC ${ENGINEX_ITCH_SOURCES})
+target_link_libraries(enginex_itch_maphash PUBLIC enginex_core)
+target_compile_definitions(enginex_itch_maphash PRIVATE ENGINEX_ITCH_MAP_LEVELS ENGINEX_ITCH_HASH_INDEX)
+enginex_set_warnings(enginex_itch_maphash)
+add_executable(enginex_itch_state_hash tools/variant/itch_state_hash.cpp)
+target_link_libraries(enginex_itch_state_hash PRIVATE enginex_itch)
+enginex_set_warnings(enginex_itch_state_hash)
+add_executable(enginex_itch_state_hash_maphash tools/variant/itch_state_hash.cpp)
+target_link_libraries(enginex_itch_state_hash_maphash PRIVATE enginex_itch_maphash)
+enginex_set_warnings(enginex_itch_state_hash_maphash)
+
+# Fuzz harness (fuzz/itch_fuzz.cpp). The standalone mutation driver builds everywhere; with
+# -DENGINEX_FUZZ_LIBFUZZER=ON (clang with libFuzzer, e.g. Linux) a coverage-guided binary too.
+add_executable(enginex_fuzz_itch_standalone fuzz/itch_fuzz.cpp fuzz/standalone_driver.cpp)
+target_link_libraries(enginex_fuzz_itch_standalone PRIVATE enginex_itch)
+enginex_set_warnings(enginex_fuzz_itch_standalone)
+option(ENGINEX_FUZZ_LIBFUZZER "Build enginex_fuzz_itch with -fsanitize=fuzzer" OFF)
+if(ENGINEX_FUZZ_LIBFUZZER)
+    add_executable(enginex_fuzz_itch fuzz/itch_fuzz.cpp)
+    target_link_libraries(enginex_fuzz_itch PRIVATE enginex_itch)
+    target_compile_options(enginex_fuzz_itch PRIVATE -fsanitize=fuzzer)
+    target_link_options(enginex_fuzz_itch PRIVATE -fsanitize=fuzzer)
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests

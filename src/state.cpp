@@ -1,6 +1,8 @@
 #include "enginex/state.hpp"
 
+#include <cstdint>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -42,6 +44,12 @@ ExchangeStateMachine::ExchangeStateMachine(StateConfig config)
     if (config_.symbols.size() > std::numeric_limits<SymbolId>::max()) {
         throw std::invalid_argument("too many symbols");
     }
+    // Secret index key: placement only, never results (see header). Fails closed: if the OS
+    // entropy source is unavailable, std::random_device throws and construction fails loudly
+    // rather than running with a guessable key.
+    std::random_device rd;
+    auto word = [&rd] { return (static_cast<std::uint64_t>(rd()) << 32U) | rd(); };
+    id_key_ = SipKey{word(), word()};
 }
 
 std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbol) const noexcept {
@@ -53,14 +61,65 @@ std::optional<SymbolId> ExchangeStateMachine::find_symbol(std::string_view symbo
     return std::nullopt;
 }
 
+std::uint32_t ExchangeStateMachine::fingerprint(std::string_view id) const noexcept {
+    const std::uint64_t h = siphash24(id_key_, id);
+    return static_cast<std::uint32_t>(h ^ (h >> 32U));
+}
+
 const CommandRecord* ExchangeStateMachine::find_request(std::string_view request_id) const {
-    const auto it = requests_.find(request_id);
-    return it == requests_.end() ? nullptr : &it->second;
+    return find_request(request_id, fingerprint(request_id));
+}
+
+const CommandRecord* ExchangeStateMachine::find_request(std::string_view request_id,
+                                                        std::uint32_t fp) const noexcept {
+    if (id_index_.empty()) {
+        return nullptr;
+    }
+    const std::size_t mask = id_index_.size() - 1;
+    for (std::size_t i = fp & mask;; i = (i + 1) & mask) {
+        const IdSlot& slot = id_index_[i];
+        if (slot.index_plus_one == 0) {
+            return nullptr;
+        }
+        if (slot.fingerprint == fp) {
+            const CommandRecord& r = records_[slot.index_plus_one - 1];
+            if (request_id_of(r.command) == request_id) {
+                return &r;
+            }
+        }
+    }
+}
+
+void ExchangeStateMachine::grow_index(std::size_t records) {
+    // Keep the load factor at or below 1/2, so a miss (a new id) is a short probe.
+    std::size_t cap = id_index_.empty() ? 16 : id_index_.size();
+    while (cap < 2 * records)
+        cap *= 2;
+    if (cap == id_index_.size()) {
+        return;
+    }
+    std::vector<IdSlot> grown(cap);  // may throw: nothing has changed yet
+    for (const IdSlot& s : id_index_) {
+        if (s.index_plus_one != 0) {
+            std::size_t j = s.fingerprint & (cap - 1);
+            while (grown[j].index_plus_one != 0)
+                j = (j + 1) & (cap - 1);
+            grown[j] = s;
+        }
+    }
+    id_index_.swap(grown);
+}
+
+void ExchangeStateMachine::place(std::uint32_t fp, std::uint32_t index_plus_one) noexcept {
+    const std::size_t mask = id_index_.size() - 1;
+    std::size_t i = fp & mask;
+    while (id_index_[i].index_plus_one != 0)
+        i = (i + 1) & mask;
+    id_index_[i] = IdSlot{fp, index_plus_one};
 }
 
 void ExchangeStateMachine::reserve(std::size_t expected_commands) {
-    requests_.reserve(expected_commands);
-    by_sequence_.reserve(expected_commands);
+    grow_index(expected_commands);
     executions_.reserve(expected_commands);
     engine_.reserve(expected_commands);
 }
@@ -92,7 +151,7 @@ Decision ExchangeStateMachine::prepare(const Command& cmd) const {
                       "request_id was already accepted with a different command");
     }
 
-    if (last_command_ == std::numeric_limits<CommandSeq>::max()) {
+    if (last_command_ == std::numeric_limits<CommandSeq>::max() || records_.size() >= kMaxRecords) {
         return reject(ErrorCode::LimitExceeded, "command sequence exhausted");
     }
 
@@ -127,7 +186,7 @@ Decision ExchangeStateMachine::prepare(const Command& cmd) const {
     if (!target || *target > last_command_) {
         return reject(ErrorCode::UnknownOrder, "unknown order_id");
     }
-    const CommandRecord& record = *by_sequence_[static_cast<std::size_t>(*target - 1)];
+    const CommandRecord& record = records_[static_cast<std::size_t>(*target - 1)];
     if (!std::holds_alternative<NewLimitOrder>(record.command)) {
         return reject(ErrorCode::UnknownOrder, "unknown order_id");
     }
@@ -147,16 +206,22 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
     out.reset();
     const CommandSeq seq = decision.sequence;
 
-    auto [it, inserted] = requests_.try_emplace(request_id_of(cmd));
-    if (!inserted) {
+    const std::string& rid = request_id_of(cmd);
+    const std::uint32_t fp = fingerprint(rid);  // hashed once for the check and the insert
+    if (find_request(rid, fp) != nullptr) {
         throw InvariantViolation("request id already recorded");
     }
-    CommandRecord& record = it->second;
-    record.command = cmd;
-    record.sequence = seq;
-    record.symbol = decision.symbol;
+    if (records_.size() >= kMaxRecords) {
+        throw InvariantViolation("command history capacity exceeded");
+    }
+    // Allocate first (index growth, then the record with its copy of the command), and only
+    // then index it, which cannot fail: an allocation failure here never leaves a record
+    // unindexed. (As before this index existed, a failure later in this function, inside the
+    // engine or while recording executions, is not rolled back; see the commit contract.)
+    grow_index(records_.size() + 1);
+    CommandRecord& record = records_.emplace_back(CommandRecord{cmd, seq, decision.symbol});
+    place(fp, static_cast<std::uint32_t>(records_.size()));
     last_command_ = seq;
-    by_sequence_.push_back(&record);
 
     if (const auto* order = std::get_if<NewLimitOrder>(&cmd)) {
         scratch_fills_.clear();
@@ -173,8 +238,7 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
             executions_.push_back(Execution{executions_.size() + 1, seq, seq, fill.resting_order_id,
                                             decision.symbol, order->side, fill.price,
                                             fill.quantity});
-            CommandRecord& resting =
-                *by_sequence_[static_cast<std::size_t>(fill.resting_order_id - 1)];
+            CommandRecord& resting = records_[static_cast<std::size_t>(fill.resting_order_id - 1)];
             resting.status =
                 fill.resting_remaining == 0 ? OrderStatus::Filled : OrderStatus::PartiallyFilled;
         }
@@ -185,8 +249,7 @@ void ExchangeStateMachine::commit(const Command& cmd, const Decision& decision,
         }
         record.target = decision.target;
         record.outcome_quantity = cancelled->cancelled_quantity;
-        by_sequence_[static_cast<std::size_t>(decision.target - 1)]->status =
-            OrderStatus::Cancelled;
+        records_[static_cast<std::size_t>(decision.target - 1)].status = OrderStatus::Cancelled;
     }
 
     fill_from_record(record, out);
@@ -212,7 +275,7 @@ void ExchangeStateMachine::fill_from_record(const CommandRecord& record, Command
                                   executions_.begin() + first + record.execution_count);
         }
     } else {
-        const CommandRecord& target = *by_sequence_[static_cast<std::size_t>(record.target - 1)];
+        const CommandRecord& target = records_[static_cast<std::size_t>(record.target - 1)];
         const auto& target_order = std::get<NewLimitOrder>(target.command);
         out.order_id = record.target;
         out.side = target_order.side;

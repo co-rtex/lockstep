@@ -4,7 +4,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace enginex::test {
 

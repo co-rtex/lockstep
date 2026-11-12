@@ -25,8 +25,10 @@ does not replace, the TradeGrid Go exchange (see
 | `enginex_codec` | JSON ⇄ typed commands/results, `simulate` | core, nlohmann/json 3.11.3 |
 | `enginex_journal` | CRC32C, EXJ1 journal codec/scan, `JournalFile` (flock, fsync modes, fault injection), `DurableExchange` | core |
 | `enginex_net` | framing + protocol v1 codec, `BoundedQueue`, POSIX sockets, `Server`, `Client` | codec, journal, threads |
+| `enginex_itch` | ITCH 5.0 decoder/encoder, file framer, `BookBuilder` reconstruction, replay, synthetic streams ([itch.md](itch.md)); separate from the exchange | core (SHA-256 only) |
 | `enginex_bench_lib` | workload generators, measurement harness (core, durable, recovery, network), metrics | core, journal, net |
-| `enginex` | CLI (`simulate`, `benchmark`, …) | all of the above |
+| `enginex` | CLI (`simulate`, `benchmark`, …, `itch`) | all of the above |
+| `enginex_itch_bench` | ITCH decode / book / replay measurements with allocation counting | itch |
 | `enginex_tests` | GoogleTest suite | all libraries |
 
 The core has no I/O, no clocks, no JSON and no threads. Everything that touches the outside
@@ -100,6 +102,11 @@ command in the property tests:
 ASan and UBSan runs of the full suite (Linux, Clang 18) found no use-after-free or invalid
 iterator use.
 
+**Allocation (R4).** Lists, level maps and the order index are `std::pmr` containers on one
+`unsynchronized_pool_resource` per `MatchingEngine` (DECISIONS.md D26), so recycled nodes
+avoid malloc/free. Iterator-stability guarantees are unchanged; the engine is movable but
+not move-assignable.
+
 ## Identity and determinism
 
 * `command_sequence`: one per *accepted* mutating command (new or cancel). Rejections and
@@ -107,7 +114,10 @@ iterator use.
 * `order_id = "ord-<command_sequence of its new_limit>"`; `execution_id = "exe-<n>"` with one
   global execution sequence across symbols.
 * No wall-clock time, random value, address or hash-iteration order influences matching. FIFO
-  priority is acceptance order.
+  priority is acceptance order. The one random value in the core is the SipHash key of the
+  request-id index. It decides only where an id sits in the table. Every lookup ends in an
+  exact string comparison and the table is iterated only to grow it, never to produce output, so results and `state_hash` do not
+  depend on it (a test runs two machines with different keys in lockstep).
 * The canonical state (spec §8.2) is a fixed-order JSON document containing watermarks, books
   (bids descending, asks ascending, FIFO within a level), every accepted command with its
   outcome (this is the idempotency map) and every execution. `state_hash` is its SHA-256.
@@ -120,6 +130,13 @@ and returns the original response (`duplicate: true`) without touching the book.
 body under the same id returns `DUPLICATE_REQUEST_ID_CONFLICT`. Rejected requests are not
 remembered (DECISIONS.md D4): they are never journaled, so remembering them could not survive
 a restart.
+
+Storage (D31). Records live in a `std::deque<CommandRecord>` indexed by command sequence, so
+references stay stable and memory is allocated in blocks. The `request_id` lookup is an
+open-addressing table of 8-byte slots `{32-bit SipHash fingerprint, record index + 1}` at load
+≤ ½, so a new id usually costs one cache miss. It replaced a node-based `unordered_map`
+whose two misses per new id made per-command cost grow from 108 to 296 ns between 100 k and
+3 M commands.
 
 ## Validation and numeric safety
 

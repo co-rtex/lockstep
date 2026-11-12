@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ostream>
 #include <string>
 #include <vector>
 

@@ -19,6 +19,7 @@
 // stored: replay re-derives them deterministically from the ordered commands.
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>

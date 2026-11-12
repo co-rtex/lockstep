@@ -45,6 +45,25 @@ struct ParseError {
 template <typename T>
 using Parsed = std::variant<T, ParseError>;
 
+// Problems parse_json reports in an otherwise well-formed JSON text (D33).
+enum class KeyIssue {
+    None,
+    // An object repeats a key. Such a message is ambiguous (a reader keeping the first value
+    // and one keeping the last would disagree, e.g. about the idempotency key), and the plain
+    // parser would silently keep the last value.
+    RepeatedKey,
+    // An object has more than kMaxKeysPerObject keys. Valid messages have at most 8; ordered_json
+    // inserts by linear scan, so an object with k keys would cost O(k^2) to parse (40 000 keys:
+    // 1.4 s measured). Keys past the limit are discarded unparsed into the object.
+    TooManyKeys,
+};
+inline constexpr std::size_t kMaxKeysPerObject = 64;
+
+// Parses one JSON text for a command input. Returns a discarded value if the text is malformed,
+// and sets `issue` (RepeatedKey wins if both occur before the limit).
+[[nodiscard]] Json parse_json(std::string_view text, KeyIssue& issue);
+[[nodiscard]] const char* key_issue_message(KeyIssue issue) noexcept;
+
 // Parses one JSON text into a command or query. Field type problems map to specific codes:
 // symbol -> INVALID_SYMBOL, side -> INVALID_SIDE, price -> INVALID_PRICE (also non-integers),
 // quantity -> INVALID_QUANTITY; everything else -> INVALID_REQUEST. Range checks are left to

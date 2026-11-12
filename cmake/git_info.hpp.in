@@ -1,0 +1,6 @@
+#pragma once
+
+// Generated at build time by cmake/git_info.cmake.
+namespace enginex::build_info {
+inline constexpr const char* kGitSha = "@ENGINEX_GIT_SHA@";
+}  // namespace enginex::build_info

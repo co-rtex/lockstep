@@ -7,11 +7,14 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include "cli.hpp"
 #include "enginex/canonical.hpp"
 #include "enginex/client.hpp"
+#include "enginex/mirror.hpp"
 #include "enginex/server.hpp"
 
 namespace enginex::cli {
@@ -64,7 +67,8 @@ int cmd_serve(const std::vector<std::string>& argv) {
     opts.ingress_capacity = args.get_u64("ingress-capacity", 4096);
     opts.outbound_capacity = args.get_u64("outbound-capacity", 1024);
     opts.max_batch = args.get_u64("max-batch", 512);
-    opts.send_timeout = std::chrono::milliseconds(args.get_u64("send-timeout-ms", 2000));
+    // 0 would disable the slow-reader cut-off (and let one stalled reader block shutdown).
+    opts.send_timeout = args.get_ms("send-timeout-ms", 2000, 1, 3'600'000);
     opts.outbound_byte_limit = args.get_u64("outbound-byte-limit", 64ULL * 1024 * 1024);
     opts.allow_remote = args.flag("allow-remote");
     if (opts.allow_remote) {
@@ -143,7 +147,7 @@ namespace {
 
 int client_submit(const Args& args) {
     const std::string host = args.get_or("host", "127.0.0.1");
-    const auto timeout = std::chrono::milliseconds(args.get_u64("timeout-ms", 10000));
+    const auto timeout = args.get_ms("timeout-ms", 10000, 1, 3'600'000);
     net::Client client = net::Client::connect(host, port_arg(args, 9000));
     std::ifstream file;
     std::istream* in = &std::cin;
@@ -162,10 +166,16 @@ int client_submit(const Args& args) {
         if (line.find_first_not_of(" \t\r") == std::string::npos) {
             continue;
         }
-        Json msg = Json::parse(line, nullptr, false);
-        if (msg.is_discarded() || !msg.is_object()) {
-            std::cout << Json{{"type", "client_error"}, {"message", "malformed input line"}}.dump()
-                      << std::endl;
+        // Same strictness as the server (D33): re-serializing would otherwise silently drop all
+        // but the last value of a repeated key before the server could refuse it.
+        codec::KeyIssue issue = codec::KeyIssue::None;
+        Json msg = codec::parse_json(line, issue);
+        if (msg.is_discarded() || !msg.is_object() || issue != codec::KeyIssue::None) {
+            const std::string why =
+                issue == codec::KeyIssue::None
+                    ? std::string("malformed input line")
+                    : std::string(codec::key_issue_message(issue)) + " in input line";
+            std::cout << Json{{"type", "client_error"}, {"message", why}}.dump() << std::endl;
             ++failures;
             continue;
         }
@@ -194,9 +204,9 @@ int client_submit(const Args& args) {
 
 int client_subscribe(const Args& args) {
     const std::string host = args.get_or("host", "127.0.0.1");
-    const std::uint64_t count = args.get_u64("count", 0);  // 0 = until EOF/duration
-    const auto duration = std::chrono::milliseconds(args.get_u64("duration-ms", 0));
-    const auto slow = std::chrono::milliseconds(args.get_u64("slow-ms", 0));
+    const std::uint64_t count = args.get_u64("count", 0);                // 0 = until EOF/duration
+    const auto duration = args.get_ms("duration-ms", 0, 0, 86'400'000);  // 0 = no limit
+    const auto slow = args.get_ms("slow-ms", 0, 0, 3'600'000);
     const bool quiet = args.flag("quiet");
     net::Client client = net::Client::connect(host, port_arg(args, 9000));
     if (!client.send(Json{{"type", "subscribe"}, {"request_id", "subscribe"}})) {
@@ -275,11 +285,46 @@ int client_snapshot(const Args& args) {
     return reply->value("type", "") == "snapshot_response" ? 0 : 1;
 }
 
+// Read-only replica of the feed with gap refusal, automatic resubscribe and in-band
+// verification (mirror.hpp). Exit 0 only if the session ended live and verified.
+int client_mirror(const Args& args) {
+    net::MirrorOptions o;
+    o.host = args.get_or("host", "127.0.0.1");
+    o.port = port_arg(args, 9000);
+    o.duration = args.get_ms("duration-ms", 5000, 0, 86'400'000);
+    o.verify_every = args.get_ms("verify-ms", 500, 1, 3'600'000);
+    o.max_resubscribes = args.get_u64("max-resubscribes", 10);
+    net::FeedMirror mirror;
+    const net::MirrorReport r = net::run_mirror(o, mirror);
+    const auto& s = r.stats;
+    std::cout << Json{{"type", "mirror_summary"},
+                      {"ok", r.ok()},
+                      {"state", r.state},
+                      {"final_verified", r.final_verified},
+                      {"connections", r.connections},
+                      {"last_event_sequence", r.last_event},
+                      {"baselines", s.baselines},
+                      {"events_applied", s.applied},
+                      {"events_rejected_not_live", s.rejected},
+                      {"gaps_refused", s.gaps},
+                      {"resync_required", s.resyncs},
+                      {"disconnects", s.disconnects},
+                      {"subscribe_failures", s.subscribe_failures},
+                      {"connect_failures", s.connect_failures},
+                      {"malformed_messages", s.malformed},
+                      {"verifications", s.verified},
+                      {"mismatches", s.mismatches},
+                      {"last_problem", r.last_problem}}
+                     .dump()
+              << std::endl;
+    return r.ok() ? 0 : 1;
+}
+
 }  // namespace
 
 int cmd_client(const std::vector<std::string>& argv) {
     if (argv.empty()) {
-        throw UsageError("expected a subcommand: submit, subscribe or snapshot");
+        throw UsageError("expected a subcommand: submit, subscribe, snapshot or mirror");
     }
     net::ignore_sigpipe();
     const std::string sub = argv[0];
@@ -293,6 +338,10 @@ int cmd_client(const std::vector<std::string>& argv) {
     }
     if (sub == "snapshot") {
         return client_snapshot(Args(rest, {"host", "port", "symbol", "depth"}, {}));
+    }
+    if (sub == "mirror") {
+        return client_mirror(
+            Args(rest, {"host", "port", "duration-ms", "verify-ms", "max-resubscribes"}, {}));
     }
     throw UsageError("unknown client subcommand: " + sub);
 }

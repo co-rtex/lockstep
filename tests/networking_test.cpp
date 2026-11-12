@@ -4,9 +4,13 @@
 // shutdown and restart.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
+#include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
 #include <thread>
 
 #include "enginex/bounded_queue.hpp"
@@ -98,13 +102,17 @@ TEST(Protocol, ParsesClientMessages) {
 }
 
 TEST(Protocol, RejectsBadMessages) {
-    for (const char* text :
-         {"not json", "[]", R"({"type":"subscribe"})",
-          R"({"protocol_version":2,"type":"subscribe"})",
-          R"({"protocol_version":"1","type":"subscribe"})", R"({"protocol_version":1})",
-          R"({"protocol_version":1,"type":"teleport"})",
-          R"({"protocol_version":1,"type":"subscribe","extra":true})",
-          R"({"protocol_version":1,"type":"snapshot_request","depth":-1})"}) {
+    for (
+        const char* text :
+        {"not json", "[]", R"({"type":"subscribe"})",
+         R"({"protocol_version":2,"type":"subscribe"})",
+         R"({"protocol_version":"1","type":"subscribe"})", R"({"protocol_version":1})",
+         R"({"protocol_version":1,"type":"teleport"})",
+         R"({"protocol_version":1,"type":"subscribe","extra":true})",
+         R"({"protocol_version":1,"type":"snapshot_request","depth":-1})",
+         // A repeated key is ambiguous (first or last value?), so it is malformed.
+         R"({"protocol_version":1,"type":"new_limit","request_id":"r","request_id":"s","symbol":"AAPL","side":"BUY","price":5,"quantity":2})",
+         R"({"protocol_version":1,"protocol_version":1,"type":"subscribe"})"}) {
         auto m = parse_client_message(text);
         ASSERT_TRUE(std::holds_alternative<codec::ParseError>(m)) << text;
         EXPECT_EQ(std::get<codec::ParseError>(m).code, ErrorCode::InvalidRequest) << text;
@@ -734,6 +742,43 @@ TEST(Server, TrickledFrameIsDisconnectedAtDeadline) {
     EXPECT_FALSE(c.receive(kTimeout).has_value());
 }
 
+// The deadline is per frame, from its first byte. A client that keeps completing frames is
+// never cut off, even when every read the server makes ends inside the next frame (a
+// pipelining client over a network that splits frames at arbitrary points).
+TEST(Server, PipelinedFramesSplitAcrossReadsAreNotTimedOut) {
+    ServerOptions o;
+    o.partial_frame_timeout = 600ms;
+    TestServer ts(false, o);
+    Client c = ts.connect();
+    constexpr int kFrames = 30;
+    std::vector<std::string> frames;
+    for (int i = 0; i < kFrames; ++i) {
+        Json m = order("pipe" + std::to_string(i), "BUY", 100 + i, 1);
+        m["protocol_version"] = 1;
+        frames.push_back(encode_frame(m.dump()));
+    }
+    // Write k completes frame k-1 and starts frame k, 50 ms apart: 1.5 s of reads that all
+    // end mid-frame (2.5 deadlines), while one frame completes on every read. The 12x margin
+    // between the write gap and the deadline absorbs scheduler stalls on loaded runners.
+    const auto half = [&](int k) { return frames[static_cast<std::size_t>(k)].size() / 2; };
+    ASSERT_TRUE(c.send_raw(std::string_view(frames[0]).substr(0, half(0))));
+    for (int k = 1; k < kFrames; ++k) {
+        std::this_thread::sleep_for(50ms);
+        const std::string chunk = frames[static_cast<std::size_t>(k - 1)].substr(half(k - 1)) +
+                                  frames[static_cast<std::size_t>(k)].substr(0, half(k));
+        ASSERT_TRUE(c.send_raw(chunk)) << "write " << k;
+    }
+    ASSERT_TRUE(c.send_raw(std::string_view(frames[kFrames - 1]).substr(half(kFrames - 1))));
+    for (int i = 0; i < kFrames; ++i) {
+        auto reply = c.receive(kTimeout);
+        ASSERT_TRUE(reply) << "reply " << i;
+        ASSERT_EQ((*reply)["type"], "ack") << reply->dump();
+        EXPECT_EQ((*reply)["request_id"], "pipe" + std::to_string(i));
+    }
+    EXPECT_FALSE(c.closed());
+    EXPECT_EQ(ts.server->stats().protocol_errors, 0U);
+}
+
 TEST(Server, OutboundByteBudgetDisconnectsSnapshotHoarder) {
     ServerOptions o;
     o.outbound_byte_limit = 64 * 1024;
@@ -846,11 +891,92 @@ TEST(Server, UnframeableEventEndsFeedsWithResync) {
     EXPECT_TRUE(c.request(order("after", "BUY", 100, 1), kTimeout));
 }
 
+// Regression: a subscribe whose initial snapshot cannot be framed must not register the
+// connection, or it would receive increments with no valid baseline.
+TEST(Server, OversizedSubscribeSnapshotDoesNotRegisterSubscriber) {
+    ServerOptions o;
+    o.max_frame_bytes = 1024;
+    TestServer ts(false, o);
+    Client c = ts.connect();
+    for (int i = 0; i < 40; ++i) {  // 40 ask levels: the full-book snapshot exceeds 1 KiB
+        ASSERT_TRUE(c.request(order("s" + std::to_string(i), "SELL", 10000 + i, 1), kTimeout));
+    }
+    Client sub = ts.connect();
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}, {"request_id", "sub"}}));
+    auto reply = sub.receive(kTimeout);
+    ASSERT_TRUE(reply);
+    EXPECT_EQ((*reply)["type"], "error");
+    EXPECT_EQ((*reply)["request_id"], "sub");
+    EXPECT_EQ(ts.server->stats().subscribers, 0U);
+    // A later accepted command must not reach the failed subscriber as a book_update.
+    ASSERT_TRUE(c.request(order("after", "BUY", 100, 1), kTimeout));
+    auto stray = sub.receive(500ms);
+    EXPECT_FALSE(stray && (*stray)["type"] == "book_update")
+        << "event delivered without a baseline: " << stray->dump();
+    // The connection stays usable: a bounded snapshot request still works.
+    auto small = sub.request(
+        Json{{"type", "snapshot_request"}, {"request_id", "q"}, {"symbol", "AAPL"}, {"depth", 1}},
+        kTimeout);
+    ASSERT_TRUE(small);
+    EXPECT_EQ((*small)["type"], "snapshot_response");
+}
+
+// Regression: after an internal fail-stop the in-memory state may contain staged commands that
+// were never made durable. Snapshot requests must refuse, like subscribe does.
+TEST(Server, SnapshotRefusedAfterInternalFailStop) {
+    test::TempDir dir;
+    const std::string path = dir.file("failstop.exj");
+    ServerOptions o;
+    o.fault_internal_error_after_stage = 2;
+    auto ts = std::make_unique<TestServer>(/*journal=*/true, o, path);
+    Client c = ts->connect();
+    auto ok = c.request(order("a", "BUY", 100, 1), kTimeout);
+    ASSERT_TRUE(ok);
+    EXPECT_EQ((*ok)["type"], "ack");
+    auto failed = c.request(order("b", "BUY", 200, 7), kTimeout);
+    ASSERT_TRUE(failed);
+    EXPECT_EQ((*failed)["code"], "INTERNAL_ERROR");
+    auto snap = c.request(Json{{"type", "snapshot_request"}, {"request_id", "s"}}, kTimeout);
+    ASSERT_TRUE(snap);
+    EXPECT_EQ((*snap)["type"], "error") << snap->dump();
+    EXPECT_EQ((*snap)["code"], "INTERNAL_ERROR");
+    auto sub = c.request(Json{{"type", "subscribe"}, {"request_id", "u"}}, kTimeout);
+    ASSERT_TRUE(sub);
+    EXPECT_EQ((*sub)["code"], "INTERNAL_ERROR");
+    EXPECT_EQ(ts->server->stats().internal_errors, 1U);
+    // Restart: only the durable command survives; "b" was never acknowledged as durable.
+    ts.reset();
+    ServerOptions again;
+    again.host = "127.0.0.1";
+    again.port = 0;
+    DurableOptions d;
+    d.journal_path = path;
+    again.journal = d;
+    Server restarted(again);
+    EXPECT_EQ(restarted.state().last_command_sequence(), 1U);
+}
+
 TEST(Server, RefusesNonLoopbackBindWithoutOptIn) {
     ServerOptions o;
     o.host = "0.0.0.0";
     o.port = 0;
     EXPECT_THROW(Server{o}, std::invalid_argument);
+}
+
+// A zero (or negative) send timeout means "block forever" to SO_SNDTIMEO and disabled the
+// per-frame budget: one subscriber that stopped reading then kept graceful shutdown waiting
+// indefinitely (`serve --send-timeout-ms 0`: still running 15 s after SIGTERM).
+TEST(Server, RefusesNonPositiveTimeouts) {
+    for (const auto t : {std::chrono::milliseconds(0), std::chrono::milliseconds(-1)}) {
+        ServerOptions o;
+        o.port = 0;
+        o.send_timeout = t;
+        EXPECT_THROW(Server{o}, std::invalid_argument);
+        ServerOptions p;
+        p.port = 0;
+        p.partial_frame_timeout = t;
+        EXPECT_THROW(Server{p}, std::invalid_argument);
+    }
 }
 
 TEST(Server, JournalFailureFailStopsOverTheNetwork) {
@@ -878,6 +1004,42 @@ TEST(Server, JournalFailureFailStopsOverTheNetwork) {
     ASSERT_TRUE(snap);
     EXPECT_EQ((*snap)["code"], "JOURNAL_IO_ERROR");
     EXPECT_TRUE(server.journal_failed());
+    server.stop();
+}
+
+// A command whose journal flush failed was never made durable, so subscribers must never see
+// its book_update: after a restart the exchange would not contain it.
+TEST(Server, JournalFailureNeverPublishesTheUndurableEvent) {
+    test::TempDir dir;
+    ServerOptions o;
+    o.host = "127.0.0.1";
+    o.port = 0;
+    DurableOptions d;
+    d.journal_path = dir.file("fail.exj");
+    d.faults = journal::FaultPlan::parse("fail_sync=2");
+    o.journal = d;
+    Server server(o);
+    server.start();
+    Client sub = Client::connect("127.0.0.1", server.port(), kTimeout);
+    ASSERT_TRUE(sub.send(Json{{"type", "subscribe"}, {"request_id", "sub"}}));
+    auto snap = sub.receive(kTimeout);
+    ASSERT_TRUE(snap);
+    ASSERT_TRUE((*snap)["subscribed"].get<bool>());
+    Client c = Client::connect("127.0.0.1", server.port(), kTimeout);
+    auto ok = c.request(order("a", "BUY", 100, 1), kTimeout);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ((*ok)["type"], "ack");
+    auto ev = sub.receive(kTimeout);  // the durable command is published
+    ASSERT_TRUE(ev);
+    ASSERT_EQ((*ev)["type"], "book_update");
+    EXPECT_EQ((*ev)["event_sequence"], 1);
+    auto failed = c.request(order("b", "SELL", 101, 1), kTimeout);
+    ASSERT_TRUE(failed);
+    ASSERT_EQ((*failed)["code"], "JOURNAL_IO_ERROR");
+    // Anything the subscriber still receives (it may be disconnected) is not an event.
+    while (auto m = sub.receive(std::chrono::milliseconds(300))) {
+        EXPECT_NE((*m)["type"], "book_update") << m->dump();
+    }
     server.stop();
 }
 

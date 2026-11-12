@@ -36,7 +36,7 @@ A few tasks changed during implementation; those changes are noted inline.
 | 2.2 | Deterministic binary command payload codec (explicit little-endian) | round-trip + malformed-payload tests | R2.2 |
 | 2.3 | Journal file format `EXJ1`: header, framed records, max 4096-byte payloads, open/scan/validate, tail classification, exclusive lock, directory sync | journal tests: header, truncation, CRC mismatch, bad magic/version, sequence gaps | R2.2, R2.6 |
 | 2.4 | Storage abstraction with fault injection (failed write, short write, failed sync, ENOSPC) | journal fault tests | R2.6, R2.7 |
-| 2.5 | `DurableExchange`: validate → append → sync → apply → respond; fail-stop on I/O error; durability modes `sync` / `none` | ack-gating tests; fail-stop tests | R2.3, R2.6 |
+| 2.5 | `DurableExchange`: validate → apply in memory → encode journal record → write + sync (group commit) → respond; fail-stop on I/O or apply error. *Changed during implementation:* the original draft said validate → append → sync → apply; the implemented order is the one above (rationale in DECISIONS.md D8: nothing is observable before the ack, and an apply failure happens before the record reaches the journal). Durability modes `sync` / `none` | ack-gating tests; fail-stop tests | R2.3, R2.6 |
 | 2.6 | Startup recovery + replay; idempotency map reconstruction; tail repair with preserved bytes | restart tests; repeated restart hash equality | R2.4, R2.5 |
 | 2.7 | Crash-point tests via `fork` + `_exit` at each boundary; real `SIGKILL` test through the CLI | recovery_test | R2.7 |
 | 2.8 | CLI: `enginex run --journal`, `enginex replay --journal --verify [--repair-tail]`; recovery-time and durable-latency benchmarks | CLI tests; benchmark rows | R2.4, R2.6 |
@@ -61,3 +61,21 @@ A few tasks changed during implementation; those changes are noted inline.
 
 Fresh clone build (debug, release, asan, tsan), full test suites, demo scripts, benchmarks,
 README command verification, Linux verification (Docker if available), clean `git status`.
+
+## Market-data sprint (2026-11, branch `enginex-quant-sprint-20261109`)
+
+A second phase after R1–R3, kept separate from the exchange's semantics. It has no spec
+acceptance criteria, so each item is closed by its own tests and measurements. The item list
+with evidence is in [PROGRESS.md](PROGRESS.md#market-data-sprint-2026-11-10-branch-enginex-quant-sprint-20261109);
+rationale is in DECISIONS.md D19–D32.
+
+| # | Work item | Verified by | Status |
+|---|---|---|---|
+| S.0 | Audit; fix the two server defects (subscribe without baseline, snapshot after fail-stop) | regression tests that failed before the fix | done |
+| S.1 | ITCH 5.0 decoder (23 types) and book reconstruction, with a strict anomaly policy | goldens, malformed inputs, reference-model differential, fuzzing, independent Python decoder and book (final state and mid-stream checkpoints), 3 real sample days | done |
+| S.2 | Read-only feed mirror; MoldUDP64 sequencing, simulation and loopback UDP transport | gap/refusal/resubscribe tests, lossy relays, set-model differential, real days over UDP | done (loopback only; tests on macOS and Linux CI, real-day UDP runs on macOS) |
+| S.3 | Performance work driven by measurement: ITCH layout, exchange request index (D31), bounded level vector (D32) | interleaved A/B runs with identical state hashes; raw CSVs in `benchmarks/results/` | done |
+| S.4 | Independent checks of the exchange: Python model over simulate, TCP, journal and restart | ctest `exchange_pymodel_*` | done |
+| S.5 | Verification sweep: mutation testing (56/56, then 69/69 at `15cfbde`), UBSan, hardened libc++, leaks, coverage, doc commands executed | docs/verification.md | done locally |
+| S.6 | GCC, ASan and TSan on the sprint code; clang-format | GitHub Actions [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) on `ae20847`, all 5 jobs ([linux-validation.md](linux-validation.md)) | done |
+| S.7 | v1.0.0 release audit: independent review, fix found defects, reconcile docs, merge, tag | [RELEASE.md](RELEASE.md); D36, D37 | done |

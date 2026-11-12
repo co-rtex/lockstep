@@ -87,6 +87,8 @@ jobs:
         run: ctest --test-dir build/release --output-on-failure -j 4
       - name: CLI smoke tests
         run: scripts/check.sh smoke build/release
+      - name: ITCH market-data demo (fixtures, malformed input, deterministic replay, short benchmark)
+        run: scripts/itch_demo.sh build/release
       - name: Short seeded benchmark (no performance thresholds)
         run: |
           for s in no-cross high-cross same-price-burst multi-level-sweep cancel-heavy mixed; do

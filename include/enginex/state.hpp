@@ -1,15 +1,17 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 #include "enginex/command.hpp"
 #include "enginex/engine.hpp"
+#include "enginex/siphash.hpp"
 #include "enginex/types.hpp"
 
 namespace enginex {
@@ -61,7 +63,8 @@ public:
     ExchangeStateMachine(const ExchangeStateMachine&) = delete;
     ExchangeStateMachine& operator=(const ExchangeStateMachine&) = delete;
     ExchangeStateMachine(ExchangeStateMachine&&) = default;
-    ExchangeStateMachine& operator=(ExchangeStateMachine&&) = default;
+    // Not move-assignable: the engine's node pool must outlive the containers using it (D26).
+    ExchangeStateMachine& operator=(ExchangeStateMachine&&) = delete;
 
     // Validates `cmd` against the current state without mutating anything.
     [[nodiscard]] Decision prepare(const Command& cmd) const;
@@ -95,7 +98,7 @@ public:
     [[nodiscard]] const std::vector<Execution>& executions() const noexcept { return executions_; }
     // The accepted command with sequence `seq` (1 <= seq <= last_command_sequence()).
     [[nodiscard]] const CommandRecord& command(CommandSeq seq) const {
-        return *by_sequence_.at(static_cast<std::size_t>(seq - 1));
+        return records_.at(static_cast<std::size_t>(seq - 1));
     }
     [[nodiscard]] const CommandRecord* find_request(std::string_view request_id) const;
 
@@ -109,14 +112,28 @@ private:
     MatchingEngine engine_;
     CommandSeq last_command_ = 0;
     std::vector<Execution> executions_;  // execution i has sequence i + 1
-    struct StringHash {
-        using is_transparent = void;
-        std::size_t operator()(std::string_view text) const noexcept {
-            return std::hash<std::string_view>{}(text);
-        }
+    // Every accepted command, by sequence (record i has sequence i + 1). A deque keeps
+    // references stable as it grows and allocates in blocks, not one node per command.
+    std::deque<CommandRecord> records_;
+    // request_id -> record: open addressing with linear probing over 8-byte slots. A slot
+    // holds 32 bits of the id's hash and the record index + 1 (0 = empty); the probe start is
+    // derived from those bits, so growth never re-hashes strings. A lookup compares the full
+    // request_id only on a fingerprint match, so a new id usually costs one cache miss. The
+    // node-based unordered_map it replaces cost ~75 ns per miss at 3 M entries (D31).
+    struct IdSlot {
+        std::uint32_t fingerprint = 0;
+        std::uint32_t index_plus_one = 0;
     };
-    std::unordered_map<std::string, CommandRecord, StringHash, std::equal_to<>> requests_;
-    std::vector<CommandRecord*> by_sequence_;  // pointers into node-stable map entries
+    static constexpr std::size_t kMaxRecords = UINT32_MAX - 1;
+    // Keyed (SipHash-2-4, random key per instance) so clients cannot craft request ids that
+    // collide into one probe cluster. The key affects placement only, never lookup results.
+    [[nodiscard]] std::uint32_t fingerprint(std::string_view id) const noexcept;
+    [[nodiscard]] const CommandRecord* find_request(std::string_view request_id,
+                                                    std::uint32_t fp) const noexcept;
+    SipKey id_key_;
+    void grow_index(std::size_t records);  // capacity for `records` entries (may throw)
+    void place(std::uint32_t fp, std::uint32_t index_plus_one) noexcept;
+    std::vector<IdSlot> id_index_;
     std::vector<Fill> scratch_fills_;
 };
 

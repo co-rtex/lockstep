@@ -1,0 +1,160 @@
+diff --git a/benchmarks/itch_bench.cpp b/benchmarks/itch_bench.cpp
+index 00ccaf3..9247b54 100644
+--- a/benchmarks/itch_bench.cpp
++++ b/benchmarks/itch_bench.cpp
+@@ -31,6 +31,10 @@
+ #include "enginex/itch/synthetic.hpp"
+ #include "enginex/metrics.hpp"
+ 
++#if defined(__APPLE__)
++#include <pthread/qos.h>
++#endif
++
+ // ---- allocation counting (this executable only) ---------------------------------------------
+ namespace {
+ std::uint64_t g_allocs = 0;
+@@ -57,6 +61,9 @@ using namespace enginex;
+ using namespace enginex::itch;
+ namespace bi = enginex::build_info;
+ 
++// --prefetch D (book apply throughput pass only): experiment, see docs/benchmarks.md.
++std::size_t g_prefetch = 0;
++
+ struct Options {
+     std::uint64_t seed = 42;
+     std::size_t messages = 1'000'000;
+@@ -170,8 +177,18 @@ Trial run_pass(const std::string& m, const Workload& w, bool with_latency, std::
+                 ++t.type_count[type];
+             }
+         } else {
+-            for (const Message& msg : w.messages) {
+-                (void)book.apply(msg);
++            const std::size_t n = w.messages.size();
++            const std::size_t d = g_prefetch;
++            for (std::size_t i = 0; i < n; ++i) {
++                if (d != 0) {  // --prefetch D: index slot 2D ahead, order node D ahead
++                    if (i + 2 * d < n) {
++                        book.prefetch_index(w.messages[i + 2 * d]);
++                    }
++                    if (i + d < n) {
++                        book.prefetch_order(w.messages[i + d]);
++                    }
++                }
++                (void)book.apply(w.messages[i]);
+             }
+         }
+         const auto end = metrics::Clock::now();
+@@ -538,6 +555,17 @@ int main(int argc, char** argv) {
+             else if (a == "--input") o.input = value();
+             else if (a == "--no-latency") o.latency = false;
+             else if (a == "--reserve") o.reserve = parse_u64(value());
++            else if (a == "--prefetch") g_prefetch = parse_u64(value());
++            else if (a == "--qos-interactive") {
++#if defined(__APPLE__)
++                // Asks the scheduler for performance cores (no pinning API on macOS).
++                if (pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) != 0) {
++                    throw std::runtime_error("pthread_set_qos_class_self_np failed");
++                }
++#else
++                throw std::invalid_argument("--qos-interactive is macOS only");
++#endif
++            }
+             else if (a == "--flush-cache-mib") o.flush_mib = parse_u64(value());
+             else throw std::invalid_argument("unknown option " + a);
+         }
+diff --git a/include/enginex/itch/book.hpp b/include/enginex/itch/book.hpp
+index 9283dca..1159ce1 100644
+--- a/include/enginex/itch/book.hpp
++++ b/include/enginex/itch/book.hpp
+@@ -154,6 +154,11 @@ public:
+     // Every order of one side in priority order: best price first, FIFO within a level.
+     [[nodiscard]] std::vector<OrderView> orders(std::uint16_t locate, Side side) const;
+     [[nodiscard]] std::optional<OrderView> find_order(OrderRef ref) const;
++    // Cache hints for a message that will be applied soon (no effect on state or results):
++    // prefetch_index starts loading the index slot of the order it names; prefetch_order, called
++    // later for the same message, starts loading that order's node (reads the slot).
++    void prefetch_index(const Message& m) const noexcept;
++    void prefetch_order(const Message& m) const noexcept;
+     // MPID of a live order added with 'F' (kept across replaces); nullopt otherwise.
+     [[nodiscard]] std::optional<Mpid> attribution(OrderRef ref) const;
+     [[nodiscard]] std::size_t level_count(std::uint16_t locate, Side side) const;
+diff --git a/include/enginex/itch/paged_index.hpp b/include/enginex/itch/paged_index.hpp
+index 1dba03c..7e24fc6 100644
+--- a/include/enginex/itch/paged_index.hpp
++++ b/include/enginex/itch/paged_index.hpp
+@@ -57,6 +57,15 @@ public:
+         return far_.find(key);
+     }
+     [[nodiscard]] bool contains(std::uint64_t key) const noexcept { return find(key) != kEmpty; }
++    // Cache hint only: starts loading the slot `find(key)` will read. No effect on state.
++    void prefetch(std::uint64_t key) const noexcept {
++        if (key < kDirectLimit) {
++            const std::size_t p = page_of(key);
++            if (p < dir_.size() && dir_[p]) {
++                __builtin_prefetch(&dir_[p]->slots[offset_of(key)]);
++            }
++        }
++    }
+ 
+     bool insert(std::uint64_t key, std::uint32_t value) {
+         if (value == kEmpty) {
+diff --git a/src/itch/book.cpp b/src/itch/book.cpp
+index c449293..4ef5972 100644
+--- a/src/itch/book.cpp
++++ b/src/itch/book.cpp
+@@ -822,6 +822,55 @@ std::optional<OrderView> BookBuilder::find_order(OrderRef ref) const {
+     return OrderView{n.ref, n.side, n.price, n.shares};
+ }
+ 
++namespace {
++
++// The order reference a message looks up: the order it adds, modifies or replaces (for U, the
++// original), or 0 for messages that touch no displayed order.
++OrderRef looked_up_ref(const Message& m) noexcept {
++    return std::visit(
++        [](const auto& msg) -> OrderRef {
++            using T = std::decay_t<decltype(msg)>;
++            if constexpr (std::is_same_v<T, OrderReplace>) {
++                return msg.original_ref;
++            } else if constexpr (std::is_same_v<T, AddOrder> || std::is_same_v<T, OrderExecuted> ||
++                                 std::is_same_v<T, OrderExecutedWithPrice> ||
++                                 std::is_same_v<T, OrderCancel> || std::is_same_v<T, OrderDelete>) {
++                return msg.order_ref;
++            } else {
++                return 0;
++            }
++        },
++        m);
++}
++
++// Only the paged index has a cheap address to prefetch; the hash variants do nothing.
++template <typename I>
++void prefetch_slot(const I& index, OrderRef ref) noexcept {
++    if constexpr (requires { index.prefetch(ref); }) {
++        index.prefetch(ref);
++    }
++}
++
++}  // namespace
++
++void BookBuilder::prefetch_index(const Message& m) const noexcept {
++    if (const OrderRef ref = looked_up_ref(m); ref != 0) {
++        prefetch_slot(impl_->index, ref);
++    }
++}
++
++void BookBuilder::prefetch_order(const Message& m) const noexcept {
++    if (std::holds_alternative<AddOrder>(m)) {
++        return;  // a new order has no node yet
++    }
++    if (const OrderRef ref = looked_up_ref(m); ref != 0) {
++        const std::uint32_t slot = impl_->index.find(ref);
++        if (slot != Index::kEmpty) {
++            __builtin_prefetch(&impl_->pool[slot]);
++        }
++    }
++}
++
+ std::optional<Mpid> BookBuilder::attribution(OrderRef ref) const {
+     const auto slot = impl_->lookup(ref);
+     if (!slot) {

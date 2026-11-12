@@ -26,14 +26,21 @@ feed and makes no low-latency claims. Implementation: `include/enginex/protocol.
 * An invalid length (0 or over the limit) is a fatal stream error. The server replies with an
   `error` (`INVALID_REQUEST`, "protocol error: invalid frame length …") and closes the
   connection, because the byte stream cannot be resynchronized.
-* A client that sends part of a frame and stalls longer than 10 s is disconnected the same
-  way (`partial_frame_timeout`).
+* A frame must complete within 10 s of the read in which it started
+  (`partial_frame_timeout`). Otherwise the client is disconnected the same way. The deadline
+  is per frame: a client is cut off only when one frame stays incomplete longer than the
+  deadline, even if every read ends inside the next frame (D37).
 
 ## 2. Common fields
 
 Every JSON message has `"protocol_version": 1` and a `"type"`. A missing or different
-`protocol_version`, an unknown `type`, an unknown field, or malformed JSON produces an
-`error` with `INVALID_REQUEST`; the connection stays open. Field validation follows the
+`protocol_version`, an unknown `type`, an unknown field, a field repeated in one object, an
+object with more than 64 fields (at any depth), or malformed JSON produces an `error` with
+`INVALID_REQUEST`; the connection stays open. A
+repeated field is refused because it is ambiguous: a reader keeping the first value and one
+keeping the last would disagree, for example about the `request_id` idempotency key. Its
+error does not echo a `request_id`. The same rule applies to `simulate`/`run` input lines.
+Field validation follows the
 same rules and error codes as the CLI ([architecture.md](architecture.md)). Prices are
 integer cents (1..100 000 000) and quantities are integers (1..1 000 000); numbers must be
 exact JSON integers.
@@ -82,6 +89,25 @@ everything in its group-commit batch) has been written and synchronized.
 `DUPLICATE_REQUEST_ID_CONFLICT`, `UNKNOWN_ORDER`, `ORDER_NOT_OPEN`, `LIMIT_EXCEEDED`,
 `SERVER_OVERLOADED` (not processed; safe to retry), `JOURNAL_IO_ERROR` (**outcome unknown**;
 retry with the same `request_id` after the server restarts), `INTERNAL_ERROR`.
+
+**Which code a command with several problems gets.** Validation is atomic (one code, no
+effect) and runs in two stages:
+1. **The parser.** A value that cannot be represented as a command is rejected first, with
+   that field's code: a missing or mistyped field, a price or quantity that is not an
+   integer, is string-valued or lies outside int64, or a `side` other than
+   `"BUY"`/`"SELL"`. (The ranges [1, 10⁸] and [1, 10⁶] are checked in stage 2.) Examples:
+   `INVALID_SIDE`, `INVALID_PRICE`, or `INVALID_REQUEST` for a cancel without `order_id`.
+   This stage precedes idempotency. A retry whose body has `"side":"HOLD"` gets
+   `INVALID_SIDE`, not `DUPLICATE_REQUEST_ID_CONFLICT`. Either way it is rejected and
+   changes nothing.
+2. **The state machine.** Representable commands are checked in this order: the
+   `request_id` form (`INVALID_REQUEST`: empty, over 64 bytes or not UTF-8), idempotency
+   (a duplicate or `DUPLICATE_REQUEST_ID_CONFLICT`), command-sequence or history exhaustion
+   (`LIMIT_EXCEEDED`), symbol, side, price range, quantity range, then the open-order limit. A
+   cancel checks its target last.
+
+`tools/exchange_pymodel.py` implements both stages independently and checks them against the
+server on random multi-fault commands.
 
 ### `snapshot_response`
 `request_id`, `event_watermark`, `command_sequence`, `execution_sequence`, `depth`,
@@ -162,8 +188,8 @@ because the request map is rebuilt from the journal (`RetryAfterDisconnectProduc
 | connections | 64 (`--max-clients`) | extra connection gets `error SERVER_OVERLOADED` and is closed |
 | ingress queue (all connections) | 4096 requests (`--ingress-capacity`) | request answered immediately with `SERVER_OVERLOADED`, not processed |
 | outbound queue per connection | 1024 frames (`--outbound-capacity`) | connection marked overflowed: a final `resync_required` (subscriber) or `SERVER_OVERLOADED` error (non-subscriber) goes into a reserved slot, the subscription is dropped, and the socket closes after the queue drains |
-| socket send stall | 2 s (`--send-timeout-ms`) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
-| frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth") |
+| socket send stall | 2 s (`--send-timeout-ms`, 1 ms to 1 h; a server with a non-positive timeout is refused, because "no timeout" let one stalled reader block shutdown) per `send()`, plus an overall per-frame budget of the timeout + 1 s per MiB | writer gives up and closes the connection |
+| frame size (server→client) | 16 MiB | acks/events sent with `executions_truncated`; oversized snapshots answered with `INTERNAL_ERROR` ("request less depth"); a `subscribe` whose initial snapshot does not fit is **not** registered (no baseline, so no increments) |
 | group commit batch | 512 commands (`--max-batch`) | larger bursts span several batches |
 
 Requests still queued from a connection the server has already closed (overflow, peer
@@ -183,8 +209,11 @@ non-reading subscriber is cut off.
 An unexpected exception inside the sequencer (a defect, or memory exhaustion) does not crash
 the process. The server enters fail-stop: nothing still staged is flushed to the journal,
 pending and later commands are answered with `INTERNAL_ERROR` (outcome unknown, retry after
-restart), and subscriptions and snapshots are refused. Restarting recovers the last durable
-state from the journal.
+restart), and subscriptions and snapshots are refused (the in-memory state may hold staged
+commands that never became durable). The reply to the request that hit the error echoes its
+`request_id` and `command_type`, so clients can correlate it. Restarting recovers the last
+durable state from the journal. `SnapshotRefusedAfterInternalFailStop` drives this path with
+the test-only `fault_internal_error_after_stage` option.
 
 ## 9. Shutdown
 
@@ -216,3 +245,42 @@ continues (`ShutdownDrainsQueuedWorkAndRestartRecovers`).
 `client submit` sends one request at a time and prints each reply. It accepts `simulate`-style
 `snapshot` lines. `client subscribe` prints the snapshot and events, checks that sequences are
 contiguous, and ends with a `subscriber_summary` line (`gaps` must be 0).
+
+## 11. Read-only feed mirror (`enginex client mirror`)
+
+`FeedMirror` (`include/enginex/mirror.hpp`) is a replica of the aggregated books that a
+subscriber can build from this feed. It is a pure state machine over received messages, so
+every failure path is unit-tested without sockets. `run_mirror()` drives it over TCP.
+
+| State | Entered on | `book_update` handling |
+|---|---|---|
+| `awaiting_baseline` | start, or every new connection | rejected (counted), never applied |
+| `live` | the subscribe snapshot (`"subscribed": true`) | applied only if `event_sequence == last + 1` |
+| `stale` | gap, duplicate/old event, `resync_required`, disconnect, verification mismatch | rejected; only a new connection and snapshot recover |
+
+A failed `subscribe` (an `error` with `command_type: "subscribe"`, for example a snapshot over
+the frame limit or a fail-stopped server) never makes the mirror live.
+
+**In-band verification.** While live, the mirror periodically sends
+`snapshot_request {depth: 0}` on its own connection. Replies and events for one connection
+leave through one queue in sequencer order, and the sequencer publishes every committed event
+before serializing a snapshot (§5). The reply's `event_watermark` W must therefore equal the
+mirror's last applied event, and its levels must equal the mirror's books exactly. Any
+difference is reported as a mismatch and the mirror goes stale. A session reports `ok` only if
+it ends live, with a successful final verification and no mismatches.
+
+```bash
+./build/release/enginex client mirror --port 9000 --duration-ms 5000 --verify-ms 500
+# {"type":"mirror_summary","ok":true,"state":"live","final_verified":true,"connections":1,
+#  "events_applied":7,"gaps_refused":0,"resync_required":0,"verifications":8,"mismatches":0,...}
+```
+
+Tests (`tests/mirror_test.cpp`): every state transition on crafted messages; a session that
+follows two concurrent traders with in-band verification every 100 ms; a mirror stalled for
+1 500 ms against a server with an 8-frame outbound queue, which is cut off, refuses the broken
+feed, reconnects and ends verified; and a subscribe whose baseline exceeds the frame limit,
+which never goes live and applies nothing. A lossy TCP relay test puts a proxy between
+server and mirror that silently drops the 20th `book_update` frame on the first connection:
+the mirror reports exactly one gap, applies nothing after it, resubscribes through a clean
+connection and ends verified. All mirror tests passed 10 repeated runs.
+

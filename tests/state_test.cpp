@@ -1,6 +1,8 @@
 // Validation, deterministic sequencing and request-id idempotency (spec §3.3, §6.1, §6.2).
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "test_util.hpp"
 
 namespace enginex {

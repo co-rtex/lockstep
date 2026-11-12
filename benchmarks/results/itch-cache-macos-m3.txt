@@ -1,0 +1,52 @@
+enginex_itch_bench: git fd24aeceb3e4, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+book reserve hint: 262144 orders; order index: open_addressing; level nodes: node_arena; cache flush before each pass: 0 MiB
+[itch_decode]
+  first pass 62.08 M msg/s; trials median 68.46 M msg/s [min 68.26, max 68.80] = 14.6 ns/msg, 2137 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 34.10 M msg/s; trials median 36.85 M msg/s [min 35.71, max 37.07] = 27.1 ns/msg
+  heap allocations in timed region: median 17 (0.000 per message), first pass 17
+  per-message latency (ns, median of trials, includes one now() call): mean 25.5 p50 41 p90 42 p99 83 p99.9 125 max 2208
+  mean ns by type (trial 1 latency pass; incl. ~15 ns timer): S=76(0%) R=10(0%) H=16(0%) A=26(32%) F=26(6%) E=22(13%) C=22(3%) X=21(10%) D=23(22%) U=43(10%) P=16(3%) Q=15(0%) B=16(0%) I=15(0%)
+[itch_replay]
+  first pass 25.91 M msg/s; trials median 26.17 M msg/s [min 26.12, max 26.18] = 38.2 ns/msg, 817 MiB/s
+  heap allocations in timed region: median 17 (0.000 per message), first pass 17
+enginex_itch_bench: git fd24aeceb3e4, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+book reserve hint: 262144 orders; order index: open_addressing; level nodes: node_arena; cache flush before each pass: 64 MiB
+[itch_decode]
+  first pass 58.69 M msg/s; trials median 68.50 M msg/s [min 68.14, max 68.76] = 14.6 ns/msg, 2138 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 31.95 M msg/s; trials median 36.67 M msg/s [min 35.23, max 37.08] = 27.3 ns/msg
+  heap allocations in timed region: median 17 (0.000 per message), first pass 17
+  per-message latency (ns, median of trials, includes one now() call): mean 26.4 p50 41 p90 42 p99 84 p99.9 167 max 2584
+  mean ns by type (trial 1 latency pass; incl. ~15 ns timer): S=42(0%) R=10(0%) H=16(0%) A=31(32%) F=31(6%) E=22(13%) C=23(3%) X=22(10%) D=24(22%) U=49(10%) P=16(3%) Q=16(0%) B=15(0%) I=15(0%)
+[itch_replay]
+  first pass 26.15 M msg/s; trials median 26.39 M msg/s [min 25.67, max 26.49] = 37.9 ns/msg, 824 MiB/s
+  heap allocations in timed region: median 17 (0.000 per message), first pass 17
+enginex_itch_bench: git fd24aeceb3e4, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+book reserve hint: 262144 orders; order index: open_addressing; level nodes: node_arena; cache flush before each pass: 0 MiB
+[itch_decode]
+  first pass 62.13 M msg/s; trials median 68.34 M msg/s [min 68.13, max 68.53] = 14.6 ns/msg, 2135 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 16.31 M msg/s; trials median 17.65 M msg/s [min 16.86, max 17.75] = 56.7 ns/msg
+  heap allocations in timed region: median 5043 (0.003 per message), first pass 5043
+  per-message latency (ns, median of trials, includes one now() call): mean 62.0 p50 42 p90 125 p99 208 p99.9 292 max 3292
+  mean ns by type (trial 1 latency pass; incl. ~16 ns timer): S=28(0%) R=15(0%) H=15(0%) A=59(32%) F=59(6%) E=56(12%) C=57(3%) X=39(10%) D=77(22%) U=105(10%) P=15(3%) Q=15(0%) B=15(0%) I=15(0%)
+[itch_replay]
+  first pass 13.23 M msg/s; trials median 13.35 M msg/s [min 13.20, max 13.43] = 74.9 ns/msg, 417 MiB/s
+  heap allocations in timed region: median 5043 (0.003 per message), first pass 5043
+enginex_itch_bench: git fd24aeceb3e4, AppleClang 17.0.0.17000604 Release, Darwin-arm64
+book reserve hint: 262144 orders; order index: open_addressing; level nodes: node_arena; cache flush before each pass: 64 MiB
+[itch_decode]
+  first pass 60.70 M msg/s; trials median 68.27 M msg/s [min 67.61, max 68.53] = 14.6 ns/msg, 2133 MiB/s
+  heap allocations in timed region: median 0 (0.000 per message), first pass 0
+[itch_book_apply]
+  first pass 13.09 M msg/s; trials median 17.35 M msg/s [min 16.65, max 17.59] = 57.6 ns/msg
+  heap allocations in timed region: median 5043 (0.003 per message), first pass 5043
+  per-message latency (ns, median of trials, includes one now() call): mean 63.3 p50 42 p90 125 p99 209 p99.9 292 max 7166
+  mean ns by type (trial 1 latency pass; incl. ~20 ns timer): S=63(0%) R=15(0%) H=15(0%) A=60(32%) F=60(6%) E=56(12%) C=57(3%) X=39(10%) D=77(22%) U=106(10%) P=15(3%) Q=15(0%) B=15(0%) I=15(0%)
+[itch_replay]
+  first pass 13.00 M msg/s; trials median 12.44 M msg/s [min 10.88, max 13.28] = 80.4 ns/msg, 389 MiB/s
+  heap allocations in timed region: median 5043 (0.003 per message), first pass 5043

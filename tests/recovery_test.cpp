@@ -4,11 +4,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <set>
 
 #include "enginex/canonical.hpp"
 #include "enginex/durable.hpp"
+#include "enginex/rng.hpp"
 #include "temp_dir.hpp"
 #include "test_util.hpp"
 
@@ -326,6 +329,83 @@ TEST(Recovery, CorruptedRecordRefusesStartupAndLeavesFileUntouched) {
         f.write(bad_magic.data(), static_cast<std::streamsize>(bad_magic.size()));
     }
     EXPECT_EQ(open_error(options_for(path)), ErrorCode::JournalCorrupt);
+}
+
+// Property: whatever happens to the file (random truncation, random byte flips anywhere,
+// or both), recovery either reproduces exactly the state after some prefix of the journaled
+// commands, or refuses with JOURNAL_CORRUPT. There is no third outcome, i.e. no silent
+// divergence. Truncation alone must always recover (a torn tail is never "corruption").
+TEST(Recovery, RandomDamageNeverYieldsAStateOutsideThePrefixes) {
+    TempDir dir;
+    const std::string path = dir.file("p.exj");
+    Rng rng(9001);
+    std::vector<Command> cmds;
+    for (int i = 0; i < 80; ++i) {
+        const auto r = rng.below(10);
+        const std::string rid = "p" + std::to_string(i);
+        if (r < 4) {
+            cmds.push_back(test::buy(rid, 10000 + static_cast<PriceCents>(rng.below(20)) * 10,
+                                     1 + static_cast<Quantity>(rng.below(9))));
+        } else if (r < 8) {
+            cmds.push_back(test::sell(rid, 10000 + static_cast<PriceCents>(rng.below(20)) * 10,
+                                      1 + static_cast<Quantity>(rng.below(9))));
+        } else {
+            cmds.push_back(test::cancel(
+                rid, static_cast<OrderId>(1 + rng.below(static_cast<std::uint64_t>(i) + 1))));
+        }
+    }
+    DurableOptions o = options_for(path);
+    o.sync = journal::SyncMode::None;  // recovery semantics are under test, not durability
+    {
+        auto ex = DurableExchange::open(o);
+        CommandResult out;
+        for (const auto& c : cmds)
+            ex->process(c, out);
+    }
+    // Hash after each journaled (accepted) prefix, from an independent in-memory run.
+    std::set<std::string> prefixes;
+    {
+        ExchangeStateMachine ref;
+        prefixes.insert(state_hash(ref));
+        CommandResult out;
+        for (const auto& c : cmds) {
+            ref.process(c, out);
+            if (out.accepted && !out.duplicate)
+                prefixes.insert(state_hash(ref));
+        }
+    }
+    const std::string clean = journal::read_file(path);
+    int recovered = 0;
+    int refused = 0;
+    for (int trial = 0; trial < 400; ++trial) {
+        std::string bytes = clean;
+        const auto mode = rng.below(3);  // 0 truncate, 1 flip, 2 both
+        if (mode != 1)
+            bytes.resize(rng.below(bytes.size() + 1));
+        if (mode != 0 && !bytes.empty()) {
+            for (auto k = 1 + rng.below(3); k > 0; --k) {
+                bytes[rng.below(bytes.size())] ^= static_cast<char>(1U << rng.below(8));
+            }
+        }
+        {
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
+        try {
+            auto ex = DurableExchange::open(o);
+            ASSERT_TRUE(prefixes.contains(state_hash(ex->state())))
+                << "trial " << trial << ": recovered a state that is no journaled prefix";
+            ++recovered;
+        } catch (const JournalError& e) {
+            ASSERT_NE(mode, 0U) << "trial " << trial << ": pure truncation refused: " << e.what();
+            ASSERT_EQ(e.code(), ErrorCode::JournalCorrupt) << e.what();
+            ++refused;
+        }
+    }
+    EXPECT_GT(recovered, 100);
+    EXPECT_GT(refused, 50);
+    std::printf("journal damage property: %d recovered to a prefix, %d refused, %zu prefixes\n",
+                recovered, refused, prefixes.size());
 }
 
 TEST(Recovery, ReplayDivergenceIsCorrupt) {

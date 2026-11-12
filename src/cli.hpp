@@ -4,6 +4,7 @@
 // `--name value` or `--flag`; anything unrecognized is an error so typos never silently change a
 // benchmark or durability setting.
 
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -30,6 +31,11 @@ public:
     [[nodiscard]] std::string get_or(const std::string& name, const std::string& fallback) const;
     [[nodiscard]] std::string require(const std::string& name) const;
     [[nodiscard]] std::uint64_t get_u64(const std::string& name, std::uint64_t fallback) const;
+    // A duration in milliseconds that must lie in [min_ms, max_ms] (UsageError otherwise), so a
+    // huge value can never wrap to a negative std::chrono::milliseconds.
+    [[nodiscard]] std::chrono::milliseconds get_ms(const std::string& name, std::uint64_t fallback,
+                                                   std::uint64_t min_ms,
+                                                   std::uint64_t max_ms) const;
 
 private:
     std::map<std::string, std::string> values_;
@@ -45,5 +51,6 @@ int cmd_run(const std::vector<std::string>& args);
 int cmd_replay(const std::vector<std::string>& args);
 int cmd_serve(const std::vector<std::string>& args);
 int cmd_client(const std::vector<std::string>& args);
+int cmd_itch(const std::vector<std::string>& args);
 
 }  // namespace enginex::cli
