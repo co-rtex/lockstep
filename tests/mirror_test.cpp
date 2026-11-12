@@ -371,17 +371,30 @@ TEST(FeedMirrorSession, StalledMirrorIsCutOffThenResyncsToTheExactBook) {
     o.duration = 3000ms;
     o.verify_every = 100ms;
     o.stall_after_first_baseline = 1500ms;
+    // Traffic runs through the stall, which forces the cut-off, and stops 500 ms after it.
+    // With an 8-frame queue the server's writer thread has only a few hundred microseconds of
+    // slack, so on a loaded runner a scheduling hiccup can legitimately cut the recovered
+    // mirror again and again until the session runs out of time (seen once in GitHub run
+    // 43282157156). Quiet traffic after the stall makes the final resync deterministic.
+    std::thread quiet([&stop] {
+        std::this_thread::sleep_for(2000ms);
+        stop = true;
+    });
     const MirrorReport r = run_mirror(o, m);
     stop = true;
+    quiet.join();
     t1.join();
     t2.join();
     // The server cut the stalled feed (resync_required, or the close itself), the mirror
     // refused to continue on it, reconnected, and ended verified against the live server.
-    EXPECT_GE(r.connections, 2U) << r.last_problem;
-    EXPECT_GE(r.stats.resyncs + r.stats.disconnects, 1U);
+    const std::string detail = r.last_problem + "; connections " + std::to_string(r.connections) +
+                               ", state " + r.state + ", final_verified " +
+                               (r.final_verified ? "yes" : "no");
+    EXPECT_GE(r.connections, 2U) << detail;
+    EXPECT_GE(r.stats.resyncs + r.stats.disconnects, 1U) << detail;
     EXPECT_EQ(r.stats.gaps, 0U);
     EXPECT_EQ(r.stats.mismatches, 0U);
-    EXPECT_TRUE(r.ok()) << r.last_problem;
+    EXPECT_TRUE(r.ok()) << detail;
     EXPECT_GE(rs.server->stats().slow_consumer_disconnects, 1U);
 }
 
