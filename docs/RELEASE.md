@@ -32,13 +32,16 @@ Acceptance against the spec: [PROGRESS.md](PROGRESS.md) (R1.1–R1.11, R2.1–R2
 * **Server fix (D37).** The partial-frame (slowloris) deadline disconnected a client that
   kept completing frames when every read ended inside the next frame. The deadline is now
   per frame. The fix is in `71e469c`, with the regression test
-  `Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut`, which failed before the fix. An
+  `Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut`, which failed before the fix. Its
+  timing margin was widened in `1a7907a`, and it still fails without the fix. An
   independent review of the server and journal found it. A second review, of the ITCH and
   MoldUDP64 code, found no release-critical defect.
+* **Version.** `enginex version` reports 1.0.0; it reported 0.1.0 before. The only change
+  is to `project()` in `CMakeLists.txt` (`6025b6f`).
 * **Documentation.** The documents were reconciled with the passing Linux CI. The CI fixes
   and the GCC warning policy are recorded as D36. This record was added.
 
-No other source file changed after `ae20847`.
+Outside `docs/` and `README.md`, nothing else changed after `ae20847`: only `src/server.cpp`, `tests/networking_test.cpp` and the version in `CMakeLists.txt`.
 
 ## Evidence
 
@@ -46,8 +49,9 @@ No other source file changed after `ae20847`.
 |---|---|---|
 | Linux CI, all 5 jobs (GCC 13 Debug, GCC 13 Release + smoke + ITCH demo + benchmark smoke, Clang 18 ASan+UBSan+LSan, Clang 18 TSan, clang-format 19.1.7) | `ae20847` | success, [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592): 532 passed and 1 skipped of 533 in each test job; 0 sanitizer reports ([linux-validation.md](linux-validation.md)) |
 | Linux CI, all 5 jobs, release candidate (with D37) | PR head | *recorded after the run* |
-| macOS: Release, Debug, UBSan suites | `71e469c` | 534 tests each: 533 passed, 1 skipped (opt-in real data); 0 UBSan runtime errors |
+| macOS: Release, Debug, UBSan suites | `71e469c` | 534 tests each: 533 passed, 1 skipped (opt-in real data); 0 UBSan runtime errors. The later commits change only the test's timing and the version string; Release re-run at `1a7907a` with the same counts |
 | macOS: `scripts/check.sh smoke`, `scripts/itch_demo.sh`, clang-format 19.1.7 | `71e469c` | smoke OK (R1–R3 CLI, kill -9 harness, serve/client); demo exit 0; `format OK` |
+| macOS: fresh `git clone`, Release build and suite | `6025b6f` | 534 tests: 533 passed, 1 skipped; `enginex version` reports `1.0.0 (git 6025b6f0fa40, …)` with no dirty mark. Release suite again at `1a7907a`: same counts, `format OK` |
 | Mutation harness, the 6 server mutants, re-run after D37 | `71e469c` | 6/6 killed (`python3 tools/mutation_check.py build/release --only "server:"`) |
 | Full local matrix: `scripts/verify_all.sh --repeat 3 --real-data --mutation` | `6d93043` | all 16 run steps passed ([summary](../benchmarks/results/verify-all-6d93043-macos-m3.md)): Release ×3, Debug, UBSan, hardened libc++, demos, 1 302-run hostile-argument sweep, 200 000 fuzz inputs, fault injection, three real Nasdaq days, mutation **69/69** |
 
@@ -78,7 +82,8 @@ None of these is an exchange wire latency.
 * Durability under real power loss is untested. It relies on `fdatasync`/`F_FULLFSYNC` and
   on honest storage. There is no journal compaction, so memory and recovery time grow with
   history.
-* One sequencer thread and one thread per connection, with a 64-client cap.
+* One sequencer thread, plus a reader and a writer thread per connection; 64 clients by
+  default (`--max-clients`).
 * Work amplification is measured but not rate-limited: duplicate replays of huge results,
   and full-depth snapshots ([verification.md](verification.md#known-limitations-r3)).
 * MoldUDP64 over UDP is loopback unicast only. There is no multicast and no SoupBinTCP.
@@ -89,8 +94,8 @@ None of these is an exchange wire latency.
   * ASan and TSan run only on Linux CI, because the macOS toolchain's runtimes fail.
   * Real data, the mutation harness and all benchmarks ran only on macOS.
   * The coverage-guided libFuzzer build has not been run.
-* GCC's five optimizer-dependent warnings are non-fatal under GCC (D36). The release CI log
-  shows only the two known false positives in test code.
+* GCC's five optimizer-dependent warnings are non-fatal under GCC (D36). The GCC Release log
+  of run 43115996592 shows only the two known false positives in test code.
 
 ## Reproduce
 

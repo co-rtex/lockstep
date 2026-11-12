@@ -28,8 +28,8 @@ feed and makes no low-latency claims. Implementation: `include/enginex/protocol.
   connection, because the byte stream cannot be resynchronized.
 * A frame must complete within 10 s of the read in which it started
   (`partial_frame_timeout`). Otherwise the client is disconnected the same way. The deadline
-  is per frame: a client that keeps completing frames is never cut off, even if every read
-  ends inside the next frame (D37).
+  is per frame: a client is cut off only when one frame stays incomplete longer than the
+  deadline, even if every read ends inside the next frame (D37).
 
 ## 2. Common fields
 

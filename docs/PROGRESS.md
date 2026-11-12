@@ -3,7 +3,9 @@
 Last updated: 2026-11-12 (v1.0.0 release, final section). The R1–R3 and sprint sections are
 kept as they were recorded, with notes where a later result superseded them.
 Status vocabulary: **done** (verified by a run whose output was
-observed), **in progress**, **blocked** (external reason), **outstanding**.
+observed), **in progress**, **blocked** (external reason), **outstanding**. Test counts written
+N/N are ctest's "passed out of N". From the sprint on, N includes one opt-in real-data test
+that is skipped without its local file, so 533/533 means 532 passed and 1 skipped.
 
 ## Current state
 
@@ -317,8 +319,8 @@ sanitizer and profiler limits still apply on that machine:
   translation units: 0 findings.
 * Not verified here: clang-format 19.1.7 (`format OK`), GCC 13, Linux ASan/TSan. The formatting
   pass is committed (`6d93043`); the GitHub CI run on it is the check (docs/linux-validation.md).
-  *Later:* CI run 43098677254 on `6d93043` passed clang-format and failed three other jobs.
-  `ae20847` fixed them, and run 43115996592 passed all 5.
+  *Later:* CI run 43098677254 on `6d93043` passed clang-format and failed the four test jobs
+  (three causes). `ae20847` fixed them, and run 43115996592 passed all 5.
 
 ## Blocked / external
 
@@ -355,7 +357,8 @@ CLANG_FORMAT=<clang-format 19.1.7> scripts/check.sh format -> format OK
 scripts/check.sh smoke build/release                       -> smoke OK
 scripts/itch_demo.sh build/release                         -> exit 0
 enginex_tests --gtest_filter='Server.PipelinedFramesSplitAcrossReadsAreNotTimedOut'
-  before the fix: FAILED (write 8: connection closed by the deadline); after: passed 5/5
+  without the fix (compiling mutant of the condition): FAILED at write 14, one 600 ms deadline
+  in; with it: passed 5/5. (First version of the test, 300 ms deadline: failed at write 8.)
 python3 tools/mutation_check.py build/release --only "server:"   -> mutation score: 6/6 killed
 ```
 
@@ -365,7 +368,7 @@ are identical to `ae20847`. The only later source change is D37, in the server's
 
 Optional future work (not part of v1.0.0, not required by the spec):
 
-1. Move `actions/checkout` to a Node.js 24 release.
+1. Move `actions/checkout` and `actions/upload-artifact` to Node.js 24 releases (CI shows a deprecation warning, not a failure).
 2. Run the coverage-guided libFuzzer build on Linux.
 3. Profile a full-day real-data replay with `perf` on Linux.
 4. Rate-limit duplicate replays of large results and full-depth snapshots.

@@ -67,7 +67,7 @@ ITCH data never become orders in the exchange. They have different types (`itch:
 
 | Check | Result |
 |---|---|
-| Linux CI, 5 jobs: GCC 13 Debug and Release, Clang 18 ASan+UBSan+LSan, Clang 18 TSan, clang-format | all green on the whole code base, with no sanitizer reports. The first green run on the sprint code is [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) at `ae20847`; the release runs are in [RELEASE.md](RELEASE.md) |
+| Linux CI, 5 jobs: GCC 13 Debug and Release, Clang 18 ASan+UBSan+LSan, Clang 18 TSan, clang-format | all green, with no sanitizer reports. Each test job builds the whole repository and runs the whole suite. The first green run on the sprint code is [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592) at `ae20847`; the release runs are in [RELEASE.md](RELEASE.md) |
 | Test suite | 534 tests at v1.0.0. All pass except one opt-in real-data test, which skips without its local file |
 | Mutation testing | 69/69 hand-written bugs killed (`6d93043`); the 6 server mutants re-killed after the release fix |
 | Fuzzing | ≈ 66.7 M distinct standalone inputs, no violation. Not coverage-guided |
@@ -100,9 +100,10 @@ ITCH data never become orders in the exchange. They have different types (`itch:
   killed 69/69 hand-chosen bugs across decoder, book, indexes, sequencer, mirror, matching,
   validation, journal, the UDP transport and server in its last full run (`6d93043`, inside `verify_all.sh`). It found seven real
   test gaps, all now covered, and one real bug: a mutant that hung rather than failed exposed a
-  receiver/sender pair that ran forever on a gap that could never be filled (fixed, `c19c56d`). One was a
-  duplicate of an already-buffered MoldUDP64 message being counted against the buffer bound.
-  The other was a `book_update` published although its journal flush had failed.
+  receiver/sender pair that ran forever on a gap that could never be filled (fixed, `c19c56d`).
+  Two examples of the gaps: a duplicate of an already-buffered MoldUDP64 message was counted
+  against the buffer bound, and a `book_update` was published although its journal flush had
+  failed.
 * **A complexity audit** looked for input-triggered super-linear work and found real issues.
   * The ITCH fallback index used an invertible, unkeyed hash. Crafted order references cost
     43 µs per message at 40 000 adds, quadratic in total. After switching to a keyed SipHash
@@ -120,7 +121,7 @@ ITCH data never become orders in the exchange. They have different types (`itch:
   first. Repeated keys are now `INVALID_REQUEST` (D33). All four are fixed, with regression
   tests.
 * **Fuzzing:** a libFuzzer-compatible harness, more than 66 M inputs without a violation (UBSan
-  on part of them). **Coverage:** 94 % of lines. **Leaks:** 0. **Fault injection:** a lossy
+  on part of them). **Coverage:** ≈ 95 % of lines over the sprint code (ITCH, MoldUDP64, mirror, server, ITCH CLI). **Leaks:** 0. **Fault injection:** a lossy
   TCP relay, a stalled consumer, lossy MoldUDP64 channels with re-request. **Property tests**
   over 100 k hostile exchange requests, 200 k random feed messages, and 400 randomly damaged
   journals (recovery yields an exact prefix or refuses, never a divergent state). Each test asserts
@@ -135,7 +136,7 @@ ITCH data never become orders in the exchange. They have different types (`itch:
     `book_update` a subscriber receives, about 39 k events, also matches the model). With up
     to 32 concurrent clients it checks linearizability. Accepted replies must equal the model
     run in sequence order, and each rejection must match some state its client could have
-    seen. 100 k commands passed. This substitutes for TSan, which cannot run here. A further
+    seen. 100 k commands passed. This complements TSan, which runs only on Linux CI. A further
     200 k commands from 16 clients passed with hostile connections alongside: 2 544 of them,
     sending garbage, bad lengths, half frames, malformed JSON, stalled subscribers and abrupt
     drops. The server stayed up and answered every malformed message, and the journal replayed

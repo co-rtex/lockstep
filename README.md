@@ -38,8 +38,8 @@ runs).
 | Property tests against an independent reference model; TradeGrid common fixtures | R1 | **Implemented, passing** |
 | `enginex simulate` CLI with demo and golden output | R1 | **Implemented, tested** |
 | Seeded benchmark suite (6 workloads), CSV output, recorded results | R1 | **Implemented, measured** |
-| Linux builds: GCC 13 Debug and Release, Clang 18 ASan/UBSan, Clang 18 TSan | R1 | **Passing on GitHub-hosted Ubuntu 24.04 runners** for the whole code base, market-data path included |
-| GitHub Actions CI workflow (5 jobs, including clang-format 19.1.7) | R1 | **Passing**: all 5 jobs green on `ae20847` ([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592)), the first run covering the sprint code; the release's own runs are in [docs/RELEASE.md](docs/RELEASE.md). R1–R3 first passed at `418d247`. Reproducible locally with `act` (`scripts/ci_local.sh`) |
+| Linux builds: GCC 13 Debug and Release, Clang 18 ASan/UBSan, Clang 18 TSan | R1 | **Passing on GitHub-hosted Ubuntu 24.04 runners**, market-data path included (runs listed in [docs/RELEASE.md](docs/RELEASE.md)) |
+| GitHub Actions CI workflow (5 jobs, including clang-format 19.1.7) | R1 | **Passing**: all 5 jobs green on `ae20847` ([run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592)), the first green run on the sprint code; the release's own runs are in [docs/RELEASE.md](docs/RELEASE.md). R1–R3 first passed at `418d247`. Reproducible locally with `act` (`scripts/ci_local.sh`) |
 | Versioned append-only journal (EXJ1, CRC32C framing), ack after `fdatasync`/`F_FULLFSYNC` | R2 | **Implemented, tested** |
 | Startup replay with verification, tail repair, corruption refusal, fail-stop on I/O errors | R2 | **Implemented, tested** (fork crash points, SIGKILL harness, injected write/sync/ENOSPC failures) |
 | Idempotent retries across restarts | R2 | **Implemented, tested** |
@@ -57,10 +57,10 @@ runs).
 | MoldUDP64 over real UDP (`itch mold-send` / `mold-recv`): paced feed, re-request answers, receiver gap recovery; exact book on all three real sample days at 50 k packets/s with 5 % live and 10 % retransmission loss | ITCH | **Implemented, tested on loopback only** (`scripts/mold_udp_demo.sh`) |
 | UDP multicast, a separate re-request server, SoupBinTCP, full-day real data | — | **Not implemented / not tested** (no such claim is made) |
 
-Linux CI covers every row in this table. Each test job builds the whole repository and
-runs the whole suite. Every test passes except one, which is skipped: the opt-in real-data
-test, whose input file is not redistributed. CI cannot run three things, which ran on macOS
-only (Apple M3, Apple clang 17): the real Nasdaq data checks, the MoldUDP64 runs over UDP
+Linux CI builds the whole repository and runs the whole suite in each test job, so it
+tests the code behind every implemented row. Every test passes except one, which is
+skipped: the opt-in real-data test, whose input file is not redistributed. CI cannot run
+three things, which ran on macOS only (Apple M3, Apple clang 17): the real Nasdaq data checks, the MoldUDP64 runs over UDP
 on real days, and every published benchmark. Details, including the failed CI runs before
 the first green one: [docs/linux-validation.md](docs/linux-validation.md).
 
@@ -277,7 +277,7 @@ features, or production readiness of any kind. This is a learning project.
 The numbers below are in-process core timings from `ExchangeStateMachine::process`
 (validation + sequencing + matching; **no I/O, JSON, durability or networking**). They come
 from an Apple M3 MacBook Air running macOS 26.6.2, Apple clang 17, Release build, seed 42,
-100 000 measured commands per scenario, with medians of 7 trials. Full methodology, workload
+100 000 measured commands per scenario, with medians of 7 trials (the 1 M-command row: 5). Full methodology, workload
 definitions, dispersion and caveats (including the 41.7 ns timer tick on Apple Silicon) are
 in [docs/benchmarks.md](docs/benchmarks.md). Raw CSVs are in
 [`benchmarks/results/`](benchmarks/results).
@@ -407,7 +407,7 @@ sanitizer runtimes fail even on an empty program, so ASan/TSan evidence comes fr
 | Document | What it covers |
 |---|---|
 | [docs/RELEASE.md](docs/RELEASE.md) | v1.0.0 scope, release evidence, known limitations |
-| [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md) | the engineering contract and R1–R4 acceptance criteria |
+| [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md) | the engineering contract: release plan (R1–R3 required, R4 optional) and acceptance criteria |
 | [docs/architecture.md](docs/architecture.md) | sequencer, book structures, iterator safety, threading |
 | [docs/journaling.md](docs/journaling.md), [docs/protocol.md](docs/protocol.md) | durability contract and crash matrix; wire protocol, ordering, backpressure |
 | [docs/itch.md](docs/itch.md) | ITCH 5.0 decoding, book reconstruction, MoldUDP64, real-data validation |

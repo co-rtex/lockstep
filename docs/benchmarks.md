@@ -136,8 +136,9 @@ measured commands, so the hit rates are measured, not assumed.
 
 ## R1 results: core in-process (measurement 1)
 
-Seed 42, 7 trials + 1 warm-up, medians across trials. The latency columns come from the
-latency pass and carry the timer caveat above.
+Seed 42, 7 trials + 1 warm-up, medians across trials (the 1 M-command `mixed` row,
+`r1-core-macos-m3-1m.csv`: 5 trials). The latency columns come from the latency pass and
+carry the timer caveat above.
 
 | scenario | commands | throughput (cmd/s, median) | min – max across trials | p50 ns | p90 ns | p99 ns | p99.9 ns | max ns |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|

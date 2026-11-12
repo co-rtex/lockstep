@@ -520,8 +520,8 @@ deadline (`partial_frame_timeout`) was measured from the first read that left a 
 frame, and reset only when a read left none. A client that kept completing frames, but
 whose reads each ended inside the next frame, was disconnected after one deadline. This
 happens with a pipelining client on a network that splits frames at arbitrary points. A
-regression test reproduced it: with a 300 ms deadline and one frame completed every 50 ms,
-the connection was closed at the eighth write.
+regression test reproduced it: with a 600 ms deadline and one frame completed every 50 ms,
+the connection was closed at the 14th write, one deadline after the first partial read.
 
 **Decision.** The deadline restarts whenever a read completes at least one frame, so it
 bounds each frame from the read in which that frame started. A frame that never completes
