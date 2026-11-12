@@ -742,6 +742,42 @@ TEST(Server, TrickledFrameIsDisconnectedAtDeadline) {
     EXPECT_FALSE(c.receive(kTimeout).has_value());
 }
 
+// The deadline is per frame, from its first byte. A client that keeps completing frames is
+// never cut off, even when every read the server makes ends inside the next frame (a
+// pipelining client over a network that splits frames at arbitrary points).
+TEST(Server, PipelinedFramesSplitAcrossReadsAreNotTimedOut) {
+    ServerOptions o;
+    o.partial_frame_timeout = 300ms;
+    TestServer ts(false, o);
+    Client c = ts.connect();
+    constexpr int kFrames = 24;
+    std::vector<std::string> frames;
+    for (int i = 0; i < kFrames; ++i) {
+        Json m = order("pipe" + std::to_string(i), "BUY", 100 + i, 1);
+        m["protocol_version"] = 1;
+        frames.push_back(encode_frame(m.dump()));
+    }
+    // Write k completes frame k-1 and starts frame k, 50 ms apart: 1.2 s of reads that all
+    // end mid-frame (four deadlines), while one frame completes on every read.
+    const auto half = [&](int k) { return frames[static_cast<std::size_t>(k)].size() / 2; };
+    ASSERT_TRUE(c.send_raw(std::string_view(frames[0]).substr(0, half(0))));
+    for (int k = 1; k < kFrames; ++k) {
+        std::this_thread::sleep_for(50ms);
+        const std::string chunk = frames[static_cast<std::size_t>(k - 1)].substr(half(k - 1)) +
+                                  frames[static_cast<std::size_t>(k)].substr(0, half(k));
+        ASSERT_TRUE(c.send_raw(chunk)) << "write " << k;
+    }
+    ASSERT_TRUE(c.send_raw(std::string_view(frames[kFrames - 1]).substr(half(kFrames - 1))));
+    for (int i = 0; i < kFrames; ++i) {
+        auto reply = c.receive(kTimeout);
+        ASSERT_TRUE(reply) << "reply " << i;
+        ASSERT_EQ((*reply)["type"], "ack") << reply->dump();
+        EXPECT_EQ((*reply)["request_id"], "pipe" + std::to_string(i));
+    }
+    EXPECT_FALSE(c.closed());
+    EXPECT_EQ(ts.server->stats().protocol_errors, 0U);
+}
+
 TEST(Server, OutboundByteBudgetDisconnectsSnapshotHoarder) {
     ServerOptions o;
     o.outbound_byte_limit = 64 * 1024;

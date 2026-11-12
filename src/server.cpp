@@ -343,6 +343,7 @@ private:
             if (n > 0) {
                 decoder.feed(buf.data(), static_cast<std::size_t>(n));
                 bool fatal = false;
+                bool completed_frame = false;
                 while (true) {
                     const auto status = decoder.next(payload);
                     if (status == FrameDecoder::Status::NeedMore) {
@@ -357,6 +358,7 @@ private:
                         fatal = true;
                         break;
                     }
+                    completed_frame = true;
                     counters_.requests.fetch_add(1);
                     auto parsed = parse_client_message(payload);
                     if (auto* err = std::get_if<codec::ParseError>(&parsed)) {
@@ -372,7 +374,9 @@ private:
                 }
                 if (!decoder.has_partial()) {
                     partial_since.reset();
-                } else if (!partial_since) {
+                } else if (!partial_since || completed_frame) {
+                    // The deadline is per frame: a frame completed in this read, so the
+                    // partial one left over started in it too and gets a fresh deadline.
                     partial_since = Clock::now();
                 } else if (Clock::now() - *partial_since > opts_.partial_frame_timeout) {
                     // A frame trickled in slower than the deadline (slowloris): disconnect.
