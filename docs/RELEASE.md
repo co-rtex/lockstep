@@ -38,17 +38,23 @@ Acceptance against the spec: [PROGRESS.md](PROGRESS.md) (R1.1–R1.11, R2.1–R2
   MoldUDP64 code, found no release-critical defect.
 * **Version.** `enginex version` reports 1.0.0; it reported 0.1.0 before. The only change
   is to `project()` in `CMakeLists.txt` (`6025b6f`).
+* **Flaky test fixed** (`65993a5`, test only).
+  `FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook` failed once on Linux
+  CI. Its traders ran at full speed against an 8-frame queue until the end, so the recovered
+  mirror could be cut until it ran out of reconnects. Traffic now stops 500 ms after the
+  stall, and every assertion is unchanged ([linux-validation.md](linux-validation.md#release-candidate-runs-and-one-flaky-test)).
 * **Documentation.** The documents were reconciled with the passing Linux CI. The CI fixes
   and the GCC warning policy are recorded as D36. This record was added.
 
-Outside `docs/` and `README.md`, nothing else changed after `ae20847`: only `src/server.cpp`, `tests/networking_test.cpp` and the version in `CMakeLists.txt`.
+Outside `docs/` and `README.md`, only these changed after `ae20847`: `src/server.cpp`, `tests/networking_test.cpp`, `tests/mirror_test.cpp`, and the version in `CMakeLists.txt`.
 
 ## Evidence
 
 | Check | Commit | Result |
 |---|---|---|
 | Linux CI, all 5 jobs (GCC 13 Debug, GCC 13 Release + smoke + ITCH demo + benchmark smoke, Clang 18 ASan+UBSan+LSan, Clang 18 TSan, clang-format 19.1.7) | `ae20847` | success, [run 43115996592](https://github.com/co-rtex/enginex/actions/runs/43115996592): 532 passed and 1 skipped of 533 in each test job; 0 sanitizer reports ([linux-validation.md](linux-validation.md)) |
-| Linux CI, all 5 jobs, release candidate (with D37) | PR head | *recorded after the run* |
+| Linux CI, all 5 jobs, release candidate (D37, version 1.0.0, mirror test fix) | `65993a5` | success in both the push run [43286314612](https://github.com/co-rtex/enginex/actions/runs/43286314612) and the pull_request run [43286328504](https://github.com/co-rtex/enginex/actions/runs/43286328504): 533 passed and 1 skipped of 534 in each test job; 0 sanitizer reports; GCC Release warnings are only the two known false positives (D36). Later commits on the PR change documentation only |
+| Linux CI, first release candidate | `19920df` | push run [43282131236](https://github.com/co-rtex/enginex/actions/runs/43282131236): 5/5. Pull_request run [43282157156](https://github.com/co-rtex/enginex/actions/runs/43282157156): one flaky test failed in the Release job; it was fixed in `65993a5` ([linux-validation.md](linux-validation.md#release-candidate-runs-and-one-flaky-test)) |
 | macOS: Release, Debug, UBSan suites | `71e469c` | 534 tests each: 533 passed, 1 skipped (opt-in real data); 0 UBSan runtime errors. The later commits change only the test's timing and the version string; Release re-run at `1a7907a` with the same counts |
 | macOS: `scripts/check.sh smoke`, `scripts/itch_demo.sh`, clang-format 19.1.7 | `71e469c` | smoke OK (R1–R3 CLI, kill -9 harness, serve/client); demo exit 0; `format OK` |
 | macOS: fresh `git clone`, Release build and suite | `6025b6f` | 534 tests: 533 passed, 1 skipped; `enginex version` reports `1.0.0 (git 6025b6f0fa40, …)` with no dirty mark. Release suite again at `1a7907a`: same counts, `format OK` |

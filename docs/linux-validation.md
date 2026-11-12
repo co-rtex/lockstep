@@ -48,7 +48,39 @@ is their only evidence.
 
 The v1.0.0 release closeout then added one server fix and its regression test
 ([D37](DECISIONS.md#d37-the-partial-frame-deadline-is-per-frame)); the CI runs on that code are
-recorded in [RELEASE.md](RELEASE.md).
+recorded in [RELEASE.md](RELEASE.md) and below.
+
+## Release-candidate runs and one flaky test
+
+On the first release candidate, `19920df`, the push run
+[43282131236](https://github.com/co-rtex/enginex/actions/runs/43282131236) passed all 5 jobs.
+The pull_request run [43282157156](https://github.com/co-rtex/enginex/actions/runs/43282157156)
+of the same commit failed one test in the Release job:
+`FeedMirrorSession.StalledMirrorIsCutOffThenResyncsToTheExactBook`. The mirror was cut, it
+reconnected, and it saw no gap or mismatch. But it did not end live and verified (last problem
+`resync_required: slow_consumer`).
+
+* **Cause.** The test ran 3.04 s. `run_mirror` returns before its 5 s give-up deadline without
+  a final verification only when its 10 reconnect attempts are used up. So the recovered mirror
+  was cut about ten times in the ≈ 1.5 s after its deliberate stall.
+  * The test server's outbound queue holds only 8 frames, so the per-connection writer thread
+    has a few hundred microseconds of slack.
+  * The two traders ran at full speed until the session ended.
+  * On a loaded 4-vCPU runner, that slack is exceeded, and each cut is correct server behaviour.
+* **Fix** (`65993a5`, test only). The traders stop 500 ms after the stall instead of at the
+  end. The stall still forces the cut-off, and every assertion is unchanged. Failure messages
+  now include the connection count and final state.
+* **Reproduction.** The failure was not reproduced locally: 0 of 48 runs on macOS and 0 of 70
+  in an `ubuntu:24.04` GCC Release container at up to 10-way contention on 2 CPUs. With the
+  change, 40 of 40 container runs passed every assertion, including the server's
+  slow-consumer cut.
+
+The candidate with the fix, `65993a5`, passed all 5 jobs in both its push run
+[43286314612](https://github.com/co-rtex/enginex/actions/runs/43286314612) and its
+pull_request run [43286328504](https://github.com/co-rtex/enginex/actions/runs/43286328504).
+Runner images were `ubuntu-24.04` 20261101.360.1 and 20261111.370.1. Each test job ran 534
+tests: 533 passed and 1 skipped (the opt-in real-data test). There were 0 sanitizer reports,
+and the GCC Release log has only the two known warnings.
 
 ## How it got there
 
