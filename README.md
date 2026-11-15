@@ -1,16 +1,19 @@
-# EngineX
+# Lockstep
 
-EngineX is a deterministic C++20 limit-order matching engine, built as an educational
+Lockstep is a deterministic C++20 limit-order matching engine, built as an educational
 trading-systems lab. It accepts limit buy and sell orders and cancellations for a small set
 of symbols. It matches them by price-time priority (best price first, then first-come), with
 partial and full fills at the resting order's price. Every accepted command gets a sequence
 number, so the same input always produces byte-for-byte the same state, fills and ids. That
 state can be hashed, replayed and compared.
 
+The project was first called EngineX. The command-line tool (`enginex`), the C++ namespace and the
+build targets keep that name.
+
 The project is built in releases. R1 is the matching core, its tests, a command-line
 simulator and a reproducible benchmark suite. R2 adds a write-ahead command journal with
 crash recovery and idempotent retries. R3 adds a TCP order-entry and market-data service
-with bounded queues and snapshot resynchronization. EngineX is a standalone personal project
+with bounded queues and snapshot resynchronization. Lockstep is a standalone personal project
 inspired by the club's [TradeGrid](https://github.com/co-rtex/tradegrid) Go exchange. It is
 not a replacement for it and not real trading software.
 
@@ -69,7 +72,7 @@ the first green one: [docs/linux-validation.md](docs/linux-validation.md).
 ```text
  TradeGrid (club repo, Go) ── public matching spec + fixtures (read-only, attributed) ──┐
                                                                                        ▼
- ┌──────────────────────────────── EngineX (this repo) ────────────────────────────────┐
+ ┌──────────────────────────────── Lockstep (this repo) ───────────────────────────────┐
  │  TCP clients ⇄ enginex_net: acceptor · reader/writer thread per connection (R3)     │
  │   │ length-prefixed JSON         bounded ingress queue      bounded outbound queues │
  │   ▼                                     ▼                          ▲                │
@@ -366,7 +369,7 @@ investigation are in [docs/benchmarks.md](docs/benchmarks.md#itch-50-decoding-an
   (`serve` + `client submit`), with a journal, and across a server restart where the whole
   workload is resent and every accepted id must replay its original result.
 * Fixtures: TradeGrid's published matching examples and fixtures, translated with attribution
-  (`tests/testdata/tradegrid/`), plus EngineX-specific cases. `tools/compare_go_fixtures.py`
+  (`tests/testdata/tradegrid/`), plus Lockstep-specific cases. `tools/compare_go_fixtures.py`
   runs a differential check against a local TradeGrid checkout.
 * Journal tests cover format, corruption, tail repair, injected I/O failures and fork-based
   crashes at every acknowledgment boundary. `tools/fault_injection.py` SIGKILLs both
@@ -418,11 +421,11 @@ sanitizer runtimes fail even on an empty program, so ASan/TSan evidence comes fr
 
 ## Relationship to TradeGrid and authorship
 
-EngineX was written independently by Christian Cortez as a personal systems-engineering
+Lockstep was written independently by Christian Cortez as a personal systems-engineering
 project. The TradeGrid club project (<https://github.com/co-rtex/tradegrid>) has its own Go
-exchange, roadmap and contributors. EngineX does not modify or replace it. It uses TradeGrid's
+exchange, roadmap and contributors. Lockstep does not modify or replace it. It uses TradeGrid's
 public [matching-engine specification](https://github.com/co-rtex/tradegrid/blob/main/docs/matching-engine.md)
-and fixtures only as behavioral references, re-expressed in EngineX's own fixture format with
+and fixtures only as behavioral references, re-expressed in Lockstep's own fixture format with
 attribution. [docs/tradegrid-compatibility.md](docs/tradegrid-compatibility.md) lists exactly
 what is shared and what differs.
 
